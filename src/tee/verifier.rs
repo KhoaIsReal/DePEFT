@@ -1,0 +1,100 @@
+use crate::blockchain::types::AccountId;
+use crate::tee::enclave::HardwareTeeEnclave;
+use crate::tee::types::AttestationQuote;
+use anyhow::{bail, Result};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use std::collections::HashSet;
+
+/// On-Chain TEE Remote Attestation Verifier.
+/// Ensures all submitted validator rankings were produced inside genuine, authorized hardware enclaves.
+#[derive(Debug, Clone)]
+pub struct OnChainTeeVerifier {
+    pub approved_mrenclaves: HashSet<[u8; 32]>,
+    pub approved_mrsigners: HashSet<[u8; 32]>,
+    pub enforce_attestation: bool,
+}
+
+impl Default for OnChainTeeVerifier {
+    fn default() -> Self {
+        let mut verifier = Self {
+            approved_mrenclaves: HashSet::new(),
+            approved_mrsigners: HashSet::new(),
+            enforce_attestation: true,
+        };
+        // Register canonical official validator enclave measurement by default
+        verifier.register_mrenclave(HardwareTeeEnclave::canonical_mrenclave());
+        verifier
+    }
+}
+
+impl OnChainTeeVerifier {
+    pub fn new(enforce_attestation: bool) -> Self {
+        let mut v = Self::default();
+        v.enforce_attestation = enforce_attestation;
+        v
+    }
+
+    /// Whitelist an approved enclave code measurement.
+    pub fn register_mrenclave(&mut self, mrenclave: [u8; 32]) {
+        self.approved_mrenclaves.insert(mrenclave);
+    }
+
+    /// Whitelist an approved enclave author signing key.
+    pub fn register_mrsigner(&mut self, mrsigner: [u8; 32]) {
+        self.approved_mrsigners.insert(mrsigner);
+    }
+
+    /// Verify an Attestation Quote on-chain before admitting a validator evaluation.
+    pub fn verify_quote(
+        &self,
+        quote: &AttestationQuote,
+        task_id: u64,
+        round: usize,
+        ranking: &[AccountId],
+    ) -> Result<()> {
+        // 1. Verify Report Data binding (attestation must commit to exact task, round, ranking)
+        if !quote.verify_report_data(task_id, round, ranking) {
+            bail!(
+                "TEE Attestation Quote report_data mismatch: quote was not generated for task #{} round {} ranking {:?}",
+                task_id,
+                round,
+                ranking
+            );
+        }
+
+        // 2. Verify Enclave Measurement against on-chain whitelist
+        if !self.approved_mrenclaves.is_empty() && !self.approved_mrenclaves.contains(&quote.measurement.mrenclave) {
+            if !self.approved_mrsigners.contains(&quote.measurement.mrsigner) {
+                bail!(
+                    "Unauthorized MRENCLAVE measurement: {} is not in approved on-chain enclave registry",
+                    quote.measurement.mrenclave_hex()
+                );
+            }
+        }
+
+        // 3. Cryptographically verify Hardware Platform Quote Signature
+        let verifying_key = VerifyingKey::from_bytes(&quote.platform_public_key)
+            .map_err(|e| anyhow::anyhow!("Invalid TEE platform public key: {}", e))?;
+
+        if quote.quote_signature.len() != 64 {
+            bail!("Invalid quote signature length: expected 64 bytes");
+        }
+
+        let sig_bytes: [u8; 64] = quote.quote_signature.as_slice().try_into()?;
+        let signature = Signature::from_bytes(&sig_bytes);
+
+        // Reconstruct signed payload
+        let mut quote_payload = Vec::new();
+        quote_payload.push(quote.tee_type as u8);
+        quote_payload.extend_from_slice(&quote.measurement.mrenclave);
+        quote_payload.extend_from_slice(&quote.measurement.mrsigner);
+        quote_payload.extend_from_slice(&quote.report_data);
+        quote_payload.extend_from_slice(&quote.timestamp.to_be_bytes());
+
+        verifying_key
+            .verify(&quote_payload, &signature)
+            .map_err(|e| anyhow::anyhow!("Hardware TEE Attestation Quote cryptographic signature verification failed: {}", e))?;
+
+        Ok(())
+    }
+}
