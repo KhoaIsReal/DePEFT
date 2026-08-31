@@ -7,7 +7,7 @@
 [![Consensus](https://img.shields.io/badge/consensus-CometBFT%20%2F%20Tendermint-blueviolet.svg)]()
 [![TEE](https://img.shields.io/badge/TEE-Intel%20SGX%20%7C%20AMD%20SEV--SNP-informational.svg)]()
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-green.svg)]()
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](./LICENSE)
 
 An end-to-end, production-grade Rust implementation of the **DePEFT Architecture Design** specification for decentralized AI fine-tuning using Hugging Face Candle QLoRA, Hardware TEE Remote Attestation, IPFS decentralized storage, and CometBFT 2-phase commit consensus.
 
@@ -68,10 +68,10 @@ For each tournament round $N \in \{1, 2, \dots, K\}$:
    - Client creates a `TaskSpec`, specifying Base Model $W_N$, IPFS dataset CID, PEFT method (`QLoRA_NF4`), target modules (`q_proj`, `v_proj`, `out_proj`), and locks bounty funds into escrow.
 2. **Commit Phase**:
    - Heterogeneous miners (NVIDIA CUDA, AMD ROCm, bare-metal CPU) fine-tune local LoRA matrices $\Delta W$ using Candle autograd.
-   - Miners submit an on-chain commitment: $\text{commit\_hash} = \text{SHA256}(\text{adapter\_hash} \mathbin{\Vert} \text{salt})$ to prevent front-running and plagiarism.
+   - Miners submit an on-chain commitment: `commit_hash = SHA256(adapter_hash || salt)` to prevent front-running and plagiarism.
 3. **Reveal Phase**:
    - Miners upload `.safetensors` adapter files to IPFS and reveal `(adapter_cid, salt)`.
-   - The App-Chain deterministically validates that $\text{SHA256}(\text{SHA256}(\text{safetensors}) \mathbin{\Vert} \text{salt}) == \text{commit\_hash}$.
+   - The App-Chain deterministically validates that `SHA256(SHA256(safetensors) || salt) == commit_hash`.
 4. **Evaluation Phase (Private Test Set & Relative Consensus)**:
    - Validators download adapters from IPFS and evaluate them inside an isolated **Hardware TEE Sandbox** on a **Private Test Set** (preventing data leakage and overfitting).
    - Rather than relying on fragile floating-point equality across heterogeneous GPUs, validators submit **Relative Rankings** accompanied by cryptographic **Hardware Attestation Quotes**.
@@ -284,4 +284,4 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ## 📄 License
 
-This project is dual-licensed under either the [MIT License](LICENSE-MIT) or the [Apache License, Version 2.0](LICENSE-APACHE).
+This project is licensed under the [GNU General Public License v3.0](LICENSE).

@@ -3,32 +3,6 @@
 version = 4
 
 [[package]]
-name = "DePEFT"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "candle-core",
- "candle-nn",
- "clap",
- "colored",
- "comfy-table",
- "dirs",
- "ed25519-dalek",
- "hex",
- "rand 0.8.8",
- "rand_distr 0.4.3",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 1.0.69",
- "tokenizers",
- "tokio",
- "tower-http 0.5.2",
-]
-
-[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -613,6 +587,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b1e3a325bc115f096c8b77bbf027a7c2592230e70be2d985be950d3d5e60ebe"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "depeft"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "candle-core",
+ "candle-nn",
+ "clap",
+ "colored",
+ "comfy-table",
+ "dirs",
+ "ed25519-dalek",
+ "hex",
+ "rand 0.8.8",
+ "rand_distr 0.4.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokenizers",
+ "tokio",
+ "tower-http 0.5.2",
 ]
 
 [[package]]
