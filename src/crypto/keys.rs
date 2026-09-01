@@ -94,6 +94,13 @@ impl SignedTransaction {
             .map_err(|e| anyhow::anyhow!("Cryptographic signature verification failed: {}", e))?;
 
         let sender_account = AccountId::new(format!("0x{}", hex::encode(self.sender_public_key)));
+        anyhow::ensure!(
+            self.tx.sender() == &sender_account,
+            "Transaction inner sender {} does not match signer public key account {}",
+            self.tx.sender(),
+            sender_account
+        );
+
         Ok(sender_account)
     }
 }

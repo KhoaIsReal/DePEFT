@@ -1156,3 +1156,59 @@ fn test_security_qlora_load_adapter_dimension_mismatch_rejected() {
 
     assert!(layer.load_adapter(&bad_adapter).is_err());
 }
+
+#[test]
+fn test_security_signed_tx_inner_sender_mismatch_rejected() {
+    use DePEFT::blockchain::transactions::Transaction;
+    use DePEFT::blockchain::types::PeftType;
+    use DePEFT::crypto::{AccountKeypair, SignedTransaction};
+
+    let signer_kp = AccountKeypair::generate();
+    let victim_kp = AccountKeypair::generate();
+
+    // Transaction with victim as client, but signed by attacker signer_kp
+    let tx = Transaction::CreateTask {
+        client: victim_kp.account_id(),
+        nonce: 0,
+        base_model_id: b"test".to_vec(),
+        base_model_hash: [0u8; 32],
+        dataset_cid: b"bafy_ds".to_vec(),
+        peft_method: PeftType::LoRA,
+        max_rank: 16,
+        target_modules: vec![b"q_proj".to_vec()],
+        bounty_pool: 1000,
+        epoch_blocks: 10,
+    };
+
+    let tx_bytes = serde_json::to_vec(&tx).unwrap();
+    let signature = signer_kp.sign_message(&tx_bytes);
+
+    let signed_tx = SignedTransaction {
+        tx,
+        sender_public_key: signer_kp.public_key_bytes(),
+        signature,
+    };
+
+    // verify_signature must reject when inner client != signer account
+    assert!(signed_tx.verify_signature().is_err());
+}
+
+#[test]
+fn test_security_validator_set_deduplication() {
+    use DePEFT::consensus::{ConsensusValidator, ValidatorSet};
+    use DePEFT::crypto::AccountKeypair;
+
+    let kp1 = AccountKeypair::generate();
+    let kp2 = AccountKeypair::generate();
+
+    // List with duplicate entries for kp1
+    let validators = vec![
+        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
+        ConsensusValidator { address: kp1.account_id(), voting_power: 20 },
+        ConsensusValidator { address: kp2.account_id(), voting_power: 30 },
+    ];
+
+    let val_set = ValidatorSet::new(validators);
+    assert_eq!(val_set.validators.len(), 2);
+    assert_eq!(val_set.total_voting_power, 50); // 20 + 30
+}

@@ -44,6 +44,16 @@ pub enum Transaction {
 }
 
 impl Transaction {
+    /// Get the sender AccountId of the transaction.
+    pub fn sender(&self) -> &AccountId {
+        match self {
+            Transaction::CreateTask { client, .. } => client,
+            Transaction::CommitAdapter { miner, .. } => miner,
+            Transaction::RevealAdapter { miner, .. } => miner,
+            Transaction::SubmitEvaluation { evaluation, .. } => &evaluation.validator_address,
+        }
+    }
+
     /// Get the transaction nonce.
     pub fn nonce(&self) -> u64 {
         match self {

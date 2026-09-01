@@ -11,9 +11,21 @@ pub struct ValidatorSet {
 
 impl ValidatorSet {
     pub fn new(validators: Vec<ConsensusValidator>) -> Self {
-        let total_voting_power: u64 = validators.iter().map(|v| v.voting_power).sum();
+        let mut unique_map: std::collections::HashMap<AccountId, u64> = std::collections::HashMap::new();
+        for v in validators {
+            let entry = unique_map.entry(v.address).or_insert(0);
+            *entry = (*entry).max(v.voting_power);
+        }
+
+        let mut deduped: Vec<ConsensusValidator> = unique_map
+            .into_iter()
+            .map(|(address, voting_power)| ConsensusValidator { address, voting_power })
+            .collect();
+        deduped.sort_by(|a, b| a.address.cmp(&b.address));
+
+        let total_voting_power: u64 = deduped.iter().map(|v| v.voting_power).sum();
         Self {
-            validators,
+            validators: deduped,
             total_voting_power,
         }
     }

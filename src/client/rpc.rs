@@ -44,9 +44,15 @@ pub struct AccountInfo {
 
 impl DePeftClient {
     pub fn new(base_url: impl Into<String>) -> Self {
+        let http = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
-            http: Client::new(),
+            http,
         }
     }
 
