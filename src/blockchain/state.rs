@@ -161,8 +161,13 @@ impl AppChainState {
                 ensure!(bounty_pool > 0, "Bounty pool must be greater than 0 tokens");
                 ensure!(epoch_blocks >= 5, "Epoch duration must be at least 5 blocks");
                 ensure!(max_rank > 0 && max_rank <= 256, "Max rank must be between 1 and 256");
-                ensure!(!base_model_id.is_empty(), "Base model ID cannot be empty");
-                ensure!(!dataset_cid.is_empty(), "Dataset CID cannot be empty");
+                ensure!(!base_model_id.is_empty() && base_model_id.len() <= 128, "Base model ID must be 1-128 bytes");
+                ensure!(!dataset_cid.is_empty() && dataset_cid.len() <= 128, "Dataset CID must be 1-128 bytes");
+                ensure!(!target_modules.is_empty() && target_modules.len() <= 32, "Target modules must contain 1-32 items");
+                ensure!(
+                    target_modules.iter().all(|m| !m.is_empty() && m.len() <= 64),
+                    "Each target module name must be 1-64 bytes"
+                );
 
                 let client_bal = self.balance_of(&client);
                 ensure!(
