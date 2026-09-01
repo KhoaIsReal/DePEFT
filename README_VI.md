@@ -1,5 +1,5 @@
-# 🌐 DePEFT: Decentralized Parameter-Efficient Fine-Tuning
-### ReLoRA Multi-Round Tournament Protocol on an Application-Specific Blockchain
+# 🌐 DePEFT: Nền tảng Fine-Tune AI Phi Tập Trung
+### Giao thức Huấn luyện Mô hình AI Đa vòng (ReLoRA) trên Blockchain Chuyên Dụng
 
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
 [![Tests](https://img.shields.io/badge/tests-16%20passed-brightgreen.svg)]()
@@ -9,64 +9,65 @@
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](./LICENSE)
 
-Bản cài đặt hoàn chỉnh viết bằng Rust cho đặc tả thiết kế **DePEFT Architecture Design** phục vụ decentralized AI fine-tuning sử dụng Hugging Face Candle QLoRA, Hardware TEE Remote Attestation, IPFS decentralized storage và CometBFT 2-phase commit consensus.
+DePEFT là dự án mã nguồn mở viết bằng Rust, cho phép nhiều người cùng tham gia huấn luyện và tinh chỉnh (fine-tune) các mô hình ngôn ngữ lớn (LLM) một cách minh bạch, an toàn và phi tập trung. Hệ thống sử dụng Hugging Face Candle QLoRA, môi trường bảo mật phần cứng TEE, mạng lưu trữ IPFS và cơ chế đồng thuận CometBFT.
 
 ---
 
-## 📚 Mục lục Tài liệu
+## 📚 Danh mục Tài liệu
 
-- **[ARCHITECTURE_VI.md](./ARCHITECTURE_VI.md)** (Bản tiếng Anh: [ARCHITECTURE.md](./ARCHITECTURE.md)): Đặc tả chi tiết 4 layers, ReLoRA weight fusion, Borda count aggregation và CometBFT 2-phase commit.
-- **[AGENTS.md](./AGENTS.md)**: Autonomous agent guide, node operator manual, REST/JSON-RPC API schema và execution loops của Miner / Validator.
-- **[CONTRIBUTING_VI.md](./CONTRIBUTING_VI.md)** (Bản tiếng Anh: [CONTRIBUTING.md](./CONTRIBUTING.md)): Contribution guidelines, toolchain setup, architectural invariants, code standards và PR workflows.
-- **[SECURITY_VI.md](./SECURITY_VI.md)** (Bản tiếng Anh: [SECURITY.md](./SECURITY.md)): Threat modeling, anti-fraud guarantees, TEE attestation verification và vulnerability disclosure policy.
+- **[README.md](./README.md)**: Tài liệu tiếng Anh chính của dự án.
+- **[ARCHITECTURE_VI.md](./ARCHITECTURE_VI.md)**: Giải thích chi tiết 4 tầng kiến trúc hệ thống, cách ghép trọng số ReLoRA và cơ chế đồng thuận.
+- **[AGENTS.md](./AGENTS.md)**: Sổ tay hướng dẫn cho bot tự hành, thợ đào (miner), người kiểm định (validator) và cách kết nối qua API.
+- **[CONTRIBUTING_VI.md](./CONTRIBUTING_VI.md)**: Hướng dẫn cài đặt môi trường, quy tắc viết code và cách gửi đóng góp (Pull Request).
+- **[SECURITY_VI.md](./SECURITY_VI.md)**: Chính sách bảo mật, các nguy cơ tấn công và cách báo cáo lỗi bảo mật.
 
 ---
 
-## 🏛️ Tổng quan Kiến trúc (4 Core Layers)
+## 🏛️ Tổng quan Kiến trúc (4 Tầng Cốt lõi)
 
 ```
                        ┌─────────────────────────────────────────────────────────┐
-                       │          Client (Tạo Task & Escrow Bounty)              │
+                       │           Người dùng (Tạo Task & Nạp Tiền thưởng)       │
                        └────────────────────────────┬────────────────────────────┘
                                                     │
                                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 1. Consensus & State Layer (App-Chain State Machine & CometBFT)                                         │
-│    • Máy trạng thái tất định (Escrow, Balances, Sổ đăng ký TaskSpec, Faucet API)                          │
-│    • Tendermint/CometBFT 2-Phase Commit Consensus (Propose -> Prevote -> Precommit -> Commit)          │
-│    • Relative Consensus Engine (Borda Count Rank Aggregation & Kháng floating-point drift)              │
-│    • On-Chain Hardware TEE Attestation Verifier (Kiểm tra Whitelist MRENCLAVE / MRSIGNER)               │
+│ Tầng 1: Blockchain & Cơ chế Đồng thuận (App-Chain & CometBFT)                                           │
+│    • Quản lý số dư ví, tiền thưởng ký quỹ, danh sách task và Faucet nhận token thử nghiệm               │
+│    • Thuật toán đồng thuận CometBFT 2-Phase Commit (Đề xuất -> Bỏ phiếu -> Xác nhận -> Lưu trữ)         │
+│    • Xếp hạng thợ đào theo Borda Count để tránh sai lệch điểm giữa các dòng card màn hình               │
+│    • Kiểm tra chứng thực an toàn từ phần cứng TEE ngay trên chuỗi                                       │
 └──────────────────────┬────────────────────────────────────────────────────▲─────────────────────────────┘
-                       │ TaskSpec ($W_N$, CID)                               │ Consensus Ranking & Payout
+                       │ Gửi thông tin Task và mô hình                       │ Trả thưởng cho thợ đào thắng
                        ▼                                                    │
 ┌─────────────────────────────────────────────────┐   ┌─────────────────────────────────────────────────┐
-│ 2. Miner Network Layer (Heterogeneous Compute)  │   │ 3. Validator Layer (Off-Chain Workers & TEE)    │
-│    • Hugging Face Candle Autograd PEFT Engine   │   │    • Isolated Hardware TEE Enclave (SGX / SEV)   │
-│    • QLoRA Matrix Updates ($\Delta W = B \times A$)│   │    • Floating-point Drift Tolerance (BF16/FP16) │
-│    • SafeTensors Binary Packaging               │   │    • Hardware Attestation Quote Generation      │
-│    • SHA-256 Commit-Reveal Hashing & Salt       │   │    • Vector DB Plagiarism & Collision Indexing  │
+│ Tầng 2: Mạng lưới Thợ đào (Miner)               │   │ Tầng 3: Kiểm định & Đánh giá (Validator & TEE)   │
+│    • Huấn luyện LoRA bằng Hugging Face Candle   │   │    • Đánh giá mô hình trong vùng an toàn TEE    │
+│    • Chỉ cập nhật trọng số nhỏ mà không đổi gốc │   │    • Chống gian lận bằng dữ liệu kiểm thử kín   │
+│    • Xuất file SafeTensors                      │   │    • Tạo chữ ký phần cứng chứng thực kết quả    │
+│    • Mã băm Commit-Reveal chống đạo bài         │   │    • Dùng Vector DB để phát hiện sao chép bài   │
 └──────────────────────┬──────────────────────────┘   └─────────────────────▲───────────────────────────┘
                        │                                                    │
-                       │ Publish $\Delta W$ .safetensors                     │ Pull & Verify $\Delta W$
+                       │ Tải file trọng số lên                              │ Lấy file về để chấm điểm
                        ▼                                                    │
 ┌───────────────────────────────────────────────────────────────────────────┴─────────────────────────────┐
-│ 4. Storage & Database Layer                                                                             │
-│    • Live IPFS Kubo RPC Integration (/api/v0/add, /api/v0/cat, /api/v0/pin)                             │
-│    • HybridStorageManager (Local Disk CAS Cache ~/.depeft/storage + IPFS Swarm toàn cầu)                │
-│    • SafeTensors Standard Serialization / Deserialization                                               │
-│    • Embedded Lightweight Vector Database (Adapter Signature Indexing & Cosine Similarity)              │
+│ Tầng 4: Hệ thống Lưu trữ Dữ liệu                                                                        │
+│    • Tích hợp trực tiếp với mạng lưu trữ phi tập trung IPFS Kubo                                        │
+│    • Kết hợp lưu nhanh trên ổ cứng máy tính và đồng bộ lên IPFS                                         │
+│    • Hỗ trợ đọc ghi định dạng chuẩn SafeTensors                                                         │
+│    • Cơ sở dữ liệu Vector gọn nhẹ giúp so sánh độ giống nhau giữa các mô hình                           │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🖥️ Web Explorer & Real-Time Dashboard
+## 🖥️ Giao diện Web Explorer Trực quan
 
-DePEFT đi kèm built-in single-file Web Explorer được phục vụ trực tiếp bởi bất kỳ node nào tại `http://127.0.0.1:8545/`:
-- **Real-Time Metrics**: Current Block Height, Active PEFT Tournaments, CAS Storage Artifacts và Connected P2P Peers.
-- **Task Browser**: Kiểm tra các Base Model đã đăng ký (`Qwen2.5-7B`, `LLaMA-3`), LoRA configurations và escrowed bounty balances.
-- **🚰 On-Chain Testnet Faucet**: Nhận ngay 10.000 testnet tokens $DEPEFT để tạo task hoặc giả lập mạng.
-- **Interactive JSON Console**: Truy vấn REST/JSON-RPC node state trực tiếp trên browser.
+DePEFT tích hợp sẵn một trang Web Explorer gọn nhẹ, bạn có thể mở trực tiếp từ trình duyệt tại `http://127.0.0.1:8545/`:
+- **Theo dõi thời gian thực**: Chiều cao khối, các giải đấu AI đang chạy, các file lưu trữ và số lượng máy đang kết nối.
+- **Xem danh sách Task**: Xem mô hình gốc (`Qwen2.5-7B`, `LLaMA-3`), thông số LoRA và số tiền thưởng.
+- **🚰 Faucet nhận Token miễn phí**: Bấm nhận ngay 10.000 token $DEPEFT thử nghiệm để tạo task hoặc thử nghiệm mạng.
+- **Bảng điều khiển JSON**: Gửi lệnh trực tiếp đến node mà không cần cài đặt phần mềm phụ trợ.
 
 ---
 
@@ -74,118 +75,91 @@ DePEFT đi kèm built-in single-file Web Explorer được phục vụ trực ti
 
 ```
 DePEFT/
-├── contracts/                       # Layer 1: EVM & App-Chain Smart Contracts
-│   ├── DePeftToken.sol              # Standard ERC-20 Network Token ($DEPEFT)
-│   ├── DePeftEscrow.sol             # Task Bounty Escrow & Automated Winner Settlement
-│   └── scripts/deploy.js            # Hardhat / Node Deployment Script
-├── sdk/                             # Developer SDKs & AI Tooling
-│   └── python/                      # Python Client Library (depeft) cho PyTorch & HF Candle
-│       ├── depeft/
-│       │   ├── client.py            # DePeftClient (Task management, Storage, Faucet, RPC)
-│       │   ├── crypto.py            # Tạo khóa Ed25519 và ký transaction
-│       │   └── __init__.py
-│       └── setup.py
-├── scripts/                         # Automation & Network Orchestration
-│   └── start_local_testnet.sh       # 1-Click Multi-Node Local P2P Testnet Launcher
-├── src/                             # Core Rust App-Chain Protocol
-│   ├── lib.rs                       # Crate root export tất cả layers
-│   ├── main.rs                      # CLI, Node Daemon & Tournament Simulator
-│   ├── consensus/                   # CometBFT 2-Phase Commit Engine
-│   ├── tee/                         # Hardware TEE Remote Attestation Engine
-│   ├── candle_peft/                 # Deep Learning LLM Engine với Candle
-│   ├── p2p/                         # P2P Overlay Network & Gossip Protocol
-│   ├── crypto/                      # Ed25519 Cryptography & Signed Transactions
-│   ├── node/                        # Live App-Chain HTTP REST/JSON-RPC Node & Web Dashboard
-│   │   ├── dashboard.rs             # Embedded HTML/CSS/JS Web Explorer
-│   │   └── server.rs                # Axum REST & Faucet API
-│   ├── client/                      # Rust RPC Client
-│   ├── blockchain/                  # App-Chain State Machine & Relative Consensus
-│   ├── miner/                       # Miner Network Layer & Autograd Worker
-│   ├── validator/                   # Validator Layer & TEE Evaluation Worker
-│   ├── storage/                     # Storage Layer (Hybrid CAS, IPFS, Vector DB)
-│   ├── ml/                          # Mathematical PEFT Primitives (NF4, INT4)
-│   └── tournament/                  # ReLoRA Multi-Round Tournament Engine
-├── tests/
-│   └── integration_tests.rs         # 16 Comprehensive Integration & Protocol Tests
-└── .github/workflows/ci.yml         # Automated GitHub Actions CI Testing & Build Pipeline
+├── contracts/                       # Smart Contract (Token $DEPEFT và Hợp đồng giữ tiền thưởng)
+├── sdk/                             # Thư viện cho lập trình viên
+│   └── python/                      # Thư viện Python (depeft) dùng cho PyTorch và HF Candle
+├── scripts/                         # Các đoạn script chạy nhanh hệ thống
+│   └── start_local_testnet.sh       # Lệnh 1-click chạy mạng thử nghiệm trên máy
+├── src/                             # Mã nguồn chính viết bằng Rust
+│   ├── consensus/                   # Thuật toán đồng thuận CometBFT
+│   ├── tee/                         # Cơ chế chứng thực an toàn phần cứng TEE
+│   ├── candle_peft/                 # Động cơ học sâu AI dùng Candle
+│   ├── p2p/                         # Mạng giao tiếp giữa các máy tính (P2P)
+│   ├── node/                        # Máy chủ Web và API cho Node
+│   ├── blockchain/                  # Quản lý số dư, giao dịch và xếp hạng
+│   ├── miner/                       # Logic dành cho thợ đào huấn luyện AI
+│   ├── validator/                   # Logic dành cho người chấm điểm và đánh giá
+│   └── storage/                     # Bộ phận lưu trữ file và kết nối IPFS
+└── tests/                           # Toàn bộ 16 bài kiểm tra tự động
 ```
 
 ---
 
-## 🚀 Quickstart & Vận hành Mạng
+## 🚀 Hướng dẫn Bắt đầu Nhanh
 
-### 1. Khởi chạy Multi-Node Local Testnet (1-Click)
-Triển khai 2-node P2P testnet swarm với bootstrap consensus và live web dashboard:
+### 1. Khởi chạy mạng thử nghiệm trên máy (1 dòng lệnh)
+Khởi động ngay 2 node mạng P2P kết nối với nhau và mở giao diện web:
 ```bash
 ./scripts/start_local_testnet.sh
 ```
-Mở **http://127.0.0.1:8545** trên trình duyệt để truy cập Web Explorer.
+Sau đó mở trình duyệt tại địa chỉ: **http://127.0.0.1:8545**.
 
 ---
 
-### 2. Sử dụng Python SDK (`depeft`)
-Tương tác với live network từ Python scripts hoặc Jupyter Notebooks:
+### 2. Sử dụng thư viện Python (`depeft`)
+Giao tiếp với hệ thống trực tiếp từ Python:
 ```python
 from depeft import DePeftClient, generate_keypair
 
 client = DePeftClient("http://127.0.0.1:8545")
 
-# 1. Yêu cầu testnet tokens từ faucet
+# 1. Tạo ví và xin token thử nghiệm từ Faucet
 account = generate_keypair()
 print(client.request_faucet(account["account_id"], amount=10000))
 
-# 2. Check balance & chain status
-print("Status:", client.get_status())
-print("Balance:", client.get_balance(account["account_id"]))
+# 2. Kiểm tra số dư và trạng thái mạng
+print("Trạng thái:", client.get_status())
+print("Số dư ví:", client.get_balance(account["account_id"]))
 ```
 
 ---
 
-### 3. Chạy Candle LLM Transformer ReLoRA Tournament Thực tế
-Fine-tune LoRA adapters trên Decoder Transformer language model với autograd, HuggingFace `.safetensors` export, TEE evaluation và ReLoRA weight fusion:
+### 3. Chạy thử nghiệm Huấn luyện AI thực tế
+Thử nghiệm toàn bộ quy trình: thợ đào huấn luyện mô hình Transformer, xuất file SafeTensors, chuyển vào vùng an toàn TEE để chấm điểm và ghép trọng số tốt nhất:
 ```bash
 cargo run -- llm-demo --rounds 3 --steps 10
 ```
 
 ---
 
-### 4. Chạy Byzantine Fault Tolerant (BFT) State Finality & Consensus
-Thực thi Tendermint/CometBFT 2-phase commit với $> 2/3$ validator quorum và equivocation slashing:
+### 4. Kiểm tra Cơ chế Đồng thuận BFT
+Chạy mô phỏng 4 node tham gia bỏ phiếu và chốt khối:
 ```bash
 cargo run -- bft-demo --validators 4 --blocks 3
 ```
 
 ---
 
-### 5. Deploy EVM Smart Contracts ($DEPEFT & Escrow)
-Deploy smart contracts lên Sepolia hoặc Base Sepolia testnet sử dụng Hardhat:
+### 5. Triển khai Smart Contract
+Triển khai hợp đồng lên mạng Sepolia hoặc Base Sepolia:
 ```bash
 cd contracts
 npm install
-cp .env.example .env # Configure PRIVATE_KEY
+cp .env.example .env # Điền khóa bí mật PRIVATE_KEY vào đây
 npm run deploy:sepolia
-# hoặc deploy lên Base Sepolia
-npm run deploy:base-sepolia
 ```
 
 ---
 
-### 6. Deploy Public App-Chain Testnet lên VPS / Cloud (1-Click)
-Deploy live public testnet node kèm IPFS Kubo storage trên bất kỳ VPS instance nào:
-```bash
-./scripts/deploy_vps_testnet.sh
-```
+## 🧪 Chạy Kiểm thử Toàn bộ Hệ thống
 
----
-
-## 🧪 Comprehensive Test Suite
-
-Chạy toàn bộ integration test suite bao gồm cryptographic, ML, TEE, IPFS, BFT và P2P layers:
+Chạy toàn bộ 16 bài test kiểm tra tự động:
 
 ```bash
 cargo test
 ```
 
+Kết quả:
 ```text
 running 16 tests
 test test_embedded_vector_db_similarity_and_plagiarism ... ok
@@ -210,10 +184,8 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ---
 
-## 📄 Licensing & Open Source Permissions
+## 📄 Bản quyền Mã Nguồn
 
-DePEFT sử dụng kiến trúc modular multi-license:
-
-- **Core Node & Consensus Engine (`src/`, `Cargo.toml`)**: Được cấp phép theo **[GNU General Public License v3.0 (GPL-3.0)](./LICENSE)**. Mọi bản fork hoặc phân phối network của core node bắt buộc phải open-source.
-- **Python Client SDK (`sdk/python/`)**: Dual-licensed dưới **[Apache-2.0](./sdk/python/LICENSE-APACHE)** HOẶC **[MIT](./sdk/python/LICENSE-MIT)**, cho phép external AI developers và agents tích hợp DePEFT vào cả proprietary lẫn open workflows.
-- **Smart Contracts (`contracts/`)**: Dual-licensed dưới **[Apache-2.0](./contracts/LICENSE-APACHE)** HOẶC **[MIT](./contracts/LICENSE-MIT)** cho việc deploy EVM và DApp integration.
+- **Mã nguồn Node & Blockchain (`src/`, `Cargo.toml`)**: Giấy phép **[GPL-3.0](./LICENSE)**. Các phiên bản phân phối lại bắt buộc phải giữ mã nguồn mở.
+- **Thư viện Python SDK (`sdk/python/`)**: Giấy phép kép **[Apache-2.0](./sdk/python/LICENSE-APACHE)** hoặc **[MIT](./sdk/python/LICENSE-MIT)**, thoải mái tích hợp vào các ứng dụng cá nhân hoặc thương mại.
+- **Smart Contract (`contracts/`)**: Giấy phép kép **[Apache-2.0](./contracts/LICENSE-APACHE)** hoặc **[MIT](./contracts/LICENSE-MIT)**.

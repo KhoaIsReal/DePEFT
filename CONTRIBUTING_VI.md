@@ -1,106 +1,97 @@
-# 🤝 Contributing to DePEFT
+# 🤝 Hướng dẫn Đóng góp cho DePEFT
 
-Cảm ơn bạn đã quan tâm và muốn đóng góp cho **DePEFT** (Decentralized Parameter-Efficient Fine-Tuning)!
+Cảm ơn bạn đã quan tâm và muốn đóng góp cho dự án **DePEFT**!
 
-DePEFT là open-source decentralized AI app-chain mang đến giải pháp scalable, verifiable LoRA/QLoRA multi-round tournament fine-tuning cho decentralized networks với TEE hardware attestation, Hugging Face Candle autograd, IPFS storage và CometBFT consensus.
-
----
-
-## 🧭 Nguyên tắc Kiến trúc & Invariants Bắt buộc
-
-Khi đóng góp mã nguồn, bạn phải tuân thủ nghiêm ngặt các core architectural invariants sau:
-
-1. **Frozen Base Model Weights**: Base model weights $W_0 \in \mathbb{R}^{d_{out} \times d_{in}}$ phải được freeze hoàn toàn trong suốt quá trình miner local training. Chỉ low-rank matrices $A$ và $B$ mới nhận gradient updates.
-2. **TEE Sandbox Isolation**: Private test sets **tuyệt đối không** được truyền qua network hoặc ghi log dưới dạng plain text. Chúng phải được seal tuyệt đối bên trong TEE Sandbox Enclave.
-3. **Deterministic Relative Consensus**: Validator loss scores có thể bị micro-drift do heterogeneous hardware (CUDA, ROCm, AVX-512). App-Chain **không bao giờ** được average trực tiếp floating-point loss values; blockchain bắt buộc phải đánh giá relative ordinal rankings bằng Borda Count rank aggregation.
-4. **Anti-Collusion Commit-Reveal**: Miner bắt buộc phải submit `commit_hash = SHA256(adapter_hash || salt)` trong Commit Phase trước khi upload file adapter `.safetensors` trong Reveal Phase.
-5. **Cryptographic State Mutation**: Không transaction nào được phép thay đổi `AppChainState` nếu không có Ed25519 signature hợp lệ khớp với sender public key.
-6. **BFT Finality**: Blocks chỉ được commit vào ledger bất biến khi thu thập đủ $> 2/3$ supermajority `PRECOMMIT` cryptographic votes.
+DePEFT là dự án mã nguồn mở xây dựng blockchain chuyên dụng kết hợp huấn luyện mô hình AI phân tán, đảm bảo tính công bằng và bảo mật bằng phần cứng TEE, thư viện Hugging Face Candle và cơ chế đồng thuận CometBFT.
 
 ---
 
-## 🛠️ Development Setup & Toolchain
+## 🧭 Các Quy tắc Cốt lõi Cần Nhớ
 
-### Prerequisites
-- **Rust Toolchain**: 1.80+ (Stable)
-- **Cargo**: Đi kèm sẵn với Rust (`rustup default stable`)
-- **IPFS Kubo Daemon** (Tùy chọn cho live IPFS tests, mặc định sử dụng internal disk CAS)
+Khi viết mã nguồn đóng góp, bạn cần tuân thủ các nguyên tắc sau:
 
-### Clone & Build
+1. **Giữ nguyên mô hình gốc**: Trọng số mô hình ban đầu $W_0$ phải được giữ nguyên hoàn toàn khi thợ đào huấn luyện. Chỉ cập nhật hai ma trận nhỏ $A$ và $B$.
+2. **Bảo mật dữ liệu kiểm thử**: Bộ dữ liệu dùng để chấm điểm mô hình **tuyệt đối không** được gửi ra ngoài mạng hoặc in ra màn hình. Dữ liệu này chỉ được mở bên trong vùng bảo mật TEE.
+3. **Xếp hạng thay vì tính điểm trung bình**: Vì các loại card màn hình khác nhau có thể tạo ra sai số số thực siêu nhỏ, hệ thống bắt buộc phải dùng thứ hạng Borda Count để tính điểm cho thợ đào.
+4. **Quy trình nộp bài 2 bước (Commit-Reveal)**: Thợ đào phải nộp mã băm `commit_hash` trước để khóa bài, sau đó mới tải file `.safetensors` lên mạng để tránh bị người khác nhìn trộm bài.
+5. **Ký chữ ký điện tử cho mọi giao dịch**: Mọi thay đổi dữ liệu trên chuỗi đều phải có chữ ký Ed25519 hợp lệ từ ví người gửi.
+6. **Chốt khối khi đủ 2/3 phiếu bầu**: Khối mới chỉ được lưu khi có hơn 2/3 số validator xác nhận hợp lệ.
+
+---
+
+## 🛠️ Cài đặt Môi trường Làm việc
+
+### Yêu cầu
+- **Rust**: Phiên bản 1.80 trở lên (bản Stable)
+- **Cargo**: Tự động có sẵn khi cài Rust (`rustup default stable`)
+- **IPFS Kubo**: (Tùy chọn nếu muốn thử kết nối mạng IPFS thật, mặc định hệ thống tự lưu trên ổ cứng)
+
+### Tải mã nguồn và Biên dịch
 ```bash
 git clone https://github.com/khoadepeft/DePEFT.git
 cd DePEFT
 
-# Build all modules and binaries
+# Biên dịch toàn bộ dự án
 cargo build
 
-# Run test suite
+# Chạy thử toàn bộ các bài kiểm tra
 cargo test
 ```
 
 ---
 
-## 🧪 Testing Guidelines
+## 🧪 Quy định về Viết và Chạy Kiểm thử (Test)
 
-Tất cả tính năng mới, bug fixes và protocol improvements đều phải có unit tests và integration tests tương ứng.
+Mọi tính năng mới hoặc bản sửa lỗi đều cần có bài kiểm tra (test) đi kèm để bảo đảm hệ thống luôn hoạt động ổn định.
 
-### Running Tests
+### Cách chạy Test
 ```bash
-# Run all tests
+# Chạy tất cả các bài test
 cargo test
 
-# Run tests with backtrace
+# Chạy test và hiện chi tiết nếu có lỗi
 RUST_BACKTRACE=1 cargo test
 
-# Run a specific test
+# Chạy riêng một bài test cụ thể
 cargo test test_candle_llm_transformer_relora_tournament -- --nocapture
 ```
 
-### Key Integration Test Targets:
-- [`tests/integration_tests.rs`](file:///home/khoa/DePEFT/tests/integration_tests.rs):
-  - `test_candle_lora_linear_forward_and_merge`: Kiểm tra LoRA math và SafeTensors fusion.
-  - `test_candle_llm_transformer_relora_tournament`: Full 3-round Candle LLM Transformer training loop.
-  - `test_hardware_tee_remote_attestation_and_on_chain_verification`: Hardware quote verification & anti-fraud guards.
-  - `test_hybrid_storage_and_ipfs_cas_caching`: Đồng bộ local disk CAS + live IPFS Kubo.
-  - `test_bft_consensus_2_phase_commit_and_equivocation_slashing`: 2-phase BFT commit và slashing validator double-voting.
-  - `test_p2p_swarm_bidirectional_gossip_and_deduplication`: Length-delimited TCP framing & gossip flooding.
-
 ---
 
-## 📐 Rust Style & Code Standards
+## 📐 Phong cách và Tiêu chuẩn Viết Code
 
-1. **Formatting**: Đảm bảo code được format chuẩn bằng `rustfmt`:
+1. **Định dạng code tự động**: Chạy lệnh kiểm tra định dạng chuẩn của Rust:
    ```bash
    cargo fmt --check
    ```
-2. **Clippy (Zero Warnings Enforcement)**: Chạy Clippy với warnings treated as errors và đảm bảo clean compilation:
+2. **Kiểm tra cảnh báo bằng Clippy**: Đảm bảo code sạch sẽ, không có bất kỳ cảnh báo nào:
    ```bash
    cargo clippy --all-targets --all-features -- -D warnings
    ```
-3. **Error Handling**: Sử dụng `anyhow::Result` cùng descriptive errors qua `ensure!` hoặc `bail!` trong domain logic. Tránh unhandled `.unwrap()` trong production code paths.
-4. **Documentation**: Thêm Rustdoc comments (`///`) cho tất cả public structs, enums, traits và functions.
+3. **Xử lý lỗi rõ ràng**: Sử dụng `anyhow::Result` kèm thông báo dễ hiểu. Hạn chế tối đa việc dùng `.unwrap()` trực tiếp để tránh làm chương trình bị dừng đột ngột.
+4. **Viết chú thích (Comment)**: Thêm mô tả cho các hàm, struct và enum quan trọng.
 
 ---
 
-## 🚀 Pull Request Workflow
+## 🚀 Các bước Gửi Đóng góp (Pull Request)
 
-1. **Fork repository** và tạo feature branch từ `main`:
+1. **Fork dự án** về tài khoản GitHub của bạn và tạo một nhánh mới:
    ```bash
-   git checkout -b feature/my-new-peft-optimizer
+   git checkout -b feature/tinh-nang-moi
    ```
-2. **Thực hiện thay đổi** tuân thủ theo code standards và architectural invariants.
-3. **Verify tests pass**:
+2. **Thực hiện chỉnh sửa** theo đúng quy chuẩn ở trên.
+3. **Chạy lại kiểm tra** để đảm bảo mọi thứ hoạt động bình thường:
    ```bash
    cargo test
    ```
-4. **Commit với conventional commits**:
-   - `feat(candle): add FlashAttention support to Transformer LM`
-   - `fix(p2p): handle socket reconnection on dropped TCP stream`
-   - `docs(agents): update REST API spec for task creation`
-5. **Mở Pull Request** mô tả chi tiết changes, motivation và test coverage.
+4. **Commit mã nguồn** với nội dung rõ ràng:
+   - `feat: thêm thuật toán tối ưu hóa mới`
+   - `fix: sửa lỗi mất kết nối mạng P2P`
+   - `docs: cập nhật tài liệu hướng dẫn`
+5. **Tạo Pull Request (PR)** trên GitHub mô tả chi tiết những gì bạn đã làm.
 
 ---
 
-## 🔒 Báo cáo Lỗ hổng Bảo mật
+## 🔒 Báo cáo Lỗi Bảo mật
 
-Vui lòng không public các lỗ hổng bảo mật lên GitHub Issues. Nếu bạn phát hiện vấn đề liên quan đến cryptographic signing, TEE remote attestation hoặc BFT consensus safety, vui lòng xem [SECURITY_VI.md](file:///home/khoa/DePEFT/SECURITY_VI.md) và liên hệ trực tiếp với core maintainers.
+Nếu bạn phát hiện lỗi liên quan đến bảo mật (như lỗi mã hóa, lỗ hổng TEE hoặc lỗi đồng thuận), vui lòng không đăng công khai lên mục Issues. Hãy xem tài liệu [SECURITY_VI.md](file:///home/khoa/DePEFT/SECURITY_VI.md) và liên hệ riêng với nhóm phát triển.

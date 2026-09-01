@@ -1,37 +1,37 @@
-# 🏛️ Đặc tả Kiến trúc & Giao thức DePEFT
+# 🏛️ Kiến trúc & Thiết kế Hệ thống DePEFT
 
-DePEFT là một app-chain và giao thức tính toán phi tập trung được thiết kế cho **Parameter-Efficient Fine-Tuning (PEFT)** đối với LLMs, kết hợp **tiến hóa trọng số đa vòng ReLoRA**, **Hardware TEE Remote Attestation**, **đồng thuận tương đối qua Borda Count**, **mạng P2P Gossip**, và **BFT State Finality**.
+DePEFT là nền tảng blockchain chuyên dụng (app-chain) và mạng tính toán phi tập trung phục vụ fine-tune các mô hình ngôn ngữ lớn (LLM) bằng phương pháp PEFT (Parameter-Efficient Fine-Tuning). Hệ thống kết hợp huấn luyện đa vòng ReLoRA, xác thực phần cứng TEE, cơ chế đồng thuận Borda Count, mạng P2P và bảo đảm tính toàn vẹn trạng thái bằng CometBFT.
 
 ---
 
-## 🏗️ Thiết kế Kiến trúc 4 Tầng Cốt lõi
+## 🏗️ Thiết kế 4 Tầng Cốt lõi
 
 ```mermaid
 graph TD
-    subgraph Layer1["Layer 1: Máy trạng thái App-Chain, Đồng thuận & Escrow"]
-        ChainState["AppChainState (Balances, Escrows, TaskSpecs, Faucet)"]
+    subgraph Layer1["Tầng 1: Blockchain, Đồng thuận & Ký quỹ"]
+        ChainState["AppChainState (Số dư, Tiền ký quỹ, Danh sách Task, Faucet)"]
         BftEngine["Động cơ Đồng thuận CometBFT (2-Phase Commit)"]
-        BordaEngine["Động cơ Đồng thuận Tương đối (Borda Count)"]
-        TeeVerifier["Bộ xác thực TEE Remote Attestation On-Chain"]
-        SmartContracts["Hợp đồng thông minh EVM (DePeftToken.sol & DePeftEscrow.sol)"]
+        BordaEngine["Động cơ Xếp hạng Borda Count"]
+        TeeVerifier["Bộ kiểm tra chứng thực TEE trên chuỗi"]
+        SmartContracts["Smart Contract EVM (DePeftToken.sol & DePeftEscrow.sol)"]
     end
 
-    subgraph Layer2["Layer 2: Miner Compute Network"]
-        CandleEngine["Động cơ Hugging Face Candle PEFT"]
-        LoraAutograd["CandleLoraLinear (Autograd SGD/Adam)"]
-        SafeTensorsExport["Xuất SafeTensors & Băm Commit-Reveal"]
+    subgraph Layer2["Tầng 2: Mạng lưới Thợ đào"]
+        CandleEngine["Động cơ PEFT dùng Hugging Face Candle"]
+        LoraAutograd["Tự động tính đạo hàm LoRA (SGD/Adam)"]
+        SafeTensorsExport["Xuất file SafeTensors & Mã băm Commit-Reveal"]
     end
 
-    subgraph Layer3["Layer 3: Validator Off-Chain Workers & TEE"]
-        TeeEnclave["Hardware TEE Sandbox (Intel SGX / AMD SEV)"]
-        Evaluator["CandleValidatorEvaluator (Cross-Entropy & PPL)"]
-        VectorDB["Embedded Vector DB (Plagiarism Detection)"]
+    subgraph Layer3["Tầng 3: Bộ phận Đánh giá & TEE"]
+        TeeEnclave["Môi trường bảo mật TEE phần cứng (Intel SGX / AMD SEV)"]
+        Evaluator["Đo lường điểm loss và perplexity"]
+        VectorDB["Cơ sở dữ liệu Vector chống đạo văn"]
     end
 
-    subgraph Layer4["Layer 4: Storage & Database Layer"]
-        HybridStorage["HybridStorageManager"]
-        IpfsKubo["IPFS Kubo RPC Client (/api/v0/)"]
-        DiskCas["Local Disk CAS (~/.depeft/storage)"]
+    subgraph Layer4["Tầng 4: Lưu trữ & Dữ liệu"]
+        HybridStorage["Bộ quản lý lưu trữ lai"]
+        IpfsKubo["Kết nối IPFS Kubo"]
+        DiskCas["Bộ nhớ đệm trên ổ cứng (~/.depeft/storage)"]
     end
 
     Layer1 <--> Layer2
@@ -42,96 +42,96 @@ graph TD
 
 ---
 
-## 1️⃣ Layer 1: App-Chain State Machine & Consensus
+## 1. Tầng 1: Trạng thái Chuỗi & Cơ chế Đồng thuận
 
-### 1.1 CometBFT 2-Phase Commit Consensus
-Blockchain đạt được instant finality và zero forks nhờ máy trạng thái 2-Phase Commit theo cơ chế Tendermint/CometBFT:
+### 1.1 Cơ chế Đồng thuận CometBFT 2-Phase Commit
+Blockchain bảo đảm giao dịch được chốt ngay lập tức (instant finality) và không bị phân nhánh bằng thuật toán 2-Phase Commit:
 
 $$\text{Quorum Threshold} = \left\lfloor \frac{2 \times P_{\text{total}}}{3} \right\rfloor + 1$$
 
-- **Propose**: Validator đề xuất theo weighted round-robin tạo block ứng viên chứa các transaction đã ký và state root commitment.
-- **Prevote**: Các validator kiểm tra tính hợp lệ của block và broadcast chữ ký `VoteType::Prevote`. Khi đạt $> 2/3$ phiếu, **Proof-of-Lock (POL)** được xác lập.
-- **Precommit**: Các validator broadcast chữ ký `VoteType::Precommit`. Khi đạt $> 2/3$ phiếu, block được finalize.
-- **Commit**: Block được ghi vào immutable blockchain, state transitions được áp dụng và block height tăng lên ($H \leftarrow H + 1$).
+- **Propose (Đề xuất)**: Validator được chọn sẽ tạo block mới gồm các giao dịch và mã băm trạng thái.
+- **Prevote (Bỏ phiếu trước)**: Các validator kiểm tra block và gửi chữ ký `Prevote`. Đạt $> 2/3$ phiếu sẽ tạo bằng chứng khóa block (Proof-of-Lock).
+- **Precommit (Xác nhận trước)**: Các validator gửi chữ ký `Precommit`. Khi đạt $> 2/3$ phiếu, block được duyệt hoàn tất.
+- **Commit (Ghi nhận)**: Block được lưu vĩnh viễn vào chuỗi và cập nhật chiều cao khối mới ($H \leftarrow H + 1$).
 
-### 1.2 Relative Consensus (Borda Count Rank Aggregation)
-Nhằm loại bỏ floating-point divergence do việc thực thi GPU kernel không tất định giữa các kiến trúc CUDA, ROCm và AVX-512, giao thức chuyển đổi loss thô thành ordinal ranking:
+### 1.2 Cơ chế Đồng thuận Thứ hạng (Borda Count)
+Do các loại card đồ họa (NVIDIA CUDA, AMD ROCm hay CPU) có sai số dấu phẩy động rất nhỏ khi tính điểm loss, mạng lưới dùng bảng xếp hạng thứ tự thay vì lấy trung bình điểm số:
 
 $$\text{Score}(M_i) = \sum_{v \in V} (N - \text{Rank}_v(M_i))$$
 
-Trong đó $N$ là số lượng miner ứng viên, và $\text{Rank}_v(M_i)$ là vị trí thứ hạng được gán bởi validator $v$.
+Trong đó $N$ là số lượng thợ đào tham gia, và $\text{Rank}_v(M_i)$ là thứ hạng do validator $v$ chấm.
 
-### 1.3 Smart Contracts & Escrow Settlement
-- **`DePeftToken.sol`**: Token ERC-20 chuẩn ($DEPEFT) phục vụ network utilities, bounty escrow và staking.
-- **`DePeftEscrow.sol`**: Quản lý bounty pool từ Client và tự động giải ngân phần thưởng từng vòng cho miner chiến thắng khi vòng đấu kết thúc.
+### 1.3 Smart Contract & Trả thưởng
+- **`DePeftToken.sol`**: Token chuẩn ERC-20 ($DEPEFT) dùng để thanh toán phí mạng, nạp tiền thưởng và tham gia staking.
+- **`DePeftEscrow.sol`**: Quản lý tiền thưởng từ người tạo task và tự động giải ngân cho thợ đào thắng cuộc sau mỗi vòng.
 
 ---
 
-## 2️⃣ Layer 2: Miner Compute Network & Candle PEFT Engine
+## 2. Tầng 2: Mạng lưới Thợ đào & Huấn luyện LoRA
 
-### 2.1 Công thức Low-Rank Adaptation (LoRA)
-Base model weights $W \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}}$ được đóng băng hoàn toàn. Tầng tính toán thực hiện:
+### 2.1 Cơ chế Huấn luyện LoRA
+Trọng số gốc của mô hình $W \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}}$ luôn được giữ cố định. Thợ đào chỉ huấn luyện 2 ma trận nhỏ $A$ và $B$:
 
 $$h = W x + \frac{\alpha}{r} (B A) x$$
 
 Trong đó:
-- $A \in \mathbb{R}^{r \times d_{\text{in}}}$: Down-projection matrix khởi tạo theo phân phối Gaussian $\mathcal{N}(0, \sigma^2)$.
-- $B \in \mathbb{R}^{d_{\text{out}} \times r}$: Up-projection matrix khởi tạo bằng 0.
-- $r \ll \min(d_{\text{in}}, d_{\text{out}})$: LoRA rank (thông thường $r \in \{8, 16, 32, 64\}$).
-- $\alpha$: Scaling factor hyperparameter.
+- $A \in \mathbb{R}^{r \times d_{\text{in}}}$: Ma trận thu nhỏ (down-projection) khởi tạo ngẫu nhiên theo phân phối chuẩn $\mathcal{N}(0, \sigma^2)$.
+- $B \in \mathbb{R}^{d_{\text{out}} \times r}$: Ma trận phóng to (up-projection) khởi tạo bằng 0.
+- $r \ll \min(d_{\text{in}}, d_{\text{out}})$: Thứ hạng rank của LoRA (thường là 8, 16, 32 hoặc 64).
+- $\alpha$: Hệ số phóng đại (scaling factor).
 
-### 2.2 ReLoRA Multi-Round Continuous Weight Fusion
-Khi kết thúc round $N$, winning adapter $\Delta W^* = \frac{\alpha}{r} (B^* A^*)$ được merge vĩnh viễn vào base checkpoint:
+### 2.2 Ghép Trọng số Tiến hóa Đa vòng (ReLoRA)
+Sau khi kết thúc mỗi vòng $N$, trọng số từ adapter tốt nhất $\Delta W^* = \frac{\alpha}{r} (B^* A^*)$ sẽ được cộng thẳng vào mô hình gốc:
 
 $$W_{N+1} = W_N + \frac{\alpha}{r} (B^* A^*)$$
 
-Sau đó, các adapter matrices được tái khởi tạo ($A \leftarrow \mathcal{N}(0, \sigma^2)$, $B \leftarrow 0$), cho phép mô hình tiếp tục tiến hóa không giới hạn qua nhiều round mà không làm tăng parameter footprint.
+Sau đó, hai ma trận $A$ và $B$ được tạo mới để tiếp tục vòng huấn luyện tiếp theo, giúp mô hình ngày càng thông minh hơn mà kích thước không bị phình to.
 
 ---
 
-## 3️⃣ Layer 3: Validator Off-Chain Workers & TEE Remote Attestation
+## 3. Tầng 3: Đánh giá Mô hình & Bảo mật TEE
 
-### 3.1 Hardware TEE Security Model (Intel SGX / AMD SEV-SNP)
-Các Validator đánh giá các candidate models bên trong isolated hardware enclaves dựa trên private validation dataset. Để đảm bảo tính toàn vẹn của kết quả đánh giá, enclave tạo ra **Remote Attestation Quote**:
+### 3.1 Môi trường Bảo mật Phần cứng TEE (Intel SGX / AMD SEV)
+Validator chạy việc kiểm tra mô hình bên trong một vùng an toàn của chip phần cứng (TEE Enclave) cùng tập dữ liệu bí mật. Sau khi chấm điểm, chip sẽ tạo một chứng chỉ mật mã gọi là Remote Attestation Quote:
 
 $$\text{report\_data} = \text{SHA512}\left(\text{task\_id} \mathbin{\Vert} \text{round} \mathbin{\Vert} \text{SHA256}(\text{ranking})\right)$$
 
-On-chain verifier của App-Chain bắt buộc kiểm tra:
-1. `MRENCLAVE` khớp với measurement đã được phê duyệt trong on-chain governance whitelist.
-2. `report_data` ràng buộc khớp chính xác với task_id, round và ranking đã nộp.
-3. Chữ ký của hardware Quoting Enclave (QE) hợp lệ với root key của nhà sản xuất.
+Hệ thống trên chuỗi sẽ kiểm tra:
+1. Giá trị `MRENCLAVE` có nằm trong danh sách phần mềm an toàn đã duyệt hay không.
+2. Mã `report_data` có khớp đúng với task, vòng đấu và bảng xếp hạng đã nộp hay không.
+3. Chữ ký phần cứng của chip có hợp lệ hay không.
 
-### 3.2 Anti-Collusion Commit-Reveal Protocol
-- **Commit Phase**: Miner gửi $\text{commit\_hash} = \text{SHA256}(\text{adapter\_hash} \mathbin{\Vert} \text{salt})$.
-- **Reveal Phase**: Miner upload file `.safetensors` lên IPFS và công bố salt.
-- App-Chain từ chối mọi reveal nếu $\text{SHA256}(\text{SHA256}(\text{safetensors}) \mathbin{\Vert} \text{salt}) \neq \text{commit\_hash}$.
+### 3.2 Cơ chế Chống Gian lận Commit-Reveal
+- **Bước Commit**: Thợ đào nộp mã băm $\text{commit\_hash} = \text{SHA256}(\text{adapter\_hash} \mathbin{\Vert} \text{salt})$ để giữ chỗ mà không lộ bài.
+- **Bước Reveal**: Thợ đào tải file `.safetensors` lên IPFS và công bố chuỗi bí mật (salt).
+- Hệ thống sẽ từ chối nếu file tải lên không tạo ra đúng mã băm đã commit trước đó.
 
 ---
 
-## 4️⃣ Layer 4: Decentralized Storage & Hybrid CAS
+## 4. Tầng 4: Hệ thống Lưu trữ & Cơ sở Dữ liệu
 
-### 4.1 Content-Addressable Storage (CAS)
-- **Local Disk Cache**: High-speed, persistent disk storage tại `~/.depeft/storage/`, tính toán SHA-256 multihash CID (`bafy...` / `Qm...`).
-- **Tích hợp IPFS Kubo RPC (`/api/v0/`)**: Tích hợp trực tiếp với IPFS nodes qua `/api/v0/add`, `/api/v0/cat` và `/api/v0/pin`.
-- **Embedded Vector Database**: Lập chỉ mục cosine similarity theo thời gian thực đối với adapter weight signatures nhằm phát hiện plagiarism hoặc duplicates ngay lập tức:
+### 4.1 Lưu trữ Phân tán Định danh (CAS)
+- **Bộ nhớ đệm Ổ cứng**: Lưu các file mô hình ở thư mục `~/.depeft/storage/` với mã nhận dạng CID SHA-256.
+- **Kết nối IPFS Kubo**: Tải và lưu trữ dữ liệu với mạng IPFS thông qua các lệnh chuẩn.
+- **Cơ sở Dữ liệu Vector Nhúng**: Tự động so khớp độ tương đồng của trọng số để phát hiện sao chép, gian lận:
 
 $$\text{Similarity}(u, v) = \frac{u \cdot v}{\|u\|_2 \|v\|_2}$$
 
 ---
 
-## 🌐 P2P Overlay Swarm Architecture
+## 🌐 Mạng Giao tiếp Ngang hàng (P2P Swarm)
 
-Tầng mạng P2P hoạt động trực tiếp trên raw async TCP sockets sử dụng **Length-Delimited framing codec**:
+Mạng P2P truyền nhận dữ liệu trực tiếp qua cổng TCP sử dụng định dạng gói tin có độ dài cố định:
 
 ```text
 +-------------------------+-----------------------------------------+
-| Payload Length (4B BE)  |  Encrypted / Serialized JSON Payload    |
+| Chiều dài gói tin (4B)  |           Nội dung dữ liệu JSON         |
 +-------------------------+-----------------------------------------+
 ```
 
-### Gossip Flooding & LRU Deduplication
-Tất cả transaction, block proposal và IPFS CID được lan truyền khắp overlay swarm. Mỗi node duy trì thread-safe LRU cache lưu trữ recent message hashes:
+### Lan truyền và Chống Gửi trùng Tin nhắn
+Mọi giao dịch và khối mới được lan truyền tự động giữa các máy trong mạng. Mỗi node có bộ nhớ đệm để nhớ các tin nhắn vừa nhận:
 
 $$\text{message\_id} = \text{SHA256}(\text{serialized\_message})$$
 
-Duplicate messages bị drop ngay lập tức, loại bỏ re-broadcast loops và tối ưu băng thông mạng.
+Nếu gặp tin nhắn đã nhận rồi thì hệ thống sẽ bỏ qua ngay, giúp tiết kiệm đường truyền mạng.

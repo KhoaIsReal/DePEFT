@@ -1,53 +1,53 @@
-# 🔒 Security Policy & Threat Model
+# 🔒 Chính sách Bảo mật & Các Mối Nguy Cơ
 
-DePEFT áp dụng kiến trúc defense-in-depth security được thiết kế nhằm bảo vệ hệ thống decentralized AI training trước adversarial participants, malicious validators, sybil attacks và hardware drift.
+DePEFT được thiết kế nhiều lớp bảo vệ để ngăn chặn các hành vi gian lận, tấn công phá hoại và đảm bảo tính công bằng khi huấn luyện AI phi tập trung.
 
 ---
 
-## 🛡️ Threat Model & Cryptographic Mitigations
+## 🛡️ Các Nguy cơ và Cách Hệ thống Phòng chống
 
-| Threat Vector | Attack Scenario | Protocol Mitigation |
+| Nguy cơ Tấn công | Kịch bản Xảy ra | Cách DePEFT Phòng chống |
 |---|---|---|
-| **Front-Running & Plagiarism Adapter** | Malicious miner theo dõi P2P network, sao chép adapter weights của miner khác và nhận thưởng. | **2-Phase Commit-Reveal Scheme**: Miner gửi commit $\text{SHA256}(\text{hash} \mathbin{\Vert} \text{salt})$ trong Commit Phase. Revealed weights được đối chiếu qua Embedded Vector DB với cosine similarity threshold $> 0.98$ để phát hiện duplicates. |
-| **Trojan & Backdoor Injection (Sleeper Agents)** | Miner chèn secret trigger phrase (vd: `\|ADM_EXEC\|`) trong khi vẫn duy trì loss thấp trên domain data. | **TEE Safety & Backdoor Probing**: TEE evaluator đưa bộ `SAFETY_BACKDOOR_PROBES` và prompt injection probe suites vào private evaluation pipeline. |
-| **Tactical & Strategic Voting Manipulation** | Nhóm colluding validators rank miner đối thủ ở vị trí cuối để dìm Borda count points. | **Trimmed Borda Consensus (Outlier Filtering)**: Relative Consensus Engine tự động trim các extreme outlier rankings khi có $\ge 4$ validators nộp reports, vô hiệu hóa strategic down-voting. |
-| **Side-Channel Timing Leakage trong TEE** | Validator đo execution latency để suy đoán prompt length và dataset distribution. | **Fixed Tensor Batch Padding**: Toàn bộ evaluation sequences được padding thành uniform dimensional tensors, đảm bảo constant-time matrix multiplications. |
-| **Test Set Memorization & Overfitting** | Miner overfit adapter vào validation benchmark để đạt điểm số cao ảo. | **TEE Enclave Sealing**: Private Test Set được seal hoàn toàn bên trong hardware TEE Enclaves (Intel SGX / AMD SEV-SNP) và miner không thể truy cập. |
-| **Validator Evaluation Fraud & Collusion** | Corrupt validator báo cáo arbitrary loss rankings để ưu tiên colluding miner. | **Cryptographic Remote Attestation**: App-Chain bắt buộc kiểm tra `MRENCLAVE` measurement hợp lệ, verify platform signature và ràng buộc `report_data = SHA512(task || round || ranking)`. |
-| **Floating-Point Non-Determinism Drift** | Heterogeneous GPU architectures (CUDA, ROCm, CPU) tính toán IEEE 754 float lệch nhau nhẹ, gây consensus forks. | **Relative Consensus (Borda Count)**: Blockchain tổng hợp ordinal rankings ($A > B > C$) thay vì lấy raw floating-point loss averages. |
-| **Byzantine Double Voting / Equivocation** | Malicious validator ký 2 blocks/votes xung đột ở cùng block height để fork chain. | **On-Chain Slashing Engine**: Cryptographic equivocation proofs lập tức slash validator stake và thu hồi voting power. |
-| **Sybil Network Flooding** | Adversary tạo hàng trăm nodes để làm cạn kiệt network resources. | **Escrow Requirements & Deduplication**: Tasks bắt buộc phải lock bounty token escrow; P2P messages sử dụng SHA-256 LRU deduplication. |
+| **Sao chép và nộp bài trước (Front-Running / Đạo văn)** | Thợ đào xấu nhìn trộm file trọng số của người khác gửi lên mạng và nhanh tay nộp trước để cướp thưởng. | **Cơ chế nộp 2 bước (Commit-Reveal)**: Thợ đào phải gửi mã băm để khóa bài trước. Khi công bố file, hệ thống sẽ dùng Vector DB để đo độ giống nhau, nếu trùng lặp $> 0.98$ sẽ loại bỏ ngay. |
+| **Cài cửa sau / Mã độc vào AI (Backdoor Injection)** | Thợ đào cố tình cài câu lệnh bí mật vào mô hình nhưng vẫn giữ điểm số bình thường trên dữ liệu mẫu. | **Bộ kiểm tra an toàn trong TEE**: Vùng bảo mật TEE sẽ tự động chèn các câu hỏi thử nghiệm để quét và phát hiện các mẫu cửa sau độc hại. |
+| **Thông đồng dìm hàng nhau khi bỏ phiếu** | Nhóm người chấm điểm bắt tay nhau xếp đối thủ xuống cuối bảng để dìm điểm. | **Thuật toán lọc ngoại lai (Trimmed Borda)**: Hệ thống tự động gạt bỏ các mức chấm điểm chênh lệch bất thường khi có từ 4 validator trở lên. |
+| **Đo thời gian để đoán dữ liệu trong TEE** | Người kiểm tra đo thời gian chạy để đoán độ dài câu chữ và dữ liệu bí mật. | **Cố định kích thước dữ liệu**: Tất cả dữ liệu đầu vào đều được chèn thêm khoảng trống để có cùng độ dài, giúp thời gian xử lý luôn bằng nhau. |
+| **Học vẹt bộ dữ liệu kiểm tra (Overfitting)** | Thợ đào cố tình ép mô hình học thuộc lòng bộ đề kiểm tra để đạt điểm cao ảo. | **Khóa kín đề thi trong TEE**: Bộ dữ liệu chấm điểm được niêm phong trong chip TEE (Intel SGX / AMD SEV), thợ đào không có cách nào xem được đề. |
+| **Gian lận khi chấm điểm** | Validator tự ý tạo ra bảng xếp hạng giả để giúp thợ đào quen biết thắng giải. | **Chứng thực từ chip phần cứng (Remote Attestation)**: Hệ thống chỉ nhận kết quả có chữ ký mã hóa trực tiếp từ chip bảo mật TEE khớp đúng với task và vòng đấu. |
+| **Lệch điểm do khác loại card màn hình** | Các dòng card đồ họa (NVIDIA, AMD) tính số thập phân lệch nhau chút ít gây bất đồng thuận. | **Dùng thứ hạng thay vì điểm số**: Hệ thống chỉ lấy thứ tự nhất, nhì, ba ($A > B > C$) để tính điểm theo luật Borda Count. |
+| **Bỏ phiếu 2 lần để phá hoại mạng (Double Voting)** | Validator ký 2 khối khác nhau ở cùng một thời điểm để làm phân nhánh chuỗi. | **Cơ chế phạt tiền ký quỹ (Slashing)**: Nếu bị phát hiện, validator sẽ bị tịch thu toàn bộ số tiền đã stake và tước quyền tham gia. |
+| **Tấn công tràn ngập bằng nhiều tài khoản ảo (Sybil)** | Kẻ xấu tạo hàng loạt tài khoản để làm nghẽn mạng. | **Bắt buộc nạp tiền và lọc tin nhắn trùng**: Mọi tác vụ đều phải nạp tiền cọc; các tin nhắn trùng lặp sẽ bị mạng P2P bỏ qua ngay lập tức. |
 
 ---
 
-## 🔍 Quy trình On-Chain TEE Verification Flow
+## 🔍 Quy trình Kiểm tra Chứng thực TEE
 
 ```mermaid
 sequenceDiagram
-    participant Validator as Validator (TEE)
-    participant Chain as App-Chain State Machine
+    participant Validator as Người kiểm tra (TEE)
+    participant Chain as Blockchain DePEFT
     
-    Validator->>Validator: Run Evaluation in SGX/SEV Enclave
-    Validator->>Validator: Compute report_data = SHA512(task || round || ranking)
-    Validator->>Validator: Hardware QE signs (MRENCLAVE || MRSIGNER || report_data)
-    Validator->>Chain: SubmitEvaluation(ranking, quote)
+    Validator->>Validator: Chạy kiểm tra mô hình trong vùng an toàn chip SGX/SEV
+    Validator->>Validator: Tạo mã băm kết quả report_data từ task_id, vòng đấu và bảng xếp hạng
+    Validator->>Validator: Chip phần cứng ký chứng nhận kết quả
+    Validator->>Chain: Gửi bảng xếp hạng kèm chữ ký phần cứng
     
-    Note over Chain: 1. Check report_data == computed binding
-    Note over Chain: 2. Check MRENCLAVE in approved whitelist
-    Note over Chain: 3. Verify Hardware Public Key Signature
-    alt Valid Attestation
-        Chain->>Chain: Admit Evaluation to Borda Count Aggregation
-    else Invalid / Tampered Quote
-        Chain->>Chain: REJECT Transaction & Slash Validator
+    Note over Chain: 1. Kiểm tra mã report_data có khớp với kết quả nộp không
+    Note over Chain: 2. Kiểm tra mã phần cứng có nằm trong danh sách an toàn không
+    Note over Chain: 3. Xác minh chữ ký của chip bảo mật
+    alt Chứng thực Hợp lệ
+        Chain->>Chain: Đưa kết quả vào bảng tổng hợp điểm Borda Count
+    else Chữ ký Giả mạo / Không hợp lệ
+        Chain->>Chain: TỪ CHỐI giao dịch và PHẠT tiền ký quỹ của Validator
     end
 ```
 
 ---
 
-## 📢 Responsible Vulnerability Disclosure
+## 📢 Hướng dẫn Báo cáo Lỗi Bảo mật
 
-Nếu bạn phát hiện lỗ hổng bảo mật trong DePEFT (chẳng hạn như cryptographic bypass, TEE attestation flaw, consensus safety bug hoặc potential exploit), vui lòng báo cáo có trách nhiệm:
+Nếu bạn tìm thấy bất kỳ lỗ hổng bảo mật nào trong hệ thống DePEFT, xin vui lòng báo cáo theo quy trình an toàn:
 
-- **Primary Security Channel**: Liên hệ trực tiếp qua **Discord** (Direct Message cho maintainer / join DePEFT community).
-- **Report Details**: Vui lòng cung cấp mô tả chi tiết, reproduction steps, proof-of-concept (PoC) code và affected module paths.
-- **Response Commitment**: Chúng tôi cam kết phản hồi các báo cáo hợp lệ trong vòng 24 giờ, điều phối private patch verification và phát hành bản sửa lỗi nhanh chóng.
+- **Kênh liên hệ**: Nhắn tin trực tiếp cho đội ngũ phát triển qua **Discord**.
+- **Nội dung báo cáo**: Vui lòng mô tả chi tiết lỗi, các bước để tái hiện lỗi và đoạn code minh họa (nếu có).
+- **Cam kết xử lý**: Chúng tôi sẽ phản hồi trong vòng 24 giờ, tiến hành vá lỗi kín và công bố bản sửa lỗi sớm nhất có thể.
