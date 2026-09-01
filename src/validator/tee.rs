@@ -26,7 +26,9 @@ impl TeeSandbox {
         hardware_drift: f32,
     ) -> (f64, f64) {
         let mut model = base_model.clone();
-        model.load_adapters(adapter);
+        if model.load_adapters(adapter).is_err() {
+            return (9999.0, 0.0);
+        }
         model.evaluate(&self.private_test_set, hardware_drift)
     }
 

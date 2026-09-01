@@ -1089,3 +1089,70 @@ fn test_security_dataset_train_test_split_nan_ratio_clamped() {
     assert_eq!(train_high.len(), 20);
     assert_eq!(test_high.len(), 0);
 }
+
+#[test]
+fn test_security_validator_tolerates_corrupted_miner_cid() {
+    use DePEFT::blockchain::types::PeftType;
+    use DePEFT::blockchain::transactions::Transaction;
+    use DePEFT::crypto::AccountKeypair;
+    use DePEFT::ml::dataset::Dataset;
+    use DePEFT::ml::model::DePEFTModel;
+    use DePEFT::storage::ipfs::IpfsStorage;
+    use DePEFT::validator::tee::TeeSandbox;
+    use DePEFT::validator::worker::ValidatorNode;
+    use rand::SeedableRng;
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let ipfs = IpfsStorage::new();
+    let test_set = Dataset::generate_synthetic_task(10, 4, 2, 1.0, &mut rng);
+    let base_model = DePEFTModel::new("test-model", 4, 8, 2, 2, PeftType::LoRA, &mut rng);
+
+    let validator_kp = AccountKeypair::generate();
+    let sandbox = TeeSandbox::new(test_set, "sgx_test_enclave");
+    let validator = ValidatorNode::new(validator_kp.account_id().as_str(), "Intel SGX", 0.0, sandbox, None);
+
+    let miner_good = AccountKeypair::generate();
+    let miner_bad = AccountKeypair::generate();
+
+    // Export good adapter
+    let good_pkg = base_model.export_adapters(1);
+    let good_bytes = DePEFT::storage::safetensors::serialize_safetensors(&good_pkg).unwrap();
+    let good_cid = ipfs.put(&good_bytes);
+
+    // List with one valid and one non-existent / corrupted CID
+    let reveals = vec![
+        (miner_good.account_id(), good_cid),
+        (miner_bad.account_id(), "bafy_non_existent_cid".to_string()),
+    ];
+
+    // Validator should succeed without failing or panicking
+    let eval_tx = validator.evaluate_round(&ipfs, 1, 1, 0, &base_model, &reveals);
+    assert!(eval_tx.is_ok());
+    if let Ok(Transaction::SubmitEvaluation { evaluation, .. }) = eval_tx {
+        assert_eq!(evaluation.ranking.len(), 2);
+        // Bad miner is ranked last
+        assert_eq!(evaluation.ranking[1], miner_bad.account_id());
+    }
+}
+
+#[test]
+fn test_security_qlora_load_adapter_dimension_mismatch_rejected() {
+    use DePEFT::blockchain::types::PeftType;
+    use DePEFT::ml::lora::{ModuleAdapter, QLoRALinear};
+    use DePEFT::ml::tensor::Matrix;
+    use rand::SeedableRng;
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let mut layer = QLoRALinear::new(8, 4, 2, 16.0, PeftType::LoRA, &mut rng);
+
+    // Mismatched adapter dimensions: rank 10 instead of 2
+    let bad_adapter = ModuleAdapter {
+        module_name: "test_proj".to_string(),
+        rank: 10,
+        alpha: 16.0,
+        lora_a: Matrix::zeros(10, 8),
+        lora_b: Matrix::zeros(4, 10),
+    };
+
+    assert!(layer.load_adapter(&bad_adapter).is_err());
+}

@@ -227,7 +227,7 @@ impl TournamentEngine {
 
         // Load winning adapter into base model and execute permanent ReLoRA weight merge:
         // W_{N+1} = W_N + \Delta W_{N+1}
-        self.base_model.load_adapters(&winning_pkg);
+        self.base_model.load_adapters(&winning_pkg)?;
         self.base_model.merge_and_evolve(&mut rng);
 
         // Measure evolved base model loss

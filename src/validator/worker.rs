@@ -51,11 +51,21 @@ impl ValidatorNode {
         let mut scores: Vec<(AccountId, f64, f64)> = Vec::new();
 
         for (miner, cid) in reveals {
-            let bytes = ipfs
-                .get(cid)
-                .ok_or_else(|| anyhow::anyhow!("Adapter CID not found on IPFS: {}", cid))?;
+            let bytes = match ipfs.get(cid) {
+                Some(b) => b,
+                None => {
+                    scores.push((miner.clone(), 9999.0, 0.0));
+                    continue;
+                }
+            };
 
-            let adapter_pkg = deserialize_safetensors(&bytes)?;
+            let adapter_pkg = match deserialize_safetensors(&bytes) {
+                Ok(pkg) => pkg,
+                Err(_) => {
+                    scores.push((miner.clone(), 9999.0, 0.0));
+                    continue;
+                }
+            };
 
             // Index in vector DB if enabled
             if let Some(vdb) = &self.vector_db {

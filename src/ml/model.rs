@@ -208,16 +208,17 @@ impl DePEFTModel {
     }
 
     /// Load an external adapter package into the model for evaluation.
-    pub fn load_adapters(&mut self, package: &AdapterPackage) {
+    pub fn load_adapters(&mut self, package: &AdapterPackage) -> anyhow::Result<()> {
         if let Some(q) = package.modules.get("q_proj") {
-            self.q_proj.load_adapter(q);
+            self.q_proj.load_adapter(q)?;
         }
         if let Some(v) = package.modules.get("v_proj") {
-            self.v_proj.load_adapter(v);
+            self.v_proj.load_adapter(v)?;
         }
         if let Some(out) = package.modules.get("out_proj") {
-            self.out_proj.load_adapter(out);
+            self.out_proj.load_adapter(out)?;
         }
+        Ok(())
     }
 
     /// Merge the loaded adapter into base weights and reset adapters for next round (ReLoRA merge).

@@ -153,14 +153,22 @@ impl QLoRALinear {
         }
     }
 
-    /// Load an external adapter into this layer.
-    pub fn load_adapter(&mut self, adapter: &ModuleAdapter) {
-        assert_eq!(adapter.lora_a.rows, self.rank);
-        assert_eq!(adapter.lora_a.cols, self.in_features);
-        assert_eq!(adapter.lora_b.rows, self.out_features);
-        assert_eq!(adapter.lora_b.cols, self.rank);
+    /// Load an external adapter into this layer with shape validation.
+    pub fn load_adapter(&mut self, adapter: &ModuleAdapter) -> anyhow::Result<()> {
+        if adapter.lora_a.rows != self.rank
+            || adapter.lora_a.cols != self.in_features
+            || adapter.lora_b.rows != self.out_features
+            || adapter.lora_b.cols != self.rank
+        {
+            anyhow::bail!(
+                "Adapter dimension mismatch: expected ({}, {}), ({}, {}), got ({}, {}), ({}, {})",
+                self.rank, self.in_features, self.out_features, self.rank,
+                adapter.lora_a.rows, adapter.lora_a.cols, adapter.lora_b.rows, adapter.lora_b.cols
+            );
+        }
         self.lora_a = adapter.lora_a.clone();
         self.lora_b = adapter.lora_b.clone();
+        Ok(())
     }
 
     /// Merge current LoRA weights permanently into Base Weights:

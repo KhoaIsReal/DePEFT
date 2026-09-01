@@ -99,8 +99,20 @@ impl CandleLoraLinear {
         ]
     }
 
-    /// Load adapter weights into the layer.
+    /// Load adapter weights into the layer with dimension verification.
     pub fn load_adapter(&mut self, lora_a: &Tensor, lora_b: &Tensor) -> Result<()> {
+        let (d_out, d_in) = self.base_weight.dims2()?;
+        let (a_r, a_in) = lora_a.dims2()?;
+        let (b_out, b_r) = lora_b.dims2()?;
+
+        if a_r != self.rank || a_in != d_in || b_out != d_out || b_r != self.rank {
+            anyhow::bail!(
+                "LoRA adapter shape mismatch: expected A=({}, {}), B=({}, {}), got A=({}, {}), B=({}, {})",
+                self.rank, d_in, d_out, self.rank,
+                a_r, a_in, b_out, b_r
+            );
+        }
+
         self.lora_a = Var::from_tensor(lora_a)?;
         self.lora_b = Var::from_tensor(lora_b)?;
         Ok(())
