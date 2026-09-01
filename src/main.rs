@@ -97,6 +97,10 @@ enum Commands {
         /// Number of optimization steps per round
         #[arg(short, long, default_value_t = 15)]
         steps: usize,
+
+        /// Optimizer type to benchmark: adamw, adam, or sgd
+        #[arg(long, default_value = "adamw")]
+        optimizer: String,
     },
 
     /// Manage and inspect P2P overlay connections
@@ -1041,8 +1045,8 @@ async fn main() -> anyhow::Result<()> {
             }
         },
 
-        Some(Commands::LlmDemo { rounds, steps }) => {
-            run_candle_llm_demo(rounds, steps)?;
+        Some(Commands::LlmDemo { rounds, steps, optimizer }) => {
+            run_candle_llm_demo(rounds, steps, &optimizer)?;
         }
         Some(Commands::BftDemo { validators, blocks }) => {
             run_bft_demo(validators, blocks);
@@ -1215,17 +1219,21 @@ fn run_tee_quote_demo() {
     println!();
 }
 
-fn run_candle_llm_demo(rounds: usize, steps_per_round: usize) -> anyhow::Result<()> {
+fn run_candle_llm_demo(rounds: usize, steps_per_round: usize, optimizer_str: &str) -> anyhow::Result<()> {
     use DePEFT::candle_peft::{
         CandleMinerHyperparams, CandleMinerTrainer, CandleTransformerConfig, CandleTransformerLM,
-        CandleValidatorEvaluator, CandleWeightMerger,
+        CandleValidatorEvaluator, CandleWeightMerger, PeftOptimizerType,
     };
+    use std::str::FromStr;
+
+    let opt_type = PeftOptimizerType::from_str(optimizer_str)?;
 
     println!("{}", "================================================================================".bright_blue());
     println!("{}", "      DePEFT : Real Candle LLM Deep Learning Engine & ReLoRA Tournament         ".bright_cyan().bold());
     println!("{}", "================================================================================".bright_blue());
     println!("Base Architecture: Decoder-only Transformer (LLaMA/Qwen) with RMSNorm & SwiGLU");
-    println!("Compute Backend:   Hugging Face Candle Engine (Autograd & SafeTensors)\n");
+    println!("Compute Backend:   Hugging Face Candle Engine (Autograd & SafeTensors)");
+    println!("Selected Optimizer: {}\n", opt_type.to_string().bright_green().bold());
 
     let device = candle_core::Device::Cpu;
     let config = CandleTransformerConfig {
@@ -1262,28 +1270,34 @@ fn run_candle_llm_demo(rounds: usize, steps_per_round: usize) -> anyhow::Result<
     for r in 1..=rounds {
         println!("{}", format!(">>> ===================== CANDLE TOURNAMENT ROUND {} / {} =====================", r, rounds).bright_cyan().bold());
 
-        // 3 competing miners with different learning rates and hardware
+        // 3 competing miners with different learning rates, optimizer configs, and hardware
         let miners_config = [
-            ("miner-cuda-01", "NVIDIA RTX 4090 / CUDA", 0.08),
-            ("miner-rocm-02", "AMD RX 7900 / ROCm", 0.04),
-            ("miner-cpu-03", "Intel Xeon / AVX-512", 0.02),
+            ("miner-cuda-01", "NVIDIA RTX 4090 / CUDA", 0.005, opt_type),
+            ("miner-rocm-02", "AMD RX 7900 / ROCm", 0.003, opt_type),
+            ("miner-cpu-03", "Intel Xeon / AVX-512", 0.001, opt_type),
         ];
 
         let mut candidate_adapters = Vec::new();
 
-        for (miner_id, hw, lr) in &miners_config {
+        for (miner_id, hw, lr, opt) in &miners_config {
             let mut miner_model = model.clone();
             let hyperparams = CandleMinerHyperparams {
                 learning_rate: *lr,
                 steps: steps_per_round,
                 batch_size: 2,
-                hardware_info: hw.to_string(),
+                optimizer_type: *opt,
+                weight_decay: 0.01,
+                beta1: 0.9,
+                beta2: 0.999,
+                eps: 1e-8,
+                hardware_info: format!("{} [{}]", hw, opt),
             };
 
             let artifact = CandleMinerTrainer::train(&mut miner_model, &train_corpus, &hyperparams)?;
-            println!("  [Miner {}] ({}) -> Train Loss: {:.4} -> {:.4} | Adapter SafeTensors: {} bytes",
+            println!("  [Miner {}] ({}) [{}] -> Train Loss: {:.4} -> {:.4} | Adapter SafeTensors: {} bytes",
                 miner_id.bright_cyan(),
                 hw.dimmed(),
+                opt.to_string().bright_magenta(),
                 artifact.train_loss,
                 artifact.final_loss.to_string().bright_green(),
                 artifact.safetensors_bytes.len().to_string().bright_yellow()

@@ -584,10 +584,12 @@ fn test_candle_llm_transformer_relora_tournament() {
 
     // Miner trains adapter
     let hyperparams = CandleMinerHyperparams {
-        learning_rate: 0.1,
+        learning_rate: 0.01,
         steps: 10,
         batch_size: 2,
+        optimizer_type: DePEFT::candle_peft::PeftOptimizerType::AdamW,
         hardware_info: "CPU Test".to_string(),
+        ..Default::default()
     };
 
     let mut miner_model = model.clone();

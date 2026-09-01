@@ -2,10 +2,63 @@ use crate::candle_peft::tokenizer::SimpleByteTokenizer;
 use crate::candle_peft::transformer::CandleTransformerLM;
 use anyhow::Result;
 use candle_core::safetensors::save;
-use candle_nn::{Optimizer, SGD};
+use candle_nn::{AdamW, Optimizer, ParamsAdamW, SGD};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+/// Optimizer type supported by Candle PEFT Miner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PeftOptimizerType {
+    AdamW,
+    Adam,
+    SGD,
+}
+
+impl Default for PeftOptimizerType {
+    fn default() -> Self {
+        Self::AdamW
+    }
+}
+
+impl std::fmt::Display for PeftOptimizerType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AdamW => write!(f, "AdamW"),
+            Self::Adam => write!(f, "Adam"),
+            Self::SGD => write!(f, "SGD"),
+        }
+    }
+}
+
+impl std::str::FromStr for PeftOptimizerType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "adamw" | "adam-w" => Ok(Self::AdamW),
+            "adam" => Ok(Self::Adam),
+            "sgd" => Ok(Self::SGD),
+            other => anyhow::bail!("Unknown optimizer: '{}'. Supported: adamw, adam, sgd", other),
+        }
+    }
+}
+
+/// Dynamic Candle Optimizer wrapper enum (since candle_nn::Optimizer is not dyn compatible).
+pub enum CandleOptimizer {
+    AdamW(AdamW),
+    SGD(SGD),
+}
+
+impl CandleOptimizer {
+    pub fn step(&mut self, grads: &candle_core::backprop::GradStore) -> Result<()> {
+        match self {
+            Self::AdamW(opt) => opt.step(grads)?,
+            Self::SGD(opt) => opt.step(grads)?,
+        }
+        Ok(())
+    }
+}
 
 /// Training hyper-parameters for Candle Miner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,15 +66,25 @@ pub struct CandleMinerHyperparams {
     pub learning_rate: f64,
     pub steps: usize,
     pub batch_size: usize,
+    pub optimizer_type: PeftOptimizerType,
+    pub weight_decay: f64,
+    pub beta1: f64,
+    pub beta2: f64,
+    pub eps: f64,
     pub hardware_info: String,
 }
 
 impl Default for CandleMinerHyperparams {
     fn default() -> Self {
         Self {
-            learning_rate: 0.05,
+            learning_rate: 0.001,
             steps: 20,
             batch_size: 4,
+            optimizer_type: PeftOptimizerType::AdamW,
+            weight_decay: 0.01,
+            beta1: 0.9,
+            beta2: 0.999,
+            eps: 1e-8,
             hardware_info: "NVIDIA CUDA / Candle Auto-Diff".to_string(),
         }
     }
@@ -61,7 +124,32 @@ impl CandleMinerTrainer {
         }
 
         let vars = model.get_trainable_vars();
-        let mut optimizer = SGD::new(vars, hyperparams.learning_rate)?;
+
+        // Instantiate chosen optimizer (AdamW, Adam, or SGD)
+        let mut optimizer = match hyperparams.optimizer_type {
+            PeftOptimizerType::AdamW => {
+                let params = ParamsAdamW {
+                    lr: hyperparams.learning_rate,
+                    beta1: hyperparams.beta1,
+                    beta2: hyperparams.beta2,
+                    eps: hyperparams.eps,
+                    weight_decay: hyperparams.weight_decay,
+                };
+                CandleOptimizer::AdamW(AdamW::new(vars, params)?)
+            }
+            PeftOptimizerType::Adam => {
+                // Adam is AdamW without weight decay (L2 decoupled penalty = 0.0)
+                let params = ParamsAdamW {
+                    lr: hyperparams.learning_rate,
+                    beta1: hyperparams.beta1,
+                    beta2: hyperparams.beta2,
+                    eps: hyperparams.eps,
+                    weight_decay: 0.0,
+                };
+                CandleOptimizer::AdamW(AdamW::new(vars, params)?)
+            }
+            PeftOptimizerType::SGD => CandleOptimizer::SGD(SGD::new(vars, hyperparams.learning_rate)?),
+        };
 
         let mut initial_loss_val = 0.0f32;
         let mut final_loss_val = 0.0f32;
@@ -92,7 +180,11 @@ impl CandleMinerTrainer {
 
         // Export trained LoRA adapters to standard HuggingFace SafeTensors format
         let adapter_map = model.export_adapter_tensors();
-        let temp_path = std::env::temp_dir().join(format!("adapter_{}_{}.safetensors", std::process::id(), rand::random::<u64>()));
+        let temp_path = std::env::temp_dir().join(format!(
+            "adapter_{}_{}.safetensors",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
         save(&adapter_map, &temp_path)?;
         let safetensors_bytes = std::fs::read(&temp_path)?;
         let _ = std::fs::remove_file(&temp_path);
