@@ -13,7 +13,7 @@ When contributing code, you must strictly uphold the following core architectura
 1. **Frozen Base Model Weights**: Base model weights $W_0 \in \mathbb{R}^{d_{out} \times d_{in}}$ must remain completely frozen throughout miner local training. Only low-rank matrices $A$ and $B$ receive gradient updates.
 2. **TEE Sandbox Isolation**: Private evaluation datasets must **never** be transmitted across the network or logged in plain text. They must remain strictly sealed within the TEE Sandbox Enclave.
 3. **Deterministic Relative Consensus**: Validator loss scores can have slight micro-drift due to heterogeneous hardware (CUDA, ROCm, AVX-512). The App-Chain must **never** average floating-point loss values directly; it must evaluate relative ordinal rankings using Borda Count rank aggregation.
-4. **Anti-Collusion Commit-Reveal**: Miners must submit $\text{commit\_hash} = \text{SHA256}(\text{adapter\_hash} \mathbin{\Vert} \text{salt})$ during the Commit Phase before uploading the `.safetensors` adapter file in the Reveal Phase.
+4. **Anti-Collusion Commit-Reveal**: Miners must submit `commit_hash = SHA256(adapter_hash || salt)` during the Commit Phase before uploading the `.safetensors` adapter file in the Reveal Phase.
 5. **Cryptographic State Mutation**: No transaction may modify `AppChainState` without valid Ed25519 signature verification against the sender's public key.
 6. **BFT Finality**: Blocks are only appended to the immutable ledger when $> 2/3$ supermajority `PRECOMMIT` cryptographic votes are gathered.
 
