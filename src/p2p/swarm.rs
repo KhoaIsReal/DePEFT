@@ -169,7 +169,7 @@ impl P2pSwarm {
         };
 
         // Record known address
-        self.known_addresses.write().unwrap().insert(remote_addr.to_string());
+        self.record_known_address(remote_addr.to_string());
 
         // Setup bidirectional message channels
         self.spawn_peer_handler(remote_peer_id.clone(), stream);
@@ -206,13 +206,25 @@ impl P2pSwarm {
         write_message(&mut stream, &ack).await?;
 
         if let Some(l) = remote_listen {
-            self.known_addresses.write().unwrap().insert(l);
+            self.record_known_address(l);
         } else {
-            self.known_addresses.write().unwrap().insert(remote_addr.to_string());
+            self.record_known_address(remote_addr.to_string());
         }
 
         self.spawn_peer_handler(remote_peer_id, stream);
         Ok(())
+    }
+
+    /// Record a discovered peer network address with FIFO bounded capacity.
+    fn record_known_address(&self, addr: String) {
+        const MAX_KNOWN_ADDRESSES: usize = 10_000;
+        let mut addrs = self.known_addresses.write().unwrap();
+        if addrs.len() >= MAX_KNOWN_ADDRESSES && !addrs.contains(&addr) {
+            if let Some(first) = addrs.iter().next().cloned() {
+                addrs.remove(&first);
+            }
+        }
+        addrs.insert(addr);
     }
 
     /// Spawn peer reader and writer tasks.
