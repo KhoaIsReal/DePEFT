@@ -246,9 +246,37 @@ async fn get_account_balance(
     })
 }
 
+#[derive(Deserialize)]
+struct FaucetRequest {
+    account: String,
+    amount: Option<u128>,
+}
+
+async fn request_faucet(
+    State(ctx): State<NodeContext>,
+    Json(payload): Json<FaucetRequest>,
+) -> Result<Json<GenericResponse>, (StatusCode, Json<GenericResponse>)> {
+    let account = AccountId::new(payload.account);
+    let amount = payload.amount.unwrap_or(10_000).min(100_000); // default 10k, max 100k per request
+
+    let mut chain = ctx.chain.write().unwrap();
+    chain.mint(account.clone(), amount);
+
+    Ok(Json(GenericResponse {
+        status: "ok",
+        message: format!("Successfully minted {} tokens to {}", amount, account),
+    }))
+}
+
+async fn get_dashboard() -> axum::response::Html<&'static str> {
+    axum::response::Html(crate::node::dashboard::DASHBOARD_HTML)
+}
+
 /// Create the Axum Router for the Node API.
 pub fn create_app(ctx: NodeContext) -> Router {
     Router::new()
+        .route("/", get(get_dashboard))
+        .route("/dashboard", get(get_dashboard))
         .route("/api/v1/status", get(get_status))
         .route("/api/v1/tasks", get(get_tasks))
         .route("/api/v1/tasks/:id", get(get_task_by_id))
@@ -258,6 +286,7 @@ pub fn create_app(ctx: NodeContext) -> Router {
         .route("/api/v1/storage", post(upload_storage))
         .route("/api/v1/storage/:cid", get(download_storage))
         .route("/api/v1/accounts/:account/balance", get(get_account_balance))
+        .route("/api/v1/faucet", post(request_faucet))
         .layer(CorsLayer::permissive())
         .with_state(ctx)
 }
