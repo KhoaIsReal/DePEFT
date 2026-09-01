@@ -10,7 +10,7 @@ DePEFT is an open-source decentralized AI app-chain bringing scalable, verifiabl
 
 When contributing code, you must strictly uphold the following core architectural invariants:
 
-1. **Frozen Base Model Weights**: Base model weights $W_0 \in \mathbb{R}^{d_{out} \times d_{in}}$ must remain completely frozen throughout miner local training. Only low-rank matrices $A$ and $B$ receive gradient updates.
+1. **Frozen Base Model Weights**: Base model weights $W_0 \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}}$ must remain completely frozen throughout miner local training. Only low-rank matrices $A$ and $B$ receive gradient updates.
 2. **TEE Sandbox Isolation**: Private evaluation datasets must **never** be transmitted across the network or logged in plain text. They must remain strictly sealed within the TEE Sandbox Enclave.
 3. **Deterministic Relative Consensus**: Validator loss scores can have slight micro-drift due to heterogeneous hardware (CUDA, ROCm, AVX-512). The App-Chain must **never** average floating-point loss values directly; it must evaluate relative ordinal rankings using Borda Count rank aggregation.
 4. **Anti-Collusion Commit-Reveal**: Miners must submit `commit_hash = SHA256(adapter_hash || salt)` during the Commit Phase before uploading the `.safetensors` adapter file in the Reveal Phase.
@@ -57,7 +57,7 @@ cargo test test_candle_llm_transformer_relora_tournament -- --nocapture
 ```
 
 ### Key Integration Test Targets:
-- [`tests/integration_tests.rs`](file:///home/khoa/DePEFT/tests/integration_tests.rs):
+- [`tests/integration_tests.rs`](file:///home/khoa/DePEFT/DePEFT/tests/integration_tests.rs):
   - `test_candle_lora_linear_forward_and_merge`: Verifies LoRA math and SafeTensors fusion.
   - `test_candle_llm_transformer_relora_tournament`: Full 3-round Candle LLM Transformer training loop.
   - `test_hardware_tee_remote_attestation_and_on_chain_verification`: Hardware quote verification & anti-fraud guards.
