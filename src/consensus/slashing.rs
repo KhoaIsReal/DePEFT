@@ -58,6 +58,13 @@ impl SlashingEngine {
                 return Ok(Some(evidence));
             }
         } else {
+            const MAX_VOTE_RECORDS: usize = 50_000;
+            if self.vote_records.len() >= MAX_VOTE_RECORDS {
+                // Prune first available key to prevent unbounded memory growth
+                if let Some(first_key) = self.vote_records.keys().next().cloned() {
+                    self.vote_records.remove(&first_key);
+                }
+            }
             self.vote_records.insert(key, vote.clone());
         }
 

@@ -619,6 +619,8 @@ fn test_candle_llm_transformer_relora_tournament() {
         AccountId::new("validator-1"),
         "CPU",
         0.0,
+        1,
+        1,
     )
     .unwrap();
 
@@ -1269,4 +1271,87 @@ fn test_security_duplicate_commit_and_reveal_rejected() {
     // Cannot finalize round during CommitPhase
     let premature_finalize = state.finalize_round(1, 1, "bafy_evolved".to_string(), 1.0, 0.5, 5_000);
     assert!(premature_finalize.is_err(), "Finalize round must be rejected if not in MergePhase");
+}
+
+#[test]
+fn test_security_safetensors_nan_weights_rejected() {
+    use DePEFT::storage::deserialize_safetensors;
+
+    // Header specifying 2x2 F32 weights
+    let header_json = r#"{"__metadata__":{"model_id":"m1"},"layer.lora_a":{"dtype":"F32","shape":[2,2],"data_offsets":[0,16]},"layer.lora_b":{"dtype":"F32","shape":[2,2],"data_offsets":[16,32]}}"#;
+    let header_len = header_json.len() as u64;
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&header_len.to_le_bytes());
+    bytes.extend_from_slice(header_json.as_bytes());
+
+    // Payload with NaN in layer.lora_a
+    let mut payload = Vec::new();
+    payload.extend_from_slice(&f32::NAN.to_le_bytes());
+    payload.extend_from_slice(&1.0f32.to_le_bytes());
+    payload.extend_from_slice(&1.0f32.to_le_bytes());
+    payload.extend_from_slice(&1.0f32.to_le_bytes());
+
+    // layer.lora_b normal
+    for _ in 0..4 {
+        payload.extend_from_slice(&1.0f32.to_le_bytes());
+    }
+
+    bytes.extend_from_slice(&payload);
+
+    let res = deserialize_safetensors(&bytes);
+    assert!(res.is_err(), "NaN weights must be rejected by safetensors deserializer");
+}
+
+#[test]
+fn test_security_bft_duplicate_prevote_rejected() {
+    use DePEFT::consensus::{BftEngine, ConsensusValidator};
+    use DePEFT::crypto::AccountKeypair;
+
+    let kp1 = AccountKeypair::generate();
+    let kp2 = AccountKeypair::generate();
+
+    let validators = vec![
+        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
+        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+    ];
+
+    let mut bft = BftEngine::new(validators, [0xaa; 32]);
+    let vote1 = bft.cast_prevote(&kp1, Some([0x11; 32])).unwrap();
+    assert!(bft.add_vote(vote1.clone()).is_ok());
+
+    // Second prevote from same validator must be rejected
+    assert!(bft.add_vote(vote1).is_err());
+}
+
+#[test]
+fn test_security_bft_future_timestamp_rejected() {
+    use DePEFT::consensus::{BftEngine, ConsensusValidator};
+    use DePEFT::crypto::AccountKeypair;
+
+    let kp1 = AccountKeypair::generate();
+    let kp2 = AccountKeypair::generate();
+
+    let validators = vec![
+        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
+        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+    ];
+
+    let mut bft = BftEngine::new(validators, [0xaa; 32]);
+    let proposer = bft.validator_set.get_proposer(1, 0);
+    let proposer_kp = if kp1.account_id() == proposer { &kp1 } else { &kp2 };
+
+    let mut proposal = bft.create_proposal(proposer_kp, Vec::new()).unwrap();
+    // Tamper timestamp into far future (year 2099)
+    proposal.header.timestamp = 4_000_000_000;
+
+    let mut bft_node2 = BftEngine::new(
+        vec![
+            ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
+            ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+        ],
+        [0xaa; 32],
+    );
+
+    assert!(bft_node2.receive_proposal(proposal).is_err(), "Future timestamp block proposal must be rejected");
 }

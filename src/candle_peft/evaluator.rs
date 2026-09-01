@@ -49,6 +49,8 @@ impl CandleValidatorEvaluator {
         validator_address: AccountId,
         hardware_info: &str,
         float_drift: f32,
+        task_id: u64,
+        round: usize,
     ) -> Result<ValidatorEvaluation> {
         let mut scores = Vec::new();
 
@@ -109,7 +111,7 @@ impl CandleValidatorEvaluator {
             .collect();
 
         let enclave = crate::tee::HardwareTeeEnclave::official(crate::tee::TeeType::IntelSgxDcap);
-        let quote = enclave.generate_quote(1, 1, &ranking).ok();
+        let quote = enclave.generate_quote(task_id, round, &ranking).ok();
 
         Ok(ValidatorEvaluation {
             validator_address,

@@ -158,6 +158,25 @@ impl BftEngine {
             "Invalid transaction root"
         );
 
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Check timestamp drift: block cannot be from more than 60s in the future
+        ensure!(
+            block.header.timestamp <= now + 60,
+            "Block timestamp too far in the future"
+        );
+
+        // Check monotonic time: block timestamp must be >= previous block timestamp
+        if let Some(last_block) = self.blockchain.last() {
+            ensure!(
+                block.header.timestamp >= last_block.header.timestamp,
+                "Block timestamp must be monotonically increasing"
+            );
+        }
+
         // Verify cryptographic signatures for all transactions included in proposal
         for tx in &block.transactions {
             tx.verify_signature()?;
@@ -251,10 +270,24 @@ impl BftEngine {
 
         match vote.vote_type {
             VoteType::Prevote => {
+                ensure!(
+                    !self.round_state.prevotes.contains_key(&vote.validator),
+                    "Validator {} already prevoted for height {} round {}",
+                    vote.validator,
+                    vote.height,
+                    vote.round
+                );
                 self.round_state.prevotes.insert(vote.validator.clone(), vote);
                 self.check_prevote_quorum()
             }
             VoteType::Precommit => {
+                ensure!(
+                    !self.round_state.precommits.contains_key(&vote.validator),
+                    "Validator {} already precommitted for height {} round {}",
+                    vote.validator,
+                    vote.height,
+                    vote.round
+                );
                 self.round_state.precommits.insert(vote.validator.clone(), vote);
                 self.check_precommit_quorum()
             }

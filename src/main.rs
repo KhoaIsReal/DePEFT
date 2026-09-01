@@ -1323,6 +1323,8 @@ fn run_candle_llm_demo(rounds: usize, steps_per_round: usize, optimizer_str: &st
             AccountId::new("validator-tee-01"),
             "Intel SGX Enclave / TEE",
             0.000005,
+            1,
+            r,
         )?;
 
         let winner_id = eval.ranking.first().unwrap().clone();

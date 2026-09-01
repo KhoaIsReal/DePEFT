@@ -144,7 +144,11 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
             let slice_a = &binary_data[start_a..end_a];
             let mut data_a = Vec::with_capacity(slice_a.len() / 4);
             for chunk in slice_a.chunks_exact(4) {
-                data_a.push(f32::from_le_bytes(chunk.try_into()?));
+                let val = f32::from_le_bytes(chunk.try_into()?);
+                if !val.is_finite() {
+                    bail!("Adversarial tensor payload: contains NaN or infinite weights in {}", key_a);
+                }
+                data_a.push(val);
             }
             if data_a.len() != meta_a.shape[0] * meta_a.shape[1] {
                 bail!("Tensor A data length does not match specified shape");
@@ -160,7 +164,11 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
             let slice_b = &binary_data[start_b..end_b];
             let mut data_b = Vec::with_capacity(slice_b.len() / 4);
             for chunk in slice_b.chunks_exact(4) {
-                data_b.push(f32::from_le_bytes(chunk.try_into()?));
+                let val = f32::from_le_bytes(chunk.try_into()?);
+                if !val.is_finite() {
+                    bail!("Adversarial tensor payload: contains NaN or infinite weights in {}", key_b);
+                }
+                data_b.push(val);
             }
             if data_b.len() != meta_b.shape[0] * meta_b.shape[1] {
                 bail!("Tensor B data length does not match specified shape");
