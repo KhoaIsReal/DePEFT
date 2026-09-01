@@ -47,7 +47,9 @@ graph TD
 ### 1.1 CometBFT 2-Phase Commit Consensus
 The blockchain achieves deterministic instant finality with zero forks using a Tendermint/CometBFT 2-Phase Commit state machine:
 
-$$\text{Quorum Threshold } = \left\lfloor \frac{2 \times P_{\text{total}}}{3} \right\rfloor + 1$$
+$$\text{Quorum} = \lfloor 2 \times P / 3 \rfloor + 1$$
+
+Where $P$ is total voting power.
 
 - **Propose**: Weighted round-robin proposer creates a candidate block containing signed transactions and state root commitments.
 - **Prevote**: Validators verify block validity and broadcast signed `VoteType::Prevote`. Reaching $> 2/3$ creates a **Proof-of-Lock (POL)**.
@@ -57,9 +59,9 @@ $$\text{Quorum Threshold } = \left\lfloor \frac{2 \times P_{\text{total}}}{3} \r
 ### 1.2 Relative Consensus (Borda Count Rank Aggregation)
 To eliminate floating-point divergence caused by non-deterministic GPU kernel execution across CUDA, ROCm, and AVX-512 architectures, the protocol translates raw loss values into ordinal rankings:
 
-$$\text{Score}(M_i) = \sum_{v \in V} (N - \text{Rank}_v(M_i))$$
+$$\text{Score}(M_i) = \sum_{v \in V} (N - \text{Rank}(v, M_i))$$
 
-Where $N$ is the number of candidate miners, and $\text{Rank}_v(M_i)$ is the ordinal position assigned by validator $v$.
+Where $N$ is the number of candidate miners, and $\text{Rank}(v, M_i)$ is the ordinal position assigned by validator $v$.
 
 ### 1.3 Smart Contracts & Escrow Settlement
 - **`DePeftToken.sol`**: Standard ERC-20 token ($DEPEFT) for network utilities, bounty escrow, and staking.
@@ -70,20 +72,20 @@ Where $N$ is the number of candidate miners, and $\text{Rank}_v(M_i)$ is the ord
 ## 2️⃣ Layer 2: Miner Compute Network & Candle PEFT Engine
 
 ### 2.1 Low-Rank Adaptation (LoRA) Formulations
-Base model weights $W \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}}$ remain strictly frozen. The layer computes:
+Base model weights $W$ remain strictly frozen. The layer computes:
 
-$$h = W x + \frac{\alpha}{r} (B A) x$$
+$$h = W \cdot x + \frac{\alpha}{r} (B \cdot A) \cdot x$$
 
 Where:
-- $A \in \mathbb{R}^{r \times d_{\text{in}}}$: Down-projection matrix initialized with random Gaussian distribution $\mathcal{N}(0, \sigma^2)$.
-- $B \in \mathbb{R}^{d_{\text{out}} \times r}$: Up-projection matrix initialized to zero.
-- $r \ll \min(d_{\text{in}}, d_{\text{out}})$: LoRA rank (typically $r \in \{8, 16, 32, 64\}$).
+- $A$: Down-projection matrix initialized with random Gaussian distribution $\mathcal{N}(0, \sigma^2)$.
+- $B$: Up-projection matrix initialized to zero.
+- $r$: LoRA rank (typically $r \in \{8, 16, 32, 64\}$).
 - $\alpha$: Scaling factor hyperparameter.
 
 ### 2.2 ReLoRA Multi-Round Continuous Weight Fusion
-Upon conclusion of round $N$, the winning adapter $\Delta W^* = \frac{\alpha}{r} (B^* A^*)$ is permanently fused into the base checkpoint:
+Upon conclusion of round $k$, the winning adapter $\Delta W = \frac{\alpha}{r} (B \cdot A)$ is permanently fused into the base checkpoint:
 
-$$W_{N+1} = W_N + \frac{\alpha}{r} (B^* A^*)$$
+$$W_{k+1} = W_k + \frac{\alpha}{r} (B \cdot A)$$
 
 The adapter matrices are subsequently re-initialized ($A \leftarrow \mathcal{N}(0, \sigma^2)$, $B \leftarrow 0$), enabling arbitrary sequence evolution without expanding parameter footprint.
 
@@ -94,7 +96,9 @@ The adapter matrices are subsequently re-initialized ($A \leftarrow \mathcal{N}(
 ### 3.1 Hardware TEE Security Model (Intel SGX / AMD SEV-SNP)
 Validators evaluate candidate models inside protected hardware enclaves against private validation datasets. To ensure the integrity of evaluations, enclaves produce cryptographic **Remote Attestation Quotes**:
 
-$$\mathrm{report\_data} = \mathrm{SHA512}\left(\mathrm{task\_id} \mathbin{\Vert} \mathrm{round} \mathbin{\Vert} \mathrm{SHA256}(\mathrm{ranking})\right)$$
+```text
+report_data = SHA512(task_id || round || SHA256(ranking))
+```
 
 The App-Chain on-chain verifier enforces:
 1. `MRENCLAVE` matches an approved measurement registered in the on-chain governance whitelist.
@@ -102,9 +106,12 @@ The App-Chain on-chain verifier enforces:
 3. The platform Quoting Enclave (QE) signature verifies against the hardware root key.
 
 ### 3.2 Anti-Collusion Commit-Reveal Protocol
-- **Commit Phase**: Miners submit $\mathrm{commit\_hash} = \mathrm{SHA256}(\mathrm{adapter\_hash} \mathbin{\Vert} \mathrm{salt})$.
+- **Commit Phase**: Miners submit:
+```text
+commit_hash = SHA256(adapter_hash || salt)
+```
 - **Reveal Phase**: Miners upload `.safetensors` to IPFS and reveal the salt.
-- The App-Chain rejects any reveal where $\mathrm{SHA256}(\mathrm{SHA256}(\mathrm{safetensors}) \mathbin{\Vert} \mathrm{salt}) \neq \mathrm{commit\_hash}$.
+- The App-Chain rejects any reveal where `SHA256(SHA256(safetensors) || salt) != commit_hash`.
 
 ---
 
@@ -115,7 +122,7 @@ The App-Chain on-chain verifier enforces:
 - **Live IPFS Kubo RPC (`/api/v0/`)**: Full integration with local or remote IPFS nodes via `/api/v0/add`, `/api/v0/cat`, and `/api/v0/pin`.
 - **Embedded Vector Database**: Real-time cosine similarity indexing of adapter weight signatures for instantaneous plagiarism and duplicate detection:
 
-$$\mathrm{Similarity}(u, v) = \frac{u \cdot v}{\|u\|_2 \|v\|_2}$$
+$$\text{Similarity}(u, v) = \frac{u \cdot v}{\|u\| \cdot \|v\|}$$
 
 ---
 
@@ -132,7 +139,8 @@ The P2P network layer operates over raw async TCP sockets using a **Length-Delim
 ### Gossip Flooding & LRU Deduplication
 All transactions, block proposals, and IPFS CIDs are propagated across the overlay swarm. Each node maintains a thread-safe LRU cache of recently seen message hashes:
 
-$$\mathrm{message\_id} = \mathrm{SHA256}(\mathrm{serialized\_message})$$
-
+```text
+message_id = SHA256(serialized_message)
+```
 
 Duplicate messages are dropped immediately, eliminating re-broadcast loops and minimizing bandwidth consumption.

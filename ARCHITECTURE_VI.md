@@ -47,19 +47,23 @@ graph TD
 ### 1.1 Cơ chế Đồng thuận CometBFT 2-Phase Commit
 Blockchain bảo đảm giao dịch được chốt ngay lập tức (instant finality) và không bị phân nhánh bằng thuật toán 2-Phase Commit:
 
-$$\text{Quorum Threshold} = \left\lfloor \frac{2 \times P_{\text{total}}}{3} \right\rfloor + 1$$
+- **Công thức tính đa số (Quorum Threshold)**:
+
+$$\text{Quorum} = \lfloor 2 \times P / 3 \rfloor + 1$$
+
+Trong đó $P$ là tổng quyền biểu quyết của mạng lưới.
 
 - **Propose (Đề xuất)**: Validator được chọn sẽ tạo block mới gồm các giao dịch và mã băm trạng thái.
-- **Prevote (Bỏ phiếu trước)**: Các validator kiểm tra block và gửi chữ ký `Prevote`. Đạt $> 2/3$ phiếu sẽ tạo bằng chứng khóa block (Proof-of-Lock).
-- **Precommit (Xác nhận trước)**: Các validator gửi chữ ký `Precommit`. Khi đạt $> 2/3$ phiếu, block được duyệt hoàn tất.
-- **Commit (Ghi nhận)**: Block được lưu vĩnh viễn vào chuỗi và cập nhật chiều cao khối mới ($H \leftarrow H + 1$).
+- **Prevote (Bỏ phiếu trước)**: Các validator kiểm tra block và gửi chữ ký Prevote. Đạt trên 2/3 phiếu sẽ tạo bằng chứng khóa block (Proof-of-Lock).
+- **Precommit (Xác nhận trước)**: Các validator gửi chữ ký Precommit. Khi đạt trên 2/3 phiếu, block được duyệt hoàn tất.
+- **Commit (Ghi nhận)**: Block được lưu vĩnh viễn vào chuỗi và tăng chiều cao khối thêm 1 đơn vị.
 
 ### 1.2 Cơ chế Đồng thuận Thứ hạng (Borda Count)
-Do các loại card đồ họa (NVIDIA CUDA, AMD ROCm hay CPU) có sai số dấu phẩy động rất nhỏ khi tính điểm loss, mạng lưới dùng bảng xếp hạng thứ tự thay vì lấy trung bình điểm số:
+Do các loại card đồ họa (NVIDIA CUDA, AMD ROCm hay CPU) có sai số số thực rất nhỏ khi tính điểm loss, mạng lưới dùng bảng xếp hạng thứ tự thay vì lấy trung bình điểm số:
 
-$$\text{Score}(M_i) = \sum_{v \in V} (N - \text{Rank}_v(M_i))$$
+$$\text{Score}(M_i) = \sum_{v \in V} (N - \text{Rank}(v, M_i))$$
 
-Trong đó $N$ là số lượng thợ đào tham gia, và $\text{Rank}_v(M_i)$ là thứ hạng do validator $v$ chấm.
+Trong đó $N$ là số lượng thợ đào tham gia, và $\text{Rank}(v, M_i)$ là thứ hạng do validator $v$ chấm cho thợ đào $M_i$.
 
 ### 1.3 Smart Contract & Trả thưởng
 - **`DePeftToken.sol`**: Token chuẩn ERC-20 ($DEPEFT) dùng để thanh toán phí mạng, nạp tiền thưởng và tham gia staking.
@@ -70,20 +74,20 @@ Trong đó $N$ là số lượng thợ đào tham gia, và $\text{Rank}_v(M_i)$ 
 ## 2. Tầng 2: Mạng lưới Thợ đào & Huấn luyện LoRA
 
 ### 2.1 Cơ chế Huấn luyện LoRA
-Trọng số gốc của mô hình $W \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}}$ luôn được giữ cố định. Thợ đào chỉ huấn luyện 2 ma trận nhỏ $A$ và $B$:
+Trọng số gốc của mô hình $W$ luôn được giữ cố định. Thợ đào chỉ huấn luyện 2 ma trận nhỏ $A$ và $B$:
 
-$$h = W x + \frac{\alpha}{r} (B A) x$$
+$$h = W \cdot x + \frac{\alpha}{r} (B \cdot A) \cdot x$$
 
 Trong đó:
-- $A \in \mathbb{R}^{r \times d_{\text{in}}}$: Ma trận thu nhỏ (down-projection) khởi tạo ngẫu nhiên theo phân phối chuẩn $\mathcal{N}(0, \sigma^2)$.
-- $B \in \mathbb{R}^{d_{\text{out}} \times r}$: Ma trận phóng to (up-projection) khởi tạo bằng 0.
-- $r \ll \min(d_{\text{in}}, d_{\text{out}})$: Thứ hạng rank của LoRA (thường là 8, 16, 32 hoặc 64).
+- Ma trận $A$ (thu nhỏ): khởi tạo ngẫu nhiên theo phân phối chuẩn.
+- Ma trận $B$ (phóng to): khởi tạo bằng 0.
+- $r$: Thứ hạng (rank) của LoRA (thường là 8, 16, 32 hoặc 64).
 - $\alpha$: Hệ số phóng đại (scaling factor).
 
 ### 2.2 Ghép Trọng số Tiến hóa Đa vòng (ReLoRA)
-Sau khi kết thúc mỗi vòng $N$, trọng số từ adapter tốt nhất $\Delta W^* = \frac{\alpha}{r} (B^* A^*)$ sẽ được cộng thẳng vào mô hình gốc:
+Sau khi kết thúc mỗi vòng $k$, trọng số từ adapter tốt nhất $\Delta W$ sẽ được cộng thẳng vào mô hình gốc:
 
-$$W_{N+1} = W_N + \frac{\alpha}{r} (B^* A^*)$$
+$$W_{k+1} = W_k + \frac{\alpha}{r} (B \cdot A)$$
 
 Sau đó, hai ma trận $A$ và $B$ được tạo mới để tiếp tục vòng huấn luyện tiếp theo, giúp mô hình ngày càng thông minh hơn mà kích thước không bị phình to.
 
@@ -92,9 +96,11 @@ Sau đó, hai ma trận $A$ và $B$ được tạo mới để tiếp tục vòn
 ## 3. Tầng 3: Đánh giá Mô hình & Bảo mật TEE
 
 ### 3.1 Môi trường Bảo mật Phần cứng TEE (Intel SGX / AMD SEV)
-Validator chạy việc kiểm tra mô hình bên trong một vùng an toàn của chip phần cứng (TEE Enclave) cùng tập dữ liệu bí mật. Sau khi chấm điểm, chip sẽ tạo một chứng chỉ mật mã gọi là Remote Attestation Quote:
+Validator chạy việc kiểm tra mô hình bên trong một vùng an toàn của chip phần cứng (TEE Enclave) cùng tập dữ liệu bí mật. Sau khi chấm điểm, chip sẽ tạo một chứng chỉ mật mã:
 
-$$\text{report\_data} = \text{SHA512}\left(\text{task\_id} \mathbin{\Vert} \text{round} \mathbin{\Vert} \text{SHA256}(\text{ranking})\right)$$
+```text
+report_data = SHA512(task_id || round || SHA256(ranking))
+```
 
 Hệ thống trên chuỗi sẽ kiểm tra:
 1. Giá trị `MRENCLAVE` có nằm trong danh sách phần mềm an toàn đã duyệt hay không.
@@ -102,7 +108,11 @@ Hệ thống trên chuỗi sẽ kiểm tra:
 3. Chữ ký phần cứng của chip có hợp lệ hay không.
 
 ### 3.2 Cơ chế Chống Gian lận Commit-Reveal
-- **Bước Commit**: Thợ đào nộp mã băm $\text{commit\_hash} = \text{SHA256}(\text{adapter\_hash} \mathbin{\Vert} \text{salt})$ để giữ chỗ mà không lộ bài.
+- **Bước Commit**: Thợ đào nộp mã băm:
+```text
+commit_hash = SHA256(adapter_hash || salt)
+```
+để giữ chỗ mà không bị lộ bài.
 - **Bước Reveal**: Thợ đào tải file `.safetensors` lên IPFS và công bố chuỗi bí mật (salt).
 - Hệ thống sẽ từ chối nếu file tải lên không tạo ra đúng mã băm đã commit trước đó.
 
@@ -115,7 +125,7 @@ Hệ thống trên chuỗi sẽ kiểm tra:
 - **Kết nối IPFS Kubo**: Tải và lưu trữ dữ liệu với mạng IPFS thông qua các lệnh chuẩn.
 - **Cơ sở Dữ liệu Vector Nhúng**: Tự động so khớp độ tương đồng của trọng số để phát hiện sao chép, gian lận:
 
-$$\text{Similarity}(u, v) = \frac{u \cdot v}{\|u\|_2 \|v\|_2}$$
+$$\text{Similarity}(u, v) = \frac{u \cdot v}{\|u\| \cdot \|v\|}$$
 
 ---
 
@@ -130,8 +140,10 @@ Mạng P2P truyền nhận dữ liệu trực tiếp qua cổng TCP sử dụng 
 ```
 
 ### Lan truyền và Chống Gửi trùng Tin nhắn
-Mọi giao dịch và khối mới được lan truyền tự động giữa các máy trong mạng. Mỗi node có bộ nhớ đệm để nhớ các tin nhắn vừa nhận:
+Mọi giao dịch và khối mới được lan truyền tự động giữa các máy trong mạng. Mỗi node nhận diện tin nhắn qua mã băm:
 
-$$\text{message\_id} = \text{SHA256}(\text{serialized\_message})$$
+```text
+message_id = SHA256(serialized_message)
+```
 
 Nếu gặp tin nhắn đã nhận rồi thì hệ thống sẽ bỏ qua ngay, giúp tiết kiệm đường truyền mạng.
