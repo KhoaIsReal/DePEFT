@@ -358,6 +358,12 @@ async fn request_faucet(
                 ));
             }
         }
+        const MAX_COOLDOWNS: usize = 50_000;
+        if cooldowns.len() >= MAX_COOLDOWNS && !cooldowns.contains_key(&account) {
+            if let Some(first_key) = cooldowns.keys().next().cloned() {
+                cooldowns.remove(&first_key);
+            }
+        }
         cooldowns.insert(account.clone(), now);
     }
 
