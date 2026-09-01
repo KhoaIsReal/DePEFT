@@ -119,9 +119,11 @@ impl IpfsKuboClient {
         Ok(())
     }
 
-    /// Download binary bytes from IPFS by CID via `/api/v0/cat`.
+    /// Download binary bytes from IPFS by CID via `/api/v0/cat` with size limit protection.
     pub async fn cat_bytes(&self, cid: &str) -> Result<Vec<u8>> {
         Self::validate_cid(cid)?;
+        const MAX_DOWNLOAD_SIZE: usize = 128 * 1024 * 1024; // 128 MB max artifact limit
+
         let url = format!("{}/api/v0/cat?arg={}", self.api_url, cid);
         let resp = self
             .http
@@ -134,7 +136,16 @@ impl IpfsKuboClient {
             bail!("IPFS /api/v0/cat failed for CID {}: status {}", cid, resp.status());
         }
 
+        if let Some(content_len) = resp.content_length() {
+            if content_len > MAX_DOWNLOAD_SIZE as u64 {
+                bail!("IPFS artifact for CID {} exceeds maximum allowed size of {} bytes", cid, MAX_DOWNLOAD_SIZE);
+            }
+        }
+
         let bytes = resp.bytes().await?.to_vec();
+        if bytes.len() > MAX_DOWNLOAD_SIZE {
+            bail!("IPFS artifact for CID {} exceeds maximum allowed size of {} bytes", cid, MAX_DOWNLOAD_SIZE);
+        }
         Ok(bytes)
     }
 
