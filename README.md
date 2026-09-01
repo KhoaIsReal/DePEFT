@@ -15,10 +15,11 @@ An end-to-end, production-grade Rust implementation of the **DePEFT Architecture
 
 ## 📚 Documentation Index
 
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)**: Deep-dive whitepaper specification of all 4 layers, ReLoRA weight fusion, Borda count aggregation, and CometBFT 2-phase commit.
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** (Tiếng Việt: **[ARCHITECTURE_VI.md](./ARCHITECTURE_VI.md)**): Deep-dive whitepaper specification of all 4 layers, ReLoRA weight fusion, Borda count aggregation, and CometBFT 2-phase commit.
 - **[AGENTS.md](./AGENTS.md)**: Autonomous agent guide, node operator manual, REST/JSON-RPC API schema, and miner/validator execution loops.
-- **[CONTRIBUTING.md](./CONTRIBUTING.md)**: Contribution guidelines, toolchain setup, architectural invariants, code standards, and PR workflows.
-- **[SECURITY.md](./SECURITY.md)**: Threat modeling, anti-fraud guarantees, TEE attestation verification, and vulnerability disclosure policy.
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** (Tiếng Việt: **[CONTRIBUTING_VI.md](./CONTRIBUTING_VI.md)**): Contribution guidelines, toolchain setup, architectural invariants, code standards, and PR workflows.
+- **[SECURITY.md](./SECURITY.md)** (Tiếng Việt: **[SECURITY_VI.md](./SECURITY_VI.md)**): Threat modeling, anti-fraud guarantees, TEE attestation verification, and vulnerability disclosure policy.
+- **[README_VI.md](./README_VI.md)**: Bản tài liệu tiếng Việt đầy đủ cho dự án DePEFT.
 
 ---
 
