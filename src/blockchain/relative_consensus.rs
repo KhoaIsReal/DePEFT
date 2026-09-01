@@ -68,6 +68,10 @@ impl RelativeConsensusEngine {
             }
         }
 
+        if seen_validators.is_empty() {
+            return None;
+        }
+
         let mut score_map: HashMap<AccountId, usize> = HashMap::new();
         let m = candidate_miners.len();
 

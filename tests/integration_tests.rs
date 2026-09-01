@@ -1355,3 +1355,35 @@ fn test_security_bft_future_timestamp_rejected() {
 
     assert!(bft_node2.receive_proposal(proposal).is_err(), "Future timestamp block proposal must be rejected");
 }
+
+#[test]
+fn test_security_tee_quote_stale_timestamp_rejected() {
+    use DePEFT::blockchain::types::AccountId;
+    use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeType};
+
+    let enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
+    let ranking = vec![AccountId::new("miner-1")];
+
+    let mut quote = enclave.generate_quote(1, 1, &ranking).unwrap();
+    // Tamper quote timestamp to 48 hours ago
+    quote.timestamp = 100_000;
+
+    let verifier = OnChainTeeVerifier::default();
+    assert!(verifier.verify_quote(&quote, 1, 1, &ranking).is_err(), "Stale TEE attestation quote must be rejected");
+}
+
+#[test]
+fn test_security_tee_quote_future_timestamp_rejected() {
+    use DePEFT::blockchain::types::AccountId;
+    use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeType};
+
+    let enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
+    let ranking = vec![AccountId::new("miner-1")];
+
+    let mut quote = enclave.generate_quote(1, 1, &ranking).unwrap();
+    // Tamper quote timestamp to year 2099
+    quote.timestamp = 4_000_000_000;
+
+    let verifier = OnChainTeeVerifier::default();
+    assert!(verifier.verify_quote(&quote, 1, 1, &ranking).is_err(), "Future TEE attestation quote must be rejected");
+}

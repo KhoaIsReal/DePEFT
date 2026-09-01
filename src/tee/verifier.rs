@@ -88,7 +88,21 @@ impl OnChainTeeVerifier {
             );
         }
 
-        // 4. Cryptographically verify Hardware Platform Quote Signature
+        // 4. Verify Quote Timestamp Freshness and Future Drift
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        const MAX_QUOTE_AGE_SECONDS: u64 = 86400; // 24 hours max age for evaluation quote
+        if now.saturating_sub(quote.timestamp) > MAX_QUOTE_AGE_SECONDS {
+            bail!("TEE Attestation Quote is stale: quote timestamp exceeds maximum age of 24h");
+        }
+        if quote.timestamp > now + 60 {
+            bail!("TEE Attestation Quote timestamp is in the future");
+        }
+
+        // 5. Cryptographically verify Hardware Platform Quote Signature
         let verifying_key = VerifyingKey::from_bytes(&quote.platform_public_key)
             .map_err(|e| anyhow::anyhow!("Invalid TEE platform public key: {}", e))?;
 
