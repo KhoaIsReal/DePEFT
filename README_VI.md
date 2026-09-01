@@ -7,7 +7,7 @@
 [![Consensus](https://img.shields.io/badge/consensus-CometBFT%20%2F%20Tendermint-blueviolet.svg)]()
 [![TEE](https://img.shields.io/badge/TEE-Intel%20SGX%20%7C%20AMD%20SEV--SNP-informational.svg)]()
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
-[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](./LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPLv3-blue.svg)](./LICENSE)
 
 DePEFT là dự án mã nguồn mở viết bằng Rust, cho phép nhiều người cùng tham gia huấn luyện và tinh chỉnh (fine-tune) các mô hình ngôn ngữ lớn (LLM) một cách minh bạch, an toàn và phi tập trung. Hệ thống sử dụng Hugging Face Candle QLoRA, môi trường bảo mật phần cứng TEE, mạng lưu trữ IPFS và cơ chế đồng thuận CometBFT.
 
@@ -213,6 +213,6 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ## 📄 Bản quyền Mã Nguồn
 
-- **Mã nguồn Node & Blockchain (`src/`, `Cargo.toml`)**: Giấy phép **[GPL-3.0](./LICENSE)**. Các phiên bản phân phối lại bắt buộc phải giữ mã nguồn mở.
+- **Mã nguồn Node & Blockchain (`src/`, `Cargo.toml`)**: Giấy phép **[AGPL-3.0](./LICENSE)**. Các phiên bản phân phối lại bắt buộc phải giữ mã nguồn mở.
 - **Thư viện Python SDK (`sdk/python/`)**: Giấy phép kép **[Apache-2.0](./sdk/python/LICENSE-APACHE)** hoặc **[MIT](./sdk/python/LICENSE-MIT)**, thoải mái tích hợp vào các ứng dụng cá nhân hoặc thương mại.
 - **Smart Contract (`contracts/`)**: Giấy phép kép **[Apache-2.0](./contracts/LICENSE-APACHE)** hoặc **[MIT](./contracts/LICENSE-MIT)**.

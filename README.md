@@ -7,7 +7,7 @@
 [![Consensus](https://img.shields.io/badge/consensus-CometBFT%20%2F%20Tendermint-blueviolet.svg)]()
 [![TEE](https://img.shields.io/badge/TEE-Intel%20SGX%20%7C%20AMD%20SEV--SNP-informational.svg)]()
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
-[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](./LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPLv3-blue.svg)](./LICENSE)
 
 An end-to-end, production-grade Rust implementation of the **DePEFT Architecture Design** specification for decentralized AI fine-tuning using Hugging Face Candle QLoRA, Hardware TEE Remote Attestation, IPFS decentralized storage, and CometBFT 2-phase commit consensus.
 
@@ -242,7 +242,7 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 DePEFT uses a modular multi-license architecture to protect core blockchain innovation while maximizing developer adoption:
 
-- **Core Node & Consensus Engine (`src/`, `Cargo.toml`)**: Licensed under the **[GNU General Public License v3.0 (GPL-3.0)](./LICENSE)**. Any forks or network distributions of the core node must remain open-source.
+- **Core Node & Consensus Engine (`src/`, `Cargo.toml`)**: Licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE)**. Any forks or network distributions of the core node must remain open-source.
 - **Python Client SDK (`sdk/python/`)**: Dual-licensed under **[Apache-2.0](./sdk/python/LICENSE-APACHE)** OR **[MIT](./sdk/python/LICENSE-MIT)**, allowing external AI developers and agents to freely integrate DePEFT into proprietary or open workflows.
 - **Smart Contracts (`contracts/`)**: Dual-licensed under **[Apache-2.0](./contracts/LICENSE-APACHE)** OR **[MIT](./contracts/LICENSE-MIT)** for permissive EVM deployment and DApp integration.
 
