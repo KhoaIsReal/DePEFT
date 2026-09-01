@@ -118,41 +118,69 @@ impl CandleMinerTrainer {
             anyhow::bail!("No valid training samples provided");
         }
 
+        let lr = if hyperparams.learning_rate.is_finite() && hyperparams.learning_rate > 0.0 {
+            hyperparams.learning_rate.min(10.0)
+        } else {
+            0.001
+        };
+        let steps = hyperparams.steps.clamp(1, 10_000);
+        let batch_size = hyperparams.batch_size.clamp(1, 128);
+        let weight_decay = if hyperparams.weight_decay.is_finite() && hyperparams.weight_decay >= 0.0 {
+            hyperparams.weight_decay.min(1.0)
+        } else {
+            0.01
+        };
+        let beta1 = if hyperparams.beta1.is_finite() && (0.0..1.0).contains(&hyperparams.beta1) {
+            hyperparams.beta1
+        } else {
+            0.9
+        };
+        let beta2 = if hyperparams.beta2.is_finite() && (0.0..1.0).contains(&hyperparams.beta2) {
+            hyperparams.beta2
+        } else {
+            0.999
+        };
+        let eps = if hyperparams.eps.is_finite() && hyperparams.eps > 0.0 {
+            hyperparams.eps
+        } else {
+            1e-8
+        };
+
         let vars = model.get_trainable_vars();
 
         // Instantiate chosen optimizer (AdamW, Adam, or SGD)
         let mut optimizer = match hyperparams.optimizer_type {
             PeftOptimizerType::AdamW => {
                 let params = ParamsAdamW {
-                    lr: hyperparams.learning_rate,
-                    beta1: hyperparams.beta1,
-                    beta2: hyperparams.beta2,
-                    eps: hyperparams.eps,
-                    weight_decay: hyperparams.weight_decay,
+                    lr,
+                    beta1,
+                    beta2,
+                    eps,
+                    weight_decay,
                 };
                 CandleOptimizer::AdamW(AdamW::new(vars, params)?)
             }
             PeftOptimizerType::Adam => {
                 // Adam is AdamW without weight decay (L2 decoupled penalty = 0.0)
                 let params = ParamsAdamW {
-                    lr: hyperparams.learning_rate,
-                    beta1: hyperparams.beta1,
-                    beta2: hyperparams.beta2,
-                    eps: hyperparams.eps,
+                    lr,
+                    beta1,
+                    beta2,
+                    eps,
                     weight_decay: 0.0,
                 };
                 CandleOptimizer::AdamW(AdamW::new(vars, params)?)
             }
-            PeftOptimizerType::SGD => CandleOptimizer::SGD(SGD::new(vars, hyperparams.learning_rate)?),
+            PeftOptimizerType::SGD => CandleOptimizer::SGD(SGD::new(vars, lr)?),
         };
 
         let mut initial_loss_val = 0.0f32;
         let mut final_loss_val = 0.0f32;
 
-        for step in 0..hyperparams.steps {
+        for step in 0..steps {
             // Select batch
-            let start_idx = (step * hyperparams.batch_size) % encoded_samples.len();
-            let end_idx = (start_idx + hyperparams.batch_size).min(encoded_samples.len());
+            let start_idx = (step * batch_size) % encoded_samples.len();
+            let end_idx = (start_idx + batch_size).min(encoded_samples.len());
             let batch_slice = &encoded_samples[start_idx..end_idx];
             if batch_slice.is_empty() {
                 continue;
