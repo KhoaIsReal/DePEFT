@@ -256,6 +256,14 @@ enum TaskCommands {
         /// Bounty pool tokens to deposit into escrow
         #[arg(short, long, default_value_t = 30000)]
         bounty: u128,
+
+        /// Top-K winners to share bounty (1 = Winner-Takes-All, 3, 5, 10, etc.)
+        #[arg(long, default_value_t = 1)]
+        top_k: usize,
+
+        /// Merge strategy: "single" or "ensemble"
+        #[arg(long, default_value = "single")]
+        merge: String,
     },
 }
 
@@ -664,6 +672,11 @@ fn print_spec() {
         target_modules: vec![b"q_proj".to_vec(), b"v_proj".to_vec(), b"k_proj".to_vec(), b"o_proj".to_vec()],
         bounty_pool: 50_000,
         epoch_end_block: 1200,
+        reward_distribution: DePEFT::blockchain::types::RewardDistribution::TopKDecay {
+            top_k: 5,
+            decay_rate: 0.5,
+        },
+        merge_strategy: DePEFT::blockchain::types::MergeStrategy::EnsembleWeighted { top_k: 5 },
     };
 
     println!("{}", serde_json::to_string_pretty(&spec).unwrap().bright_green());
@@ -895,6 +908,8 @@ async fn main() -> anyhow::Result<()> {
                 secret_key,
                 model_id,
                 bounty,
+                top_k,
+                merge,
             } => {
                 let clean_hex = secret_key.trim_start_matches("0x");
                 let bytes = hex::decode(clean_hex)?;
@@ -904,6 +919,21 @@ async fn main() -> anyhow::Result<()> {
 
                 let client = DePeftClient::new(&node_url);
                 let account_info = client.get_account(&keypair.account_id().to_string()).await?;
+
+                let reward_distribution = if top_k <= 1 {
+                    DePEFT::blockchain::types::RewardDistribution::WinnerTakesAll
+                } else {
+                    DePEFT::blockchain::types::RewardDistribution::TopKDecay {
+                        top_k,
+                        decay_rate: 0.5,
+                    }
+                };
+
+                let merge_strategy = if merge.to_lowercase() == "ensemble" {
+                    DePEFT::blockchain::types::MergeStrategy::EnsembleWeighted { top_k }
+                } else {
+                    DePEFT::blockchain::types::MergeStrategy::SingleWinner
+                };
 
                 // Create Task transaction
                 let tx = Transaction::CreateTask {
@@ -917,6 +947,8 @@ async fn main() -> anyhow::Result<()> {
                     target_modules: vec![b"q_proj".to_vec(), b"v_proj".to_vec(), b"out_proj".to_vec()],
                     bounty_pool: bounty,
                     epoch_blocks: 100,
+                    reward_distribution,
+                    merge_strategy,
                 };
 
                 let signed_tx = keypair.sign_transaction(tx)?;

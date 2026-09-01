@@ -151,6 +151,8 @@ impl AppChainState {
                 target_modules,
                 bounty_pool,
                 epoch_blocks,
+                reward_distribution,
+                merge_strategy,
             } => {
                 ensure!(
                     &client == sender,
@@ -195,6 +197,8 @@ impl AppChainState {
                     target_modules,
                     bounty_pool,
                     epoch_end_block: self.block_height + epoch_blocks,
+                    reward_distribution,
+                    merge_strategy,
                 };
 
                 self.tasks.insert(task_id, task_spec);
@@ -392,19 +396,95 @@ impl AppChainState {
         ctx.consensus = Some(consensus.clone());
         ctx.phase = RoundPhase::Completed;
 
-        // Payout bounty reward to winning miner from escrow
-        let bounty_payout = if let Some(escrow) = self.escrows.get_mut(&task_id) {
+        // Payout bounty reward according to the task's configured RewardDistribution strategy
+        let task_reward_dist = self
+            .tasks
+            .get(&task_id)
+            .map(|t| t.reward_distribution)
+            .unwrap_or_default();
+
+        let mut reward_distributions: Vec<(AccountId, u128)> = Vec::new();
+        let total_available_bounty = if let Some(escrow) = self.escrows.get_mut(&task_id) {
             let amount = if round_bounty > 0 {
                 round_bounty.min(*escrow)
             } else {
                 *escrow
             };
             *escrow -= amount;
-            *self.balances.entry(winner.clone()).or_insert(0) += amount;
             amount
         } else {
             0
         };
+
+        if total_available_bounty > 0 {
+            match task_reward_dist {
+                crate::blockchain::types::RewardDistribution::WinnerTakesAll => {
+                    *self.balances.entry(winner.clone()).or_insert(0) += total_available_bounty;
+                    reward_distributions.push((winner.clone(), total_available_bounty));
+                }
+                crate::blockchain::types::RewardDistribution::TopKDecay {
+                    top_k,
+                    decay_rate,
+                } => {
+                    let k = top_k.min(consensus.consensus_ranking.len()).max(1);
+                    let valid_decay = if decay_rate > 0.0 && decay_rate < 1.0 {
+                        decay_rate
+                    } else {
+                        0.5
+                    };
+
+                    let mut weights: Vec<f64> = (0..k)
+                        .map(|i| (1.0 - valid_decay).powi(i as i32))
+                        .collect();
+                    let sum_weights: f64 = weights.iter().sum();
+                    if sum_weights > 0.0 {
+                        for w in &mut weights {
+                            *w /= sum_weights;
+                        }
+                    }
+
+                    let mut remaining_to_distribute = total_available_bounty;
+                    for (i, miner_id) in consensus.consensus_ranking.iter().take(k).enumerate() {
+                        let amount = if i == k - 1 {
+                            remaining_to_distribute
+                        } else {
+                            let share = (total_available_bounty as f64 * weights[i]).round() as u128;
+                            share.min(remaining_to_distribute)
+                        };
+                        remaining_to_distribute = remaining_to_distribute.saturating_sub(amount);
+                        *self.balances.entry(miner_id.clone()).or_insert(0) += amount;
+                        reward_distributions.push((miner_id.clone(), amount));
+                    }
+                }
+                crate::blockchain::types::RewardDistribution::TopKBordaWeighted { top_k } => {
+                    let k = top_k.min(consensus.borda_scores.len()).max(1);
+                    let top_borda: Vec<(AccountId, usize)> =
+                        consensus.borda_scores.iter().take(k).cloned().collect();
+                    let total_borda: usize = top_borda.iter().map(|(_, s)| *s).sum();
+
+                    let mut remaining_to_distribute = total_available_bounty;
+                    if total_borda > 0 {
+                        for (i, (miner_id, score)) in top_borda.iter().enumerate() {
+                            let amount = if i == k - 1 {
+                                remaining_to_distribute
+                            } else {
+                                let share = (total_available_bounty as f64 * (*score as f64)
+                                    / (total_borda as f64))
+                                    .round() as u128;
+                                share.min(remaining_to_distribute)
+                            };
+                            remaining_to_distribute =
+                                remaining_to_distribute.saturating_sub(amount);
+                            *self.balances.entry(miner_id.clone()).or_insert(0) += amount;
+                            reward_distributions.push((miner_id.clone(), amount));
+                        }
+                    } else {
+                        *self.balances.entry(winner.clone()).or_insert(0) += total_available_bounty;
+                        reward_distributions.push((winner.clone(), total_available_bounty));
+                    }
+                }
+            }
+        }
 
         let summary = RoundSummary {
             round_number: round,
@@ -416,7 +496,8 @@ impl AppChainState {
             borda_scores: consensus.borda_scores,
             pre_merge_loss,
             post_merge_loss,
-            bounty_awarded: bounty_payout,
+            bounty_awarded: total_available_bounty,
+            reward_distributions,
         };
 
         const MAX_ROUND_HISTORY: usize = 1000;

@@ -26,6 +26,7 @@ contract DePeftEscrow {
 
     event TaskCreated(uint256 indexed taskId, address indexed client, uint256 bountyPool, uint256 totalRounds);
     event RoundSettled(uint256 indexed taskId, uint256 indexed round, address indexed winner, uint256 rewardAmount);
+    event MultiRoundSettled(uint256 indexed taskId, uint256 indexed round, address[] winners, uint256[] rewardAmounts);
     event TaskRefunded(uint256 indexed taskId, address indexed client, uint256 refundAmount);
 
     modifier onlyOwner() {
@@ -83,6 +84,43 @@ contract DePeftEscrow {
 
         require(token.transfer(winner, rewardPerRound), "Reward payout transfer failed");
         emit RoundSettled(taskId, round, winner, rewardPerRound);
+    }
+
+    /// Settle reward for a completed tournament round to Top-K winning miners
+    function settleRoundRewardTopK(
+        uint256 taskId,
+        uint256 round,
+        address[] calldata winners,
+        uint256[] calldata rewardAmounts
+    ) external onlyOwner {
+        require(winners.length > 0 && winners.length == rewardAmounts.length, "Invalid Top-K parameters");
+        TaskEscrow storage task = tasks[taskId];
+        require(task.isActive, "Task is not active");
+        require(roundWinners[taskId][round] == address(0), "Round already settled");
+
+        uint256 totalPayout = 0;
+        for (uint256 i = 0; i < rewardAmounts.length; i++) {
+            require(winners[i] != address(0), "Invalid winner address in Top-K");
+            totalPayout += rewardAmounts[i];
+        }
+
+        require(task.remainingBounty >= totalPayout, "Insufficient remaining bounty for Top-K payout");
+
+        task.remainingBounty -= totalPayout;
+        task.completedRounds += 1;
+        roundWinners[taskId][round] = winners[0]; // Set top-1 as primary round winner
+
+        if (task.completedRounds >= task.totalRounds) {
+            task.isActive = false;
+        }
+
+        for (uint256 i = 0; i < winners.length; i++) {
+            if (rewardAmounts[i] > 0) {
+                require(token.transfer(winners[i], rewardAmounts[i]), "Reward transfer failed in Top-K");
+            }
+        }
+
+        emit MultiRoundSettled(taskId, round, winners, rewardAmounts);
     }
 
     /// Refund unspent bounty to client if task is cancelled

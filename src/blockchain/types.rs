@@ -46,8 +46,30 @@ impl fmt::Display for PeftType {
     }
 }
 
+/// Reward distribution strategy chosen by the task creator (Client).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub enum RewardDistribution {
+    /// 100% of the round bounty awarded to the Top-1 winner.
+    #[default]
+    WinnerTakesAll,
+    /// Award Top-K miners with exponential decay (e.g. top_k = 10, decay_rate = 0.5).
+    TopKDecay { top_k: usize, decay_rate: f64 },
+    /// Award Top-K miners proportionally based on their Borda consensus scores.
+    TopKBordaWeighted { top_k: usize },
+}
+
+/// Weight merging strategy chosen by the task creator (Client).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub enum MergeStrategy {
+    /// Merge only the Top-1 winner's adapter into the base model: W_{N+1} = W_N + Delta W*.
+    #[default]
+    SingleWinner,
+    /// Ensemble weighted merge from Top-K adapters: W_{N+1} = W_N + sum(alpha_i * Delta W_i).
+    EnsembleWeighted { top_k: usize },
+}
+
 /// TaskSpec matching the on-chain data specification in section 3 of DePEFT architecture.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskSpec {
     pub task_id: u64,
     pub client_address: AccountId,
@@ -62,9 +84,13 @@ pub struct TaskSpec {
     pub max_rank: u16,                // Hyperparameter constraint (r <= 64)
     pub target_modules: Vec<Vec<u8>>, // e.g. ["q_proj", "v_proj"]
 
-    // Economic management
+    // Economic & Tournament policy
     pub bounty_pool: u128,    // Total token reward for this epoch
     pub epoch_end_block: u32, // Block closing adapter submission
+    #[serde(default)]
+    pub reward_distribution: RewardDistribution, // Configurable bounty sharing strategy
+    #[serde(default)]
+    pub merge_strategy: MergeStrategy,           // Configurable adapter merge strategy
 }
 
 impl TaskSpec {
@@ -159,4 +185,6 @@ pub struct RoundSummary {
     pub pre_merge_loss: f64,
     pub post_merge_loss: f64,
     pub bounty_awarded: u128,
+    #[serde(default)]
+    pub reward_distributions: Vec<(AccountId, u128)>,
 }

@@ -114,7 +114,9 @@ Autonomous agents communicate with any live App-Chain Node over HTTP/JSON-RPC (d
         "max_rank": 16,
         "target_modules": [[113, 95, 112, 114, 111, 106], [118, 95, 112, 114, 111, 106]],
         "bounty_pool": 30000,
-        "epoch_blocks": 50
+        "epoch_blocks": 50,
+        "reward_distribution": { "TopKDecay": { "top_k": 5, "decay_rate": 0.5 } },
+        "merge_strategy": { "EnsembleWeighted": { "top_k": 5 } }
       }
     },
     "sender_public_key": [64, 75, 179, 67...],

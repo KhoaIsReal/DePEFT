@@ -1,4 +1,6 @@
-use crate::blockchain::types::{AccountId, PeftType, ValidatorEvaluation};
+use crate::blockchain::types::{
+    AccountId, MergeStrategy, PeftType, RewardDistribution, ValidatorEvaluation,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -15,6 +17,10 @@ pub enum Transaction {
         target_modules: Vec<Vec<u8>>,
         bounty_pool: u128,
         epoch_blocks: u32,
+        #[serde(default)]
+        reward_distribution: RewardDistribution,
+        #[serde(default)]
+        merge_strategy: MergeStrategy,
     },
     /// Miner submits commit hash before deadline: commit_hash = SHA256(adapter_bytes || salt).
     CommitAdapter {

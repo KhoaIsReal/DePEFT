@@ -1,6 +1,7 @@
 use crate::blockchain::types::PeftType;
 use crate::ml::dataset::Dataset;
 use crate::ml::lora::{ModuleAdapter, QLoRALinear};
+use crate::ml::tensor::{Matrix, QuantizedWeight};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -226,5 +227,86 @@ impl DePEFTModel {
         self.q_proj.merge_and_reset(rng);
         self.v_proj.merge_and_reset(rng);
         self.out_proj.merge_and_reset(rng);
+    }
+
+    /// Merge multiple candidate adapters into base weights using weighted ensemble fusion.
+    pub fn merge_and_evolve_ensemble(
+        &mut self,
+        weighted_packages: &[(&AdapterPackage, f32)],
+        rng: &mut impl Rng,
+    ) -> anyhow::Result<()> {
+        if weighted_packages.is_empty() {
+            return Ok(());
+        }
+
+        // Calculate combined delta for each layer
+        let mut q_delta_sum = None;
+        let mut v_delta_sum = None;
+        let mut out_delta_sum = None;
+
+        for &(pkg, weight) in weighted_packages {
+            if let Some(q) = pkg.modules.get("q_proj") {
+                let delta = q.compute_delta_w().scale(weight);
+                q_delta_sum = Some(match q_delta_sum {
+                    None => delta,
+                    Some(sum) => Matrix::add(&sum, &delta),
+                });
+            }
+            if let Some(v) = pkg.modules.get("v_proj") {
+                let delta = v.compute_delta_w().scale(weight);
+                v_delta_sum = Some(match v_delta_sum {
+                    None => delta,
+                    Some(sum) => Matrix::add(&sum, &delta),
+                });
+            }
+            if let Some(out) = pkg.modules.get("out_proj") {
+                let delta = out.compute_delta_w().scale(weight);
+                out_delta_sum = Some(match out_delta_sum {
+                    None => delta,
+                    Some(sum) => Matrix::add(&sum, &delta),
+                });
+            }
+        }
+
+        if let Some(delta) = q_delta_sum {
+            let cur = self.q_proj.base_weight.dequantize();
+            let evolved = cur.add(&delta);
+            self.q_proj.base_weight = match self.peft_type {
+                PeftType::LoRA => QuantizedWeight::FP32(evolved),
+                PeftType::QLoRA_NF4 => QuantizedWeight::quantize_nf4(&evolved, 16),
+                PeftType::QLoRA_INT4 => QuantizedWeight::quantize_int4(&evolved, 16),
+            };
+            self.q_proj.lora_a =
+                Matrix::random_normal(self.q_proj.rank, self.q_proj.in_features, 0.0, 0.02, rng);
+            self.q_proj.lora_b = Matrix::zeros(self.q_proj.out_features, self.q_proj.rank);
+        }
+
+        if let Some(delta) = v_delta_sum {
+            let cur = self.v_proj.base_weight.dequantize();
+            let evolved = cur.add(&delta);
+            self.v_proj.base_weight = match self.peft_type {
+                PeftType::LoRA => QuantizedWeight::FP32(evolved),
+                PeftType::QLoRA_NF4 => QuantizedWeight::quantize_nf4(&evolved, 16),
+                PeftType::QLoRA_INT4 => QuantizedWeight::quantize_int4(&evolved, 16),
+            };
+            self.v_proj.lora_a =
+                Matrix::random_normal(self.v_proj.rank, self.v_proj.in_features, 0.0, 0.02, rng);
+            self.v_proj.lora_b = Matrix::zeros(self.v_proj.out_features, self.v_proj.rank);
+        }
+
+        if let Some(delta) = out_delta_sum {
+            let cur = self.out_proj.base_weight.dequantize();
+            let evolved = cur.add(&delta);
+            self.out_proj.base_weight = match self.peft_type {
+                PeftType::LoRA => QuantizedWeight::FP32(evolved),
+                PeftType::QLoRA_NF4 => QuantizedWeight::quantize_nf4(&evolved, 16),
+                PeftType::QLoRA_INT4 => QuantizedWeight::quantize_int4(&evolved, 16),
+            };
+            self.out_proj.lora_a =
+                Matrix::random_normal(self.out_proj.rank, self.out_proj.in_features, 0.0, 0.02, rng);
+            self.out_proj.lora_b = Matrix::zeros(self.out_proj.out_features, self.out_proj.rank);
+        }
+
+        Ok(())
     }
 }

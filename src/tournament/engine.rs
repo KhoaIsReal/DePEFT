@@ -84,6 +84,8 @@ impl TournamentEngine {
                 target_modules,
                 bounty_pool: total_bounty,
                 epoch_blocks: 100,
+                reward_distribution: crate::blockchain::types::RewardDistribution::default(),
+                merge_strategy: crate::blockchain::types::MergeStrategy::default(),
             },
             &client_address,
         )?;
@@ -212,23 +214,70 @@ impl TournamentEngine {
         )
         .ok_or_else(|| anyhow::anyhow!("Consensus failed"))?;
 
-        let winner_miner = &consensus.winner;
-        let winning_reveal = round_ctx
-            .reveals
-            .get(winner_miner)
-            .ok_or_else(|| anyhow::anyhow!("Winner reveal not found"))?;
+        let task_merge_strat = self
+            .chain
+            .tasks
+            .get(&self.task_id)
+            .map(|t| t.merge_strategy)
+            .unwrap_or_default();
 
-        // Retrieve winning .safetensors from IPFS
-        let winning_bytes = self
-            .ipfs
-            .get(&winning_reveal.adapter_cid)
-            .ok_or_else(|| anyhow::anyhow!("Winning safetensors not found in IPFS"))?;
-        let winning_pkg = deserialize_safetensors(&winning_bytes)?;
+        match task_merge_strat {
+            crate::blockchain::types::MergeStrategy::SingleWinner => {
+                let winner_miner = &consensus.winner;
+                let winning_reveal = round_ctx
+                    .reveals
+                    .get(winner_miner)
+                    .ok_or_else(|| anyhow::anyhow!("Winner reveal not found"))?;
 
-        // Load winning adapter into base model and execute permanent ReLoRA weight merge:
-        // W_{N+1} = W_N + \Delta W_{N+1}
-        self.base_model.load_adapters(&winning_pkg)?;
-        self.base_model.merge_and_evolve(&mut rng);
+                // Retrieve winning .safetensors from IPFS
+                let winning_bytes = self
+                    .ipfs
+                    .get(&winning_reveal.adapter_cid)
+                    .ok_or_else(|| anyhow::anyhow!("Winning safetensors not found in IPFS"))?;
+                let winning_pkg = deserialize_safetensors(&winning_bytes)?;
+
+                // Load winning adapter into base model and execute permanent ReLoRA weight merge:
+                // W_{N+1} = W_N + \Delta W_{N+1}
+                self.base_model.load_adapters(&winning_pkg)?;
+                self.base_model.merge_and_evolve(&mut rng);
+            }
+            crate::blockchain::types::MergeStrategy::EnsembleWeighted { top_k } => {
+                let k = top_k.min(consensus.consensus_ranking.len()).max(1);
+                let mut pkgs = Vec::new();
+                let mut valid_miners = Vec::new();
+
+                for miner_id in consensus.consensus_ranking.iter().take(k) {
+                    if let Some(reveal) = round_ctx.reveals.get(miner_id) {
+                        if let Some(bytes) = self.ipfs.get(&reveal.adapter_cid) {
+                            if let Ok(pkg) = deserialize_safetensors(&bytes) {
+                                pkgs.push(pkg);
+                                valid_miners.push(miner_id.clone());
+                            }
+                        }
+                    }
+                }
+
+                if pkgs.is_empty() {
+                    // Fallback to empty evolve if no packages loadable
+                    self.base_model.merge_and_evolve(&mut rng);
+                } else {
+                    let total = pkgs.len();
+                    // Linear decay weights for ensemble
+                    let mut weights: Vec<f32> = (0..total)
+                        .map(|i| (total - i) as f32)
+                        .collect();
+                    let sum_w: f32 = weights.iter().sum();
+                    for w in &mut weights {
+                        *w /= sum_w;
+                    }
+
+                    let weighted_refs: Vec<(&crate::ml::model::AdapterPackage, f32)> =
+                        pkgs.iter().zip(weights).collect();
+
+                    self.base_model.merge_and_evolve_ensemble(&weighted_refs, &mut rng)?;
+                }
+            }
+        }
 
         // Measure evolved base model loss
         let (post_merge_loss, _post_acc) = self.base_model.evaluate(&self.dataset_test, 0.0);

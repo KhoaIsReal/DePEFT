@@ -26,8 +26,9 @@ pub mod tournament;
 pub mod validator;
 
 pub use blockchain::{
-    AccountId, AppChainState, CommitRecord, PeftType, RelativeConsensusEngine, RevealRecord,
-    RoundPhase, RoundSummary, TaskSpec, Transaction, ValidatorEvaluation,
+    AccountId, AppChainState, CommitRecord, MergeStrategy, PeftType, RelativeConsensusEngine,
+    RevealRecord, RewardDistribution, RoundPhase, RoundSummary, TaskSpec, Transaction,
+    ValidatorEvaluation,
 };
 pub use candle_peft::{
     CandleLoraLinear, CandleMinerHyperparams, CandleMinerTrainer, CandleTrainingArtifact,

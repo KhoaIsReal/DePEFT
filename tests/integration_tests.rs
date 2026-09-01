@@ -24,6 +24,11 @@ fn test_task_spec_data_structure() {
         target_modules: vec![b"q_proj".to_vec(), b"v_proj".to_vec()],
         bounty_pool: 25_000,
         epoch_end_block: 500,
+        reward_distribution: DePEFT::blockchain::types::RewardDistribution::TopKDecay {
+            top_k: 5,
+            decay_rate: 0.5,
+        },
+        merge_strategy: DePEFT::blockchain::types::MergeStrategy::EnsembleWeighted { top_k: 5 },
     };
 
     assert_eq!(spec.task_id, 42);
@@ -101,6 +106,8 @@ fn test_commit_reveal_anti_collusion_verification() {
                 target_modules: vec![b"q_proj".to_vec()],
                 bounty_pool: 5_000,
                 epoch_blocks: 50,
+                reward_distribution: Default::default(),
+                merge_strategy: Default::default(),
             },
             &client,
         )
@@ -335,6 +342,8 @@ fn test_ed25519_cryptographic_signing_and_verification() {
         target_modules: vec![b"q_proj".to_vec()],
         bounty_pool: 15_000,
         epoch_blocks: 100,
+        reward_distribution: Default::default(),
+        merge_strategy: Default::default(),
     };
 
     let signed_tx = keypair.sign_transaction(tx.clone()).expect("Signing failed");
@@ -436,6 +445,8 @@ async fn test_live_node_http_rpc_integration() {
         target_modules: vec![b"q_proj".to_vec()],
         bounty_pool: 20_000,
         epoch_blocks: 50,
+        reward_distribution: Default::default(),
+        merge_strategy: Default::default(),
     };
 
     let signed_tx = client_keypair.sign_transaction(create_task_tx).unwrap();
@@ -504,6 +515,8 @@ async fn test_p2p_swarm_bidirectional_gossip_and_deduplication() {
         target_modules: vec![b"q_proj".to_vec()],
         bounty_pool: 10_000,
         epoch_blocks: 50,
+        reward_distribution: Default::default(),
+        merge_strategy: Default::default(),
     };
     let signed_tx = kp_a.sign_transaction(tx).unwrap();
 
@@ -996,6 +1009,8 @@ fn test_security_state_rejects_zero_bounty_and_zero_epoch_tasks() {
         target_modules: vec![b"q_proj".to_vec()],
         bounty_pool: 0,
         epoch_blocks: 10,
+        reward_distribution: Default::default(),
+        merge_strategy: Default::default(),
     };
     assert!(state.apply_transaction(tx_zero_bounty, &client_kp.account_id()).is_err());
 
@@ -1011,6 +1026,8 @@ fn test_security_state_rejects_zero_bounty_and_zero_epoch_tasks() {
         target_modules: vec![b"q_proj".to_vec()],
         bounty_pool: 1_000,
         epoch_blocks: 2,
+        reward_distribution: Default::default(),
+        merge_strategy: Default::default(),
     };
     assert!(state.apply_transaction(tx_short_epoch, &client_kp.account_id()).is_err());
 }
@@ -1180,6 +1197,8 @@ fn test_security_signed_tx_inner_sender_mismatch_rejected() {
         target_modules: vec![b"q_proj".to_vec()],
         bounty_pool: 1000,
         epoch_blocks: 10,
+        reward_distribution: Default::default(),
+        merge_strategy: Default::default(),
     };
 
     let tx_bytes = serde_json::to_vec(&tx).unwrap();
@@ -1240,6 +1259,8 @@ fn test_security_duplicate_commit_and_reveal_rejected() {
         target_modules: vec![b"q_proj".to_vec()],
         bounty_pool: 10_000,
         epoch_blocks: 10,
+        reward_distribution: Default::default(),
+        merge_strategy: Default::default(),
     };
     assert!(state.apply_transaction(task_tx, &client_kp.account_id()).is_ok());
 
@@ -1438,3 +1459,115 @@ fn test_security_bft_proof_of_lock_violation_rejected() {
     // Voting for a conflicting block hash while locked must be rejected
     assert!(bft.cast_prevote(&kp1, Some([0x99; 32])).is_err(), "Conflicting prevote while locked must be rejected");
 }
+
+#[test]
+fn test_top_k_bounty_distribution_and_ensemble_merge() {
+    use DePEFT::blockchain::types::{MergeStrategy, RewardDistribution};
+
+    let mut chain = AppChainState::new();
+    chain.tee_verifier.enforce_attestation = false;
+    let client = AccountId::new("client_top_k");
+    let m1 = AccountId::new("miner_1");
+    let m2 = AccountId::new("miner_2");
+    let m3 = AccountId::new("miner_3");
+    let val = AccountId::new("validator_1");
+
+    chain.mint(client.clone(), 30_000);
+
+    // 1. Create task configured with Top-3 Exponential Decay & Ensemble Merge
+    let tx = Transaction::CreateTask {
+        client: client.clone(),
+        nonce: chain.nonce_of(&client),
+        base_model_id: b"Qwen2.5-7B".to_vec(),
+        base_model_hash: [0x11; 32],
+        dataset_cid: b"bafy_dataset".to_vec(),
+        peft_method: PeftType::QLoRA_NF4,
+        max_rank: 16,
+        target_modules: vec![b"q_proj".to_vec()],
+        bounty_pool: 30_000,
+        epoch_blocks: 10,
+        reward_distribution: RewardDistribution::TopKDecay {
+            top_k: 3,
+            decay_rate: 0.5,
+        },
+        merge_strategy: MergeStrategy::EnsembleWeighted { top_k: 3 },
+    };
+    chain.apply_transaction(tx, &client).unwrap();
+
+    let task_id = 1;
+    let round = 1;
+    chain.start_round(task_id, round, "bafy_base_w0".to_string()).unwrap();
+
+    // 2. Miners commit
+    let salt1 = vec![1, 2, 3];
+    let hash1 = [0x01; 32];
+    let commit1 = AppChainState::compute_commit_hash(&hash1, &salt1);
+    chain.apply_transaction(
+        Transaction::CommitAdapter { task_id, round, miner: m1.clone(), nonce: chain.nonce_of(&m1), commit_hash: commit1 },
+        &m1,
+    ).unwrap();
+
+    let salt2 = vec![4, 5, 6];
+    let hash2 = [0x02; 32];
+    let commit2 = AppChainState::compute_commit_hash(&hash2, &salt2);
+    chain.apply_transaction(
+        Transaction::CommitAdapter { task_id, round, miner: m2.clone(), nonce: chain.nonce_of(&m2), commit_hash: commit2 },
+        &m2,
+    ).unwrap();
+
+    let salt3 = vec![7, 8, 9];
+    let hash3 = [0x03; 32];
+    let commit3 = AppChainState::compute_commit_hash(&hash3, &salt3);
+    chain.apply_transaction(
+        Transaction::CommitAdapter { task_id, round, miner: m3.clone(), nonce: chain.nonce_of(&m3), commit_hash: commit3 },
+        &m3,
+    ).unwrap();
+
+    // 3. Move to reveal & miners reveal
+    chain.set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::RevealPhase).unwrap();
+    chain.apply_transaction(
+        Transaction::RevealAdapter { task_id, round, miner: m1.clone(), nonce: chain.nonce_of(&m1), adapter_cid: "bafy_cid_1".into(), salt: salt1, adapter_hash: hash1 },
+        &m1,
+    ).unwrap();
+    chain.apply_transaction(
+        Transaction::RevealAdapter { task_id, round, miner: m2.clone(), nonce: chain.nonce_of(&m2), adapter_cid: "bafy_cid_2".into(), salt: salt2, adapter_hash: hash2 },
+        &m2,
+    ).unwrap();
+    chain.apply_transaction(
+        Transaction::RevealAdapter { task_id, round, miner: m3.clone(), nonce: chain.nonce_of(&m3), adapter_cid: "bafy_cid_3".into(), salt: salt3, adapter_hash: hash3 },
+        &m3,
+    ).unwrap();
+
+    // 4. Move to evaluation & submit ranking: m1 > m2 > m3
+    chain.set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::EvaluationPhase).unwrap();
+    let eval = ValidatorEvaluation {
+        validator_address: val.clone(),
+        ranking: vec![m1.clone(), m2.clone(), m3.clone()],
+        loss_scores: vec![(m1.clone(), 0.1), (m2.clone(), 0.2), (m3.clone(), 0.3)],
+        accuracy_scores: vec![(m1.clone(), 0.9), (m2.clone(), 0.8), (m3.clone(), 0.7)],
+        hardware_info: "NVIDIA RTX 4090".to_string(),
+        attestation_quote: None,
+    };
+    chain.apply_transaction(
+        Transaction::SubmitEvaluation { task_id, round, nonce: chain.nonce_of(&val), evaluation: eval },
+        &val,
+    ).unwrap();
+
+    // 5. Finalize round with 10_000 round bounty
+    chain.set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::MergePhase).unwrap();
+    let summary = chain.finalize_round(task_id, round, "bafy_evolved_w1".to_string(), 0.5, 0.1, 10_000).unwrap();
+
+    assert_eq!(summary.winning_miner, m1);
+    assert_eq!(summary.reward_distributions.len(), 3);
+
+    // Verify all Top-3 miners received non-zero reward
+    let bal1 = chain.balance_of(&m1);
+    let bal2 = chain.balance_of(&m2);
+    let bal3 = chain.balance_of(&m3);
+
+    assert!(bal1 > bal2, "Top 1 reward ({bal1}) must be greater than Top 2 ({bal2})");
+    assert!(bal2 > bal3, "Top 2 reward ({bal2}) must be greater than Top 3 ({bal3})");
+    assert!(bal3 > 0, "Top 3 reward must be non-zero");
+    assert_eq!(bal1 + bal2 + bal3, 10_000, "Total distributed bounty must equal 10,000");
+}
+
