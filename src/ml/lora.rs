@@ -70,7 +70,9 @@ impl QLoRALinear {
 
     /// Forward pass: $Y = W \cdot X + \frac{\alpha}{r} (B \cdot A \cdot X)$
     pub fn forward(&self, input: &[f32]) -> Vec<f32> {
-        assert_eq!(input.len(), self.in_features);
+        if input.len() != self.in_features {
+            return vec![0.0; self.out_features];
+        }
 
         let w = self.base_weight.dequantize();
         let input_mat = Matrix::new(self.in_features, 1, input.to_vec());
@@ -95,6 +97,10 @@ impl QLoRALinear {
     /// $\nabla B = \gamma (\text{grad\_out}) (A X)^T$
     /// $\nabla A = \gamma (B^T \text{grad\_out}) X^T$
     pub fn compute_gradients(&self, input: &[f32], grad_out: &[f32]) -> (Matrix, Matrix) {
+        if input.len() != self.in_features || grad_out.len() != self.out_features {
+            return (Matrix::zeros(self.rank, self.in_features), Matrix::zeros(self.out_features, self.rank));
+        }
+
         let scaling = self.alpha / self.rank as f32;
         let input_mat = Matrix::new(self.in_features, 1, input.to_vec());
         let grad_out_mat = Matrix::new(self.out_features, 1, grad_out.to_vec());

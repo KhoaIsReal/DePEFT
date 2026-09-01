@@ -1387,3 +1387,25 @@ fn test_security_tee_quote_future_timestamp_rejected() {
     let verifier = OnChainTeeVerifier::default();
     assert!(verifier.verify_quote(&quote, 1, 1, &ranking).is_err(), "Future TEE attestation quote must be rejected");
 }
+
+#[test]
+fn test_security_qlora_forward_invalid_input_length_graceful() {
+    use DePEFT::blockchain::types::PeftType;
+    use DePEFT::ml::lora::QLoRALinear;
+    use rand::SeedableRng;
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let layer = QLoRALinear::new(8, 4, 2, 16.0, PeftType::LoRA, &mut rng);
+
+    // Passing input of len 3 when 8 was expected should not panic
+    let output = layer.forward(&[1.0, 2.0, 3.0]);
+    assert_eq!(output.len(), 4);
+    assert_eq!(output, vec![0.0; 4]);
+
+    // compute_gradients with mismatch should return zero matrices without panic
+    let (grad_a, grad_b) = layer.compute_gradients(&[1.0, 2.0], &[1.0, 2.0]);
+    assert_eq!(grad_a.rows, 2);
+    assert_eq!(grad_a.cols, 8);
+    assert_eq!(grad_b.rows, 4);
+    assert_eq!(grad_b.cols, 2);
+}
