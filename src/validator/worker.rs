@@ -44,6 +44,7 @@ impl ValidatorNode {
         ipfs: &IpfsStorage,
         task_id: u64,
         round: usize,
+        nonce: u64,
         base_model: &DePEFTModel,
         reveals: &[(AccountId, String)], // list of (miner_id, adapter_cid)
     ) -> Result<Transaction> {
@@ -106,6 +107,7 @@ impl ValidatorNode {
         Ok(Transaction::SubmitEvaluation {
             task_id,
             round,
+            nonce,
             evaluation,
         })
     }

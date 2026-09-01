@@ -1,3 +1,3 @@
 pub mod rpc;
 
-pub use rpc::{BalanceInfo, DePeftClient, NodeStatus};
+pub use rpc::{AccountInfo, DePeftClient, NodeStatus};

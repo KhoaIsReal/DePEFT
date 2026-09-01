@@ -92,6 +92,7 @@ fn test_commit_reveal_anti_collusion_verification() {
         .apply_transaction(
             Transaction::CreateTask {
                 client: client.clone(),
+                nonce: chain.nonce_of(&client),
                 base_model_id: b"test-model".to_vec(),
                 base_model_hash: [0; 32],
                 dataset_cid: b"test-cid".to_vec(),
@@ -119,6 +120,7 @@ fn test_commit_reveal_anti_collusion_verification() {
                 task_id,
                 round: 1,
                 miner: miner.clone(),
+                nonce: chain.nonce_of(&miner),
                 commit_hash,
             },
             &miner,
@@ -135,6 +137,7 @@ fn test_commit_reveal_anti_collusion_verification() {
         task_id,
         round: 1,
         miner: miner.clone(),
+        nonce: chain.nonce_of(&miner),
         adapter_cid: "bafy_adapter_1".to_string(),
         salt: salt.clone(),
         adapter_hash,
@@ -161,6 +164,7 @@ fn test_commit_reveal_anti_collusion_verification() {
         task_id,
         round: 1,
         miner: fake_miner.clone(),
+        nonce: chain.nonce_of(&fake_miner),
         adapter_cid: "bafy_fake".to_string(),
         salt: vec![0, 0, 0, 0],
         adapter_hash: [0x11; 32],
@@ -322,6 +326,7 @@ fn test_ed25519_cryptographic_signing_and_verification() {
 
     let tx = Transaction::CreateTask {
         client: account_id.clone(),
+        nonce: 0,
         base_model_id: b"test-model".to_vec(),
         base_model_hash: [0x77; 32],
         dataset_cid: b"bafy_test".to_vec(),
@@ -422,6 +427,7 @@ async fn test_live_node_http_rpc_integration() {
     // 3. Test Signed Transaction Broadcast (CreateTask)
     let create_task_tx = Transaction::CreateTask {
         client: client_keypair.account_id(),
+        nonce: 0,
         base_model_id: b"Qwen/Qwen2.5-7B".to_vec(),
         base_model_hash: [0x88; 32],
         dataset_cid: cid.as_bytes().to_vec(),
@@ -489,6 +495,7 @@ async fn test_p2p_swarm_bidirectional_gossip_and_deduplication() {
     // Node A broadcasts a signed transaction
     let tx = Transaction::CreateTask {
         client: kp_a.account_id(),
+        nonce: 0,
         base_model_id: b"test-gossip-model".to_vec(),
         base_model_hash: [0xaa; 32],
         dataset_cid: b"bafy_gossip".to_vec(),

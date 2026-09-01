@@ -34,7 +34,7 @@ pub use candle_peft::{
     CandleTransformerConfig, CandleTransformerLM, CandleValidatorEvaluator, CandleWeightMerger,
     PeftOptimizerType, SimpleByteTokenizer,
 };
-pub use client::{BalanceInfo, DePeftClient, NodeStatus};
+pub use client::{AccountInfo, DePeftClient, NodeStatus};
 pub use consensus::{
     BftEngine, BftRoundState, BftStep, Block, BlockCommit, BlockHeader, ConsensusValidator,
     EquivocationEvidence, SlashingEngine, ValidatorSet, Vote, VoteType,

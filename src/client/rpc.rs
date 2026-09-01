@@ -36,9 +36,10 @@ pub struct NodeStatus {
 }
 
 #[derive(Deserialize)]
-pub struct BalanceInfo {
+pub struct AccountInfo {
     pub account: String,
     pub balance: u128,
+    pub nonce: u64,
 }
 
 impl DePeftClient {
@@ -118,9 +119,15 @@ impl DePeftClient {
 
     /// Query account token balance.
     pub async fn get_balance(&self, account_hex: &str) -> Result<u128> {
-        let url = format!("{}/api/v1/accounts/{}/balance", self.base_url, account_hex);
-        let info = self.http.get(&url).send().await?.json::<BalanceInfo>().await?;
+        let info = self.get_account(account_hex).await?;
         Ok(info.balance)
+    }
+
+    /// Query account info (balance and nonce).
+    pub async fn get_account(&self, account_hex: &str) -> Result<AccountInfo> {
+        let url = format!("{}/api/v1/accounts/{}/balance", self.base_url, account_hex);
+        let info = self.http.get(&url).send().await?.json::<AccountInfo>().await?;
+        Ok(info)
     }
 
     /// Query connected P2P peers.

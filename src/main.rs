@@ -903,10 +903,12 @@ async fn main() -> anyhow::Result<()> {
                 let keypair = AccountKeypair::from_secret_bytes(&arr);
 
                 let client = DePeftClient::new(&node_url);
+                let account_info = client.get_account(&keypair.account_id().to_string()).await?;
 
                 // Create Task transaction
                 let tx = Transaction::CreateTask {
                     client: keypair.account_id(),
+                    nonce: account_info.nonce,
                     base_model_id: model_id.as_bytes().to_vec(),
                     base_model_hash: [0x55; 32],
                     dataset_cid: b"bafy_sample_dataset".to_vec(),
@@ -963,10 +965,12 @@ async fn main() -> anyhow::Result<()> {
                 println!("    └─ Commit Hash: 0x{}", hex::encode(artifact.commit_hash));
 
                 // 1. Submit Commit Transaction
+                let acc_info = client.get_account(&keypair.account_id().to_string()).await?;
                 let commit_tx = Transaction::CommitAdapter {
                     task_id,
                     round: 1,
                     miner: keypair.account_id(),
+                    nonce: acc_info.nonce,
                     commit_hash: artifact.commit_hash,
                 };
                 let signed_commit = keypair.sign_transaction(commit_tx)?;
@@ -979,10 +983,12 @@ async fn main() -> anyhow::Result<()> {
                 println!("    └─ Adapter CID: {}", adapter_cid.bright_yellow());
 
                 // 3. Submit Reveal Transaction
+                let acc_info2 = client.get_account(&keypair.account_id().to_string()).await?;
                 let reveal_tx = Transaction::RevealAdapter {
                     task_id,
                     round: 1,
                     miner: keypair.account_id(),
+                    nonce: acc_info2.nonce,
                     adapter_cid,
                     salt: artifact.salt,
                     adapter_hash: artifact.adapter_hash,
@@ -1034,9 +1040,11 @@ async fn main() -> anyhow::Result<()> {
                     attestation_quote: Some(quote),
                 };
 
+                let acc_info = client.get_account(&keypair.account_id().to_string()).await?;
                 let eval_tx = Transaction::SubmitEvaluation {
                     task_id,
                     round: 1,
+                    nonce: acc_info.nonce,
                     evaluation: eval,
                 };
                 let signed_eval = keypair.sign_transaction(eval_tx)?;

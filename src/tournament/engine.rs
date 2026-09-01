@@ -75,6 +75,7 @@ impl TournamentEngine {
         chain.apply_transaction(
             Transaction::CreateTask {
                 client: client_address.clone(),
+                nonce: chain.nonce_of(&client_address),
                 base_model_id: b"DePEFT-Llama3-Base".to_vec(),
                 base_model_hash,
                 dataset_cid: dataset_cid.as_bytes().to_vec(),
@@ -136,9 +137,11 @@ impl TournamentEngine {
             .set_round_phase(self.task_id, round_num, RoundPhase::CommitPhase)?;
 
         for miner in &mut self.miners {
+            let miner_nonce = self.chain.nonce_of(&miner.account_id);
             let commit_tx = miner.run_training_and_commit(
                 self.task_id,
                 round_num,
+                miner_nonce,
                 &task_spec,
                 &self.base_model,
                 &self.dataset_train,
@@ -157,7 +160,8 @@ impl TournamentEngine {
 
         let mut revealed_pairs: Vec<(AccountId, String)> = Vec::new();
         for miner in &mut self.miners {
-            let (reveal_tx, cid) = miner.reveal_adapter(self.task_id, round_num, &self.ipfs)?;
+            let miner_nonce = self.chain.nonce_of(&miner.account_id);
+            let (reveal_tx, cid) = miner.reveal_adapter(self.task_id, round_num, miner_nonce, &self.ipfs)?;
             self.chain.apply_transaction(reveal_tx, &miner.account_id)?;
             revealed_pairs.push((miner.account_id.clone(), cid));
             self.chain.advance_block();
@@ -171,10 +175,12 @@ impl TournamentEngine {
             .set_round_phase(self.task_id, round_num, RoundPhase::EvaluationPhase)?;
 
         for validator in &self.validators {
+            let val_nonce = self.chain.nonce_of(&validator.account_id);
             let eval_tx = validator.evaluate_round(
                 &self.ipfs,
                 self.task_id,
                 round_num,
+                val_nonce,
                 &self.base_model,
                 &revealed_pairs,
             )?;

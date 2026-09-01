@@ -62,9 +62,10 @@ struct StorageUploadRequest {
 }
 
 #[derive(Serialize)]
-struct BalanceResponse {
+struct AccountInfoResponse {
     account: String,
     balance: u128,
+    nonce: u64,
 }
 
 /// HTTP API Handlers
@@ -247,13 +248,15 @@ async fn download_storage(
 async fn get_account_balance(
     Path(account_str): Path<String>,
     State(ctx): State<NodeContext>,
-) -> Json<BalanceResponse> {
+) -> Json<AccountInfoResponse> {
     let chain = ctx.chain.read().unwrap();
     let account = AccountId::new(account_str.clone());
     let balance = chain.balance_of(&account);
-    Json(BalanceResponse {
+    let nonce = chain.nonce_of(&account);
+    Json(AccountInfoResponse {
         account: account_str,
         balance,
+        nonce,
     })
 }
 

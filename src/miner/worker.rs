@@ -29,6 +29,7 @@ impl MinerNode {
         &mut self,
         task_id: u64,
         round: usize,
+        nonce: u64,
         task_spec: &TaskSpec,
         base_model: &DePEFTModel,
         dataset: &Dataset,
@@ -50,6 +51,7 @@ impl MinerNode {
             task_id,
             round,
             miner: self.account_id.clone(),
+            nonce,
             commit_hash,
         })
     }
@@ -59,6 +61,7 @@ impl MinerNode {
         &mut self,
         task_id: u64,
         round: usize,
+        nonce: u64,
         ipfs: &IpfsStorage,
     ) -> Result<(Transaction, String)> {
         let artifact = self
@@ -73,6 +76,7 @@ impl MinerNode {
             task_id,
             round,
             miner: self.account_id.clone(),
+            nonce,
             adapter_cid: adapter_cid.clone(),
             salt: artifact.salt.clone(),
             adapter_hash: artifact.adapter_hash,

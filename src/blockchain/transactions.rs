@@ -6,6 +6,7 @@ pub enum Transaction {
     /// Client deposits bounty and registers a new PEFT task.
     CreateTask {
         client: AccountId,
+        nonce: u64,
         base_model_id: Vec<u8>,
         base_model_hash: [u8; 32],
         dataset_cid: Vec<u8>,
@@ -20,6 +21,7 @@ pub enum Transaction {
         task_id: u64,
         round: usize,
         miner: AccountId,
+        nonce: u64,
         commit_hash: [u8; 32],
     },
     /// Miner reveals adapter file on IPFS and provides salt.
@@ -27,6 +29,7 @@ pub enum Transaction {
         task_id: u64,
         round: usize,
         miner: AccountId,
+        nonce: u64,
         adapter_cid: String,
         salt: Vec<u8>,
         adapter_hash: [u8; 32],
@@ -35,6 +38,19 @@ pub enum Transaction {
     SubmitEvaluation {
         task_id: u64,
         round: usize,
+        nonce: u64,
         evaluation: ValidatorEvaluation,
     },
+}
+
+impl Transaction {
+    /// Get the transaction nonce.
+    pub fn nonce(&self) -> u64 {
+        match self {
+            Transaction::CreateTask { nonce, .. } => *nonce,
+            Transaction::CommitAdapter { nonce, .. } => *nonce,
+            Transaction::RevealAdapter { nonce, .. } => *nonce,
+            Transaction::SubmitEvaluation { nonce, .. } => *nonce,
+        }
+    }
 }

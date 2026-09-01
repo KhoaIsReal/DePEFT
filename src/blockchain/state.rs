@@ -44,6 +44,7 @@ pub struct AppChainState {
     pub block_height: u32,
     pub next_task_id: u64,
     pub balances: HashMap<AccountId, u128>,
+    pub nonces: HashMap<AccountId, u64>,
     pub escrows: HashMap<u64, u128>,
     pub tasks: HashMap<u64, TaskSpec>,
     pub round_contexts: HashMap<(u64, usize), RoundContext>,
@@ -64,6 +65,7 @@ impl AppChainState {
             block_height: 1,
             next_task_id: 1,
             balances: HashMap::new(),
+            nonces: HashMap::new(),
             escrows: HashMap::new(),
             tasks: HashMap::new(),
             round_contexts: HashMap::new(),
@@ -80,6 +82,11 @@ impl AppChainState {
     /// Get current balance of an account.
     pub fn balance_of(&self, account: &AccountId) -> u128 {
         self.balances.get(account).copied().unwrap_or(0)
+    }
+
+    /// Get next expected nonce of an account.
+    pub fn nonce_of(&self, account: &AccountId) -> u64 {
+        self.nonces.get(account).copied().unwrap_or(0)
     }
 
     /// Advance block height by 1.
@@ -116,9 +123,20 @@ impl AppChainState {
 
     /// Process an on-chain transaction deterministically.
     pub fn apply_transaction(&mut self, tx: Transaction, sender: &AccountId) -> Result<()> {
+        // Anti-Replay Attack verification: verify transaction nonce matches expected sender nonce
+        let expected_nonce = self.nonce_of(sender);
+        ensure!(
+            tx.nonce() == expected_nonce,
+            "Invalid transaction nonce for {}: expected {}, got {}",
+            sender,
+            expected_nonce,
+            tx.nonce()
+        );
+
         match tx {
             Transaction::CreateTask {
                 client,
+                nonce: _,
                 base_model_id,
                 base_model_hash,
                 dataset_cid,
@@ -167,6 +185,7 @@ impl AppChainState {
                 task_id,
                 round,
                 miner,
+                nonce: _,
                 commit_hash,
             } => {
                 ensure!(
@@ -200,6 +219,7 @@ impl AppChainState {
                 task_id,
                 round,
                 miner,
+                nonce: _,
                 adapter_cid,
                 salt,
                 adapter_hash,
@@ -248,6 +268,7 @@ impl AppChainState {
             Transaction::SubmitEvaluation {
                 task_id,
                 round,
+                nonce: _,
                 evaluation,
             } => {
                 ensure!(
@@ -274,6 +295,9 @@ impl AppChainState {
                     .insert(evaluation.validator_address.clone(), evaluation);
             }
         }
+
+        // Increment sender account nonce upon successful transaction application
+        *self.nonces.entry(sender.clone()).or_insert(0) += 1;
 
         Ok(())
     }
