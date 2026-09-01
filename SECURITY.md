@@ -47,9 +47,9 @@ sequenceDiagram
 
 ## 📢 Responsible Vulnerability Disclosure
 
-If you discover a security vulnerability in DePEFT (such as a cryptographic bypass, TEE attestation flaw, consensus safety bug, or potential exploit), please report it responsibly using **GitHub Private Vulnerability Reporting**:
+If you discover a security vulnerability in DePEFT (such as a cryptographic bypass, TEE attestation flaw, consensus safety bug, or potential exploit), please report it responsibly:
 
-- **Recommended Channel**: Navigate to the [Security Advisories tab](https://github.com/KhoaIsReal/DePEFT/security/advisories/new) of this repository and click **"Report a vulnerability"** to submit a secure, private advisory.
-- **Privacy & Encryption**: Private vulnerability reports are strictly accessible only to the repository maintainer and the reporter, ensuring zero public exposure before a fix is published.
-- **Report Details**: Please include a detailed technical description, minimal reproduction steps, proof-of-concept (PoC) code, and the affected module paths.
-- **Response Commitment**: We acknowledge valid reports within 24–48 hours, coordinate patch verification privately, and publish coordinated advisories with proper credit.
+- **Primary Security Channel**: Contact directly via **Discord** (Direct Message to maintainer: `@khoa` / join DePEFT community).
+- **Report Details**: Please provide a detailed description, reproduction steps, proof-of-concept (PoC) code, and affected module paths.
+- **Response Commitment**: We acknowledge valid reports within 24 hours, coordinate patch verification privately, and publish fixes swiftly.
+
