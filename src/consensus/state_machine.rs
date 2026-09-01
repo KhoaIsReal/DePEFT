@@ -119,6 +119,55 @@ impl BftEngine {
         Ok(block)
     }
 
+    /// Receive and cryptographically validate a candidate block proposal from the network proposer.
+    pub fn receive_proposal(&mut self, block: Block) -> Result<()> {
+        let expected_proposer = self
+            .validator_set
+            .get_proposer(self.current_height, self.current_round);
+
+        ensure!(
+            block.header.proposer == expected_proposer,
+            "Invalid block proposer: expected {}, got {}",
+            expected_proposer,
+            block.header.proposer
+        );
+
+        ensure!(
+            block.header.height == self.current_height && block.header.round == self.current_round,
+            "Block height/round mismatch: block is at ({}, {}), engine is at ({}, {})",
+            block.header.height,
+            block.header.round,
+            self.current_height,
+            self.current_round
+        );
+
+        ensure!(
+            block.header.prev_block_hash == self.last_block_hash(),
+            "Invalid previous block hash"
+        );
+
+        ensure!(
+            block.header.state_root == self.state_root,
+            "Invalid block state root"
+        );
+
+        // Verify transaction Merkle root matches transactions
+        let computed_tx_root = Block::compute_tx_merkle_root(&block.transactions);
+        ensure!(
+            block.header.tx_root == computed_tx_root,
+            "Invalid transaction root"
+        );
+
+        // Verify cryptographic signatures for all transactions included in proposal
+        for tx in &block.transactions {
+            tx.verify_signature()?;
+        }
+
+        self.round_state.proposal = Some(block);
+        self.round_state.step = BftStep::Prevote;
+        Ok(())
+    }
+
     /// Cast a cryptographic PREVOTE for a candidate block hash.
     pub fn cast_prevote(
         &self,

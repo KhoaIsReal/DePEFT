@@ -40,7 +40,7 @@ impl CandleLoraLinear {
     /// Forward pass: y = x W^T + (alpha / r) * (x A^T) B^T
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let orig_dims = x.dims();
-        let hidden = *orig_dims.last().unwrap();
+        let hidden = *orig_dims.last().ok_or_else(|| anyhow::anyhow!("Input tensor cannot be scalar / 0-dim"))?;
         let flat_x = x.reshape(((), hidden))?;
 
         // Base forward: flat_x @ W^T

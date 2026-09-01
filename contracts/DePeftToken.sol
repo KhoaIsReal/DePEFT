@@ -61,6 +61,7 @@ contract DePeftToken {
 
     /// Faucet function for Testnet participants (capped per call)
     function testnetFaucet(address recipient, uint256 amount) external onlyOwner {
+        require(recipient != address(0), "Invalid recipient address");
         require(balanceOf[owner] >= amount, "Faucet pool depleted");
         balanceOf[owner] -= amount;
         balanceOf[recipient] += amount;

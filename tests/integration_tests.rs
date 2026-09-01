@@ -925,3 +925,90 @@ fn test_security_vector_db_nan_and_dimension_safety() {
     });
     assert_eq!(vdb.count(), 1);
 }
+
+#[test]
+fn test_security_bft_receive_proposal_verification() {
+    use DePEFT::consensus::{BftEngine, ConsensusValidator};
+    use DePEFT::crypto::AccountKeypair;
+
+    let kp1 = AccountKeypair::generate();
+    let kp2 = AccountKeypair::generate();
+
+    let validators = vec![
+        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
+        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+    ];
+
+    let mut bft = BftEngine::new(validators, [0xaa; 32]);
+    let proposer = bft.validator_set.get_proposer(1, 0);
+    let (proposer_kp, rogue_kp) = if kp1.account_id() == proposer {
+        (&kp1, &kp2)
+    } else {
+        (&kp2, &kp1)
+    };
+
+    // 1. Valid proposal created by true proposer must be accepted
+    let valid_block = bft.create_proposal(proposer_kp, Vec::new()).unwrap();
+    let mut bft_node2 = BftEngine::new(
+        vec![
+            ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
+            ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+        ],
+        [0xaa; 32],
+    );
+    assert!(bft_node2.receive_proposal(valid_block).is_ok());
+
+    // 2. Proposal from unauthorized proposer must be rejected
+    let mut rogue_bft = BftEngine::new(
+        vec![
+            ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
+            ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+        ],
+        [0xaa; 32],
+    );
+    let mut fake_block = bft_node2.round_state.proposal.clone().unwrap();
+    fake_block.header.proposer = rogue_kp.account_id();
+    assert!(rogue_bft.receive_proposal(fake_block).is_err());
+}
+
+#[test]
+fn test_security_state_rejects_zero_bounty_and_zero_epoch_tasks() {
+    use DePEFT::blockchain::state::AppChainState;
+    use DePEFT::blockchain::transactions::Transaction;
+    use DePEFT::blockchain::types::PeftType;
+    use DePEFT::crypto::AccountKeypair;
+
+    let mut state = AppChainState::new();
+    let client_kp = AccountKeypair::generate();
+    state.mint(client_kp.account_id(), 10_000);
+
+    // 1. Zero bounty must be rejected
+    let tx_zero_bounty = Transaction::CreateTask {
+        client: client_kp.account_id(),
+        nonce: 0,
+        base_model_id: b"test-model".to_vec(),
+        base_model_hash: [0x11; 32],
+        dataset_cid: b"bafy_dataset".to_vec(),
+        peft_method: PeftType::QLoRA_NF4,
+        max_rank: 16,
+        target_modules: vec![b"q_proj".to_vec()],
+        bounty_pool: 0,
+        epoch_blocks: 10,
+    };
+    assert!(state.apply_transaction(tx_zero_bounty, &client_kp.account_id()).is_err());
+
+    // 2. Too short epoch (< 5 blocks) must be rejected
+    let tx_short_epoch = Transaction::CreateTask {
+        client: client_kp.account_id(),
+        nonce: 0,
+        base_model_id: b"test-model".to_vec(),
+        base_model_hash: [0x11; 32],
+        dataset_cid: b"bafy_dataset".to_vec(),
+        peft_method: PeftType::QLoRA_NF4,
+        max_rank: 16,
+        target_modules: vec![b"q_proj".to_vec()],
+        bounty_pool: 1_000,
+        epoch_blocks: 2,
+    };
+    assert!(state.apply_transaction(tx_short_epoch, &client_kp.account_id()).is_err());
+}
