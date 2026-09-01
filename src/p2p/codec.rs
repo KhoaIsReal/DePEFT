@@ -20,10 +20,14 @@ pub async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &P2pMessa
     Ok(())
 }
 
-/// Asynchronously read a length-delimited P2pMessage from a stream.
+/// Asynchronously read a length-delimited P2pMessage from a stream with Slowloris timeout protection.
 pub async fn read_message<R: AsyncRead + Unpin>(reader: &mut R) -> Result<P2pMessage> {
+    const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
     let mut len_buf = [0u8; 4];
-    reader.read_exact(&mut len_buf).await?;
+    tokio::time::timeout(READ_TIMEOUT, reader.read_exact(&mut len_buf))
+        .await
+        .context("P2P read header timed out")??;
     let len = u32::from_be_bytes(len_buf) as usize;
 
     if !(MIN_FRAME_SIZE..=MAX_FRAME_SIZE).contains(&len) {
@@ -31,7 +35,9 @@ pub async fn read_message<R: AsyncRead + Unpin>(reader: &mut R) -> Result<P2pMes
     }
 
     let mut payload = vec![0u8; len];
-    reader.read_exact(&mut payload).await?;
+    tokio::time::timeout(READ_TIMEOUT, reader.read_exact(&mut payload))
+        .await
+        .context("P2P read body timed out")??;
 
     let msg: P2pMessage = serde_json::from_slice(&payload).context("Failed to deserialize P2pMessage")?;
     Ok(msg)
