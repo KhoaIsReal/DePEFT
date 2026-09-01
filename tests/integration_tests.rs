@@ -1012,3 +1012,37 @@ fn test_security_state_rejects_zero_bounty_and_zero_epoch_tasks() {
     };
     assert!(state.apply_transaction(tx_short_epoch, &client_kp.account_id()).is_err());
 }
+
+#[test]
+fn test_security_safetensors_out_of_bounds_offsets_rejected() {
+    use DePEFT::storage::deserialize_safetensors;
+
+    // Header specifying offsets [0, 999999] while binary payload is only 16 bytes
+    let header_json = r#"{"__metadata__":{"model_id":"m1"},"layer.lora_a":{"dtype":"F32","shape":[2,2],"data_offsets":[0,999999]},"layer.lora_b":{"dtype":"F32","shape":[2,2],"data_offsets":[0,16]}}"#;
+    let header_len = header_json.len() as u64;
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&header_len.to_le_bytes());
+    bytes.extend_from_slice(header_json.as_bytes());
+    bytes.extend_from_slice(&[0u8; 16]); // only 16 bytes payload
+
+    let res = deserialize_safetensors(&bytes);
+    assert!(res.is_err(), "Out of bounds data_offsets must be rejected without panic");
+}
+
+#[test]
+fn test_security_quantization_zero_block_size_safety() {
+    use DePEFT::ml::tensor::{Matrix, QuantizedWeight};
+
+    let mat = Matrix::zeros(4, 4);
+    // Block size 0 should not trigger integer division by zero panic
+    let q_nf4 = QuantizedWeight::quantize_nf4(&mat, 0);
+    let dequant_nf4 = q_nf4.dequantize();
+    assert_eq!(dequant_nf4.rows, 4);
+    assert_eq!(dequant_nf4.cols, 4);
+
+    let q_int4 = QuantizedWeight::quantize_int4(&mat, 0);
+    let dequant_int4 = q_int4.dequantize();
+    assert_eq!(dequant_int4.rows, 4);
+    assert_eq!(dequant_int4.cols, 4);
+}

@@ -84,15 +84,16 @@ pub fn serialize_safetensors(package: &AdapterPackage) -> Result<Vec<u8>> {
     Ok(output)
 }
 
-/// Decode .safetensors binary format into an AdapterPackage.
+/// Decode .safetensors binary format into an AdapterPackage safely.
 pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
     if bytes.len() < 8 {
         bail!("File too small to be a valid safetensors file");
     }
 
+    const MAX_HEADER_LEN: usize = 16 * 1024 * 1024; // 16 MB maximum header JSON
     let header_len = u64::from_le_bytes(bytes[0..8].try_into()?) as usize;
-    if bytes.len() < 8 + header_len {
-        bail!("Corrupted safetensors: file truncated before header end");
+    if header_len > MAX_HEADER_LEN || bytes.len() < 8 + header_len {
+        bail!("Corrupted safetensors: invalid header length {}", header_len);
     }
 
     let header_json_bytes = &bytes[8..8 + header_len];
@@ -126,27 +127,43 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
             let key_b = format!("{}.lora_b", module_name);
 
             let meta_a = match header.tensors.get(&key_a) {
-                Some(m) => m,
-                None => continue,
+                Some(m) if m.shape.len() >= 2 => m,
+                _ => continue,
             };
             let meta_b = match header.tensors.get(&key_b) {
-                Some(m) => m,
-                None => continue,
+                Some(m) if m.shape.len() >= 2 => m,
+                _ => continue,
             };
 
-            // Read LoRA A floats
-            let slice_a = &binary_data[meta_a.data_offsets[0]..meta_a.data_offsets[1]];
+            // Bounds check for tensor A
+            let start_a = meta_a.data_offsets[0];
+            let end_a = meta_a.data_offsets[1];
+            if start_a > end_a || end_a > binary_data.len() {
+                bail!("Corrupted safetensors: data offsets out of bounds for {}", key_a);
+            }
+            let slice_a = &binary_data[start_a..end_a];
             let mut data_a = Vec::with_capacity(slice_a.len() / 4);
             for chunk in slice_a.chunks_exact(4) {
                 data_a.push(f32::from_le_bytes(chunk.try_into()?));
             }
+            if data_a.len() != meta_a.shape[0] * meta_a.shape[1] {
+                bail!("Tensor A data length does not match specified shape");
+            }
             let lora_a = Matrix::new(meta_a.shape[0], meta_a.shape[1], data_a);
 
-            // Read LoRA B floats
-            let slice_b = &binary_data[meta_b.data_offsets[0]..meta_b.data_offsets[1]];
+            // Bounds check for tensor B
+            let start_b = meta_b.data_offsets[0];
+            let end_b = meta_b.data_offsets[1];
+            if start_b > end_b || end_b > binary_data.len() {
+                bail!("Corrupted safetensors: data offsets out of bounds for {}", key_b);
+            }
+            let slice_b = &binary_data[start_b..end_b];
             let mut data_b = Vec::with_capacity(slice_b.len() / 4);
             for chunk in slice_b.chunks_exact(4) {
                 data_b.push(f32::from_le_bytes(chunk.try_into()?));
+            }
+            if data_b.len() != meta_b.shape[0] * meta_b.shape[1] {
+                bail!("Tensor B data length does not match specified shape");
             }
             let lora_b = Matrix::new(meta_b.shape[0], meta_b.shape[1], data_b);
 

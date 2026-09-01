@@ -150,6 +150,7 @@ pub enum QuantizedWeight {
 impl QuantizedWeight {
     /// Quantize a full precision FP32 matrix to NF4.
     pub fn quantize_nf4(matrix: &Matrix, block_size: usize) -> Self {
+        let block_size = block_size.max(1);
         let rows = matrix.rows;
         let cols = matrix.cols;
         let total = rows * cols;
@@ -206,6 +207,7 @@ impl QuantizedWeight {
 
     /// Quantize a full precision FP32 matrix to uniform INT4.
     pub fn quantize_int4(matrix: &Matrix, block_size: usize) -> Self {
+        let block_size = block_size.max(1);
         let rows = matrix.rows;
         let cols = matrix.cols;
         let total = rows * cols;
@@ -242,7 +244,6 @@ impl QuantizedWeight {
             packed_data.push((high << 4) | low);
         }
 
-
         Self::INT4 {
             rows,
             cols,
@@ -263,6 +264,7 @@ impl QuantizedWeight {
                 absmax_scales,
                 block_size,
             } => {
+                let block_size = (*block_size).max(1);
                 let total = rows * cols;
                 let mut data = Vec::with_capacity(total);
 
@@ -273,14 +275,14 @@ impl QuantizedWeight {
                     let idx0 = byte_idx * 2;
                     if idx0 < total {
                         let block = idx0 / block_size;
-                        let scale = absmax_scales[block];
+                        let scale = absmax_scales.get(block).copied().unwrap_or(1.0);
                         data.push(NF4_CODEBOOK[high as usize] * scale);
                     }
 
                     let idx1 = idx0 + 1;
                     if idx1 < total {
                         let block = idx1 / block_size;
-                        let scale = absmax_scales[block];
+                        let scale = absmax_scales.get(block).copied().unwrap_or(1.0);
                         data.push(NF4_CODEBOOK[low as usize] * scale);
                     }
                 }
@@ -294,6 +296,7 @@ impl QuantizedWeight {
                 absmax_scales,
                 block_size,
             } => {
+                let block_size = (*block_size).max(1);
                 let total = rows * cols;
                 let mut data = Vec::with_capacity(total);
 
@@ -304,7 +307,7 @@ impl QuantizedWeight {
                     let idx0 = byte_idx * 2;
                     if idx0 < total {
                         let block = idx0 / block_size;
-                        let scale = absmax_scales[block];
+                        let scale = absmax_scales.get(block).copied().unwrap_or(1.0);
                         let int_val = (high as i8) - 8;
                         data.push((int_val as f32 / 7.0) * scale);
                     }
@@ -312,7 +315,7 @@ impl QuantizedWeight {
                     let idx1 = idx0 + 1;
                     if idx1 < total {
                         let block = idx1 / block_size;
-                        let scale = absmax_scales[block];
+                        let scale = absmax_scales.get(block).copied().unwrap_or(1.0);
                         let int_val = (low as i8) - 8;
                         data.push((int_val as f32 / 7.0) * scale);
                     }

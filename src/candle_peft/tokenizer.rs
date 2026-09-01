@@ -31,6 +31,9 @@ impl SimpleByteTokenizer {
 
     /// Convert a batch of token vectors into a 2D Tensor [batch_size, max_seq_len] padded to max_len.
     pub fn batch_to_tensor(&self, batch: &[Vec<u32>], device: &Device) -> Result<Tensor> {
+        if batch.is_empty() {
+            anyhow::bail!("Cannot create tensor from empty batch");
+        }
         let max_len = batch.iter().map(|v| v.len()).max().unwrap_or(0).max(2);
         let mut flat = Vec::with_capacity(batch.len() * max_len);
 
