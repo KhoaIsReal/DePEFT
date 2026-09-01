@@ -94,7 +94,7 @@ The adapter matrices are subsequently re-initialized ($A \leftarrow \mathcal{N}(
 ### 3.1 Hardware TEE Security Model (Intel SGX / AMD SEV-SNP)
 Validators evaluate candidate models inside protected hardware enclaves against private validation datasets. To ensure the integrity of evaluations, enclaves produce cryptographic **Remote Attestation Quotes**:
 
-$$\text{report\_data} = \text{SHA512}\left(\text{task\_id} \mathbin{\Vert} \text{round} \mathbin{\Vert} \text{SHA256}(\text{ranking})\right)$$
+$$\mathrm{report\_data} = \mathrm{SHA512}\left(\mathrm{task\_id} \mathbin{\Vert} \mathrm{round} \mathbin{\Vert} \mathrm{SHA256}(\mathrm{ranking})\right)$$
 
 The App-Chain on-chain verifier enforces:
 1. `MRENCLAVE` matches an approved measurement registered in the on-chain governance whitelist.
@@ -102,9 +102,9 @@ The App-Chain on-chain verifier enforces:
 3. The platform Quoting Enclave (QE) signature verifies against the hardware root key.
 
 ### 3.2 Anti-Collusion Commit-Reveal Protocol
-- **Commit Phase**: Miners submit $\text{commit\_hash} = \text{SHA256}(\text{adapter\_hash} \mathbin{\Vert} \text{salt})$.
+- **Commit Phase**: Miners submit $\mathrm{commit\_hash} = \mathrm{SHA256}(\mathrm{adapter\_hash} \mathbin{\Vert} \mathrm{salt})$.
 - **Reveal Phase**: Miners upload `.safetensors` to IPFS and reveal the salt.
-- The App-Chain rejects any reveal where $\text{SHA256}(\text{SHA256}(\text{safetensors}) \mathbin{\Vert} \text{salt}) \neq \text{commit\_hash}$.
+- The App-Chain rejects any reveal where $\mathrm{SHA256}(\mathrm{SHA256}(\mathrm{safetensors}) \mathbin{\Vert} \mathrm{salt}) \neq \mathrm{commit\_hash}$.
 
 ---
 
@@ -115,7 +115,7 @@ The App-Chain on-chain verifier enforces:
 - **Live IPFS Kubo RPC (`/api/v0/`)**: Full integration with local or remote IPFS nodes via `/api/v0/add`, `/api/v0/cat`, and `/api/v0/pin`.
 - **Embedded Vector Database**: Real-time cosine similarity indexing of adapter weight signatures for instantaneous plagiarism and duplicate detection:
 
-$$\text{Similarity}(u, v) = \frac{u \cdot v}{\|u\|_2 \|v\|_2}$$
+$$\mathrm{Similarity}(u, v) = \frac{u \cdot v}{\|u\|_2 \|v\|_2}$$
 
 ---
 
@@ -132,6 +132,7 @@ The P2P network layer operates over raw async TCP sockets using a **Length-Delim
 ### Gossip Flooding & LRU Deduplication
 All transactions, block proposals, and IPFS CIDs are propagated across the overlay swarm. Each node maintains a thread-safe LRU cache of recently seen message hashes:
 
-$$\text{message\_id} = \text{SHA256}(\text{serialized\_message})$$
+$$\mathrm{message\_id} = \mathrm{SHA256}(\mathrm{serialized\_message})$$
+
 
 Duplicate messages are dropped immediately, eliminating re-broadcast loops and minimizing bandwidth consumption.
