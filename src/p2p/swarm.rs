@@ -249,9 +249,12 @@ impl P2pSwarm {
                         // Handle incoming gossip messages
                         match &msg {
                             P2pMessage::BroadcastTx(signed_tx) => {
-                                let _ = swarm_clone.incoming_tx_sender.send(signed_tx.clone());
-                                // Re-gossip to other peers (except sender)
-                                swarm_clone.regossip_except(&pid_clone, msg.clone());
+                                // Cryptographically verify transaction signature before accepting and re-gossiping
+                                if signed_tx.verify_signature().is_ok() {
+                                    let _ = swarm_clone.incoming_tx_sender.send(signed_tx.clone());
+                                    // Re-gossip to other peers (except sender)
+                                    swarm_clone.regossip_except(&pid_clone, msg.clone());
+                                }
                             }
                             P2pMessage::Ping(nonce) => {
                                 let pong = P2pMessage::Pong(*nonce);

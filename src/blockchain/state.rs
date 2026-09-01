@@ -106,6 +106,12 @@ impl AppChainState {
     /// Initialize a new round context for a task.
     pub fn start_round(&mut self, task_id: u64, round_number: usize, base_model_cid: String) -> Result<()> {
         ensure!(self.tasks.contains_key(&task_id), "Task ID does not exist");
+        ensure!(
+            !self.round_contexts.contains_key(&(task_id, round_number)),
+            "Round {} already initialized for task {}",
+            round_number,
+            task_id
+        );
         let context = RoundContext::new(task_id, round_number, base_model_cid);
         self.round_contexts.insert((task_id, round_number), context);
         Ok(())
@@ -213,6 +219,13 @@ impl AppChainState {
                     ctx.phase
                 );
 
+                ensure!(
+                    !ctx.commits.contains_key(&miner),
+                    "Commit already submitted by miner {} for round {}",
+                    miner,
+                    round
+                );
+
                 ctx.commits.insert(
                     miner.clone(),
                     CommitRecord {
@@ -247,6 +260,13 @@ impl AppChainState {
                     ctx.phase == RoundPhase::RevealPhase,
                     "Reveal rejected: Round is in phase {:?}",
                     ctx.phase
+                );
+
+                ensure!(
+                    !ctx.reveals.contains_key(&miner),
+                    "Reveal already submitted by miner {} for round {}",
+                    miner,
+                    round
                 );
 
                 let commit = ctx
@@ -290,6 +310,19 @@ impl AppChainState {
                     .get_mut(&(task_id, round))
                     .ok_or_else(|| anyhow::anyhow!("Round context not found"))?;
 
+                ensure!(
+                    ctx.phase == RoundPhase::EvaluationPhase,
+                    "Evaluation rejected: Round is in phase {:?}",
+                    ctx.phase
+                );
+
+                ensure!(
+                    !ctx.evaluations.contains_key(&evaluation.validator_address),
+                    "Evaluation already submitted by validator {} for round {}",
+                    evaluation.validator_address,
+                    round
+                );
+
                 // Cryptographically verify Hardware TEE Attestation Quote if present
                 if let Some(quote) = &evaluation.attestation_quote {
                     self.tee_verifier
@@ -325,6 +358,12 @@ impl AppChainState {
             .round_contexts
             .get_mut(&(task_id, round))
             .ok_or_else(|| anyhow::anyhow!("Round context not found"))?;
+
+        ensure!(
+            ctx.phase == RoundPhase::MergePhase,
+            "Cannot finalize round: round is in phase {:?}, expected MergePhase",
+            ctx.phase
+        );
 
         ensure!(
             !ctx.evaluations.is_empty(),
@@ -374,6 +413,11 @@ impl AppChainState {
             post_merge_loss,
             bounty_awarded: bounty_payout,
         };
+
+        const MAX_ROUND_HISTORY: usize = 1000;
+        if self.round_history.len() >= MAX_ROUND_HISTORY {
+            self.round_history.remove(0);
+        }
 
         self.round_history.push(summary.clone());
         Ok(summary)

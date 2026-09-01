@@ -281,16 +281,27 @@ async fn download_storage(
 async fn get_account_balance(
     Path(account_str): Path<String>,
     State(ctx): State<NodeContext>,
-) -> Json<AccountInfoResponse> {
+) -> Result<Json<AccountInfoResponse>, (StatusCode, Json<GenericResponse>)> {
+    let clean_addr = account_str.trim_start_matches("0x");
+    if clean_addr.len() != 64 || hex::decode(clean_addr).is_err() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(GenericResponse {
+                status: "invalid_account",
+                message: "Account must be a valid 32-byte hex public key (0x...)".to_string(),
+            }),
+        ));
+    }
+
     let chain = ctx.chain.read().unwrap();
-    let account = AccountId::new(account_str.clone());
+    let account = AccountId::new(format!("0x{}", clean_addr.to_lowercase()));
     let balance = chain.balance_of(&account);
     let nonce = chain.nonce_of(&account);
-    Json(AccountInfoResponse {
-        account: account_str,
+    Ok(Json(AccountInfoResponse {
+        account: account.to_string(),
         balance,
         nonce,
-    })
+    }))
 }
 
 #[derive(Deserialize)]

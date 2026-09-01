@@ -1212,3 +1212,61 @@ fn test_security_validator_set_deduplication() {
     assert_eq!(val_set.validators.len(), 2);
     assert_eq!(val_set.total_voting_power, 50); // 20 + 30
 }
+
+#[test]
+fn test_security_duplicate_commit_and_reveal_rejected() {
+    use DePEFT::blockchain::state::AppChainState;
+    use DePEFT::blockchain::transactions::Transaction;
+    use DePEFT::blockchain::types::PeftType;
+    use DePEFT::crypto::AccountKeypair;
+
+    let mut state = AppChainState::new();
+    let client_kp = AccountKeypair::generate();
+    let miner_kp = AccountKeypair::generate();
+
+    state.mint(client_kp.account_id(), 100_000);
+
+    // Create task
+    let task_tx = Transaction::CreateTask {
+        client: client_kp.account_id(),
+        nonce: 0,
+        base_model_id: b"test_model".to_vec(),
+        base_model_hash: [0u8; 32],
+        dataset_cid: b"bafy_ds".to_vec(),
+        peft_method: PeftType::LoRA,
+        max_rank: 16,
+        target_modules: vec![b"q_proj".to_vec()],
+        bounty_pool: 10_000,
+        epoch_blocks: 10,
+    };
+    assert!(state.apply_transaction(task_tx, &client_kp.account_id()).is_ok());
+
+    // Start round
+    assert!(state.start_round(1, 1, "bafy_base".to_string()).is_ok());
+    // Duplicate start_round must be rejected
+    assert!(state.start_round(1, 1, "bafy_base2".to_string()).is_err());
+
+    // Miner first commit must succeed
+    let commit1 = Transaction::CommitAdapter {
+        task_id: 1,
+        round: 1,
+        miner: miner_kp.account_id(),
+        nonce: 0,
+        commit_hash: [0x11; 32],
+    };
+    assert!(state.apply_transaction(commit1, &miner_kp.account_id()).is_ok());
+
+    // Duplicate commit by same miner must be rejected
+    let commit2 = Transaction::CommitAdapter {
+        task_id: 1,
+        round: 1,
+        miner: miner_kp.account_id(),
+        nonce: 1,
+        commit_hash: [0x22; 32],
+    };
+    assert!(state.apply_transaction(commit2, &miner_kp.account_id()).is_err());
+
+    // Cannot finalize round during CommitPhase
+    let premature_finalize = state.finalize_round(1, 1, "bafy_evolved".to_string(), 1.0, 0.5, 5_000);
+    assert!(premature_finalize.is_err(), "Finalize round must be rejected if not in MergePhase");
+}
