@@ -41,7 +41,7 @@ contract DePeftEscrow {
 
     /// Client deposits bounty tokens to fund a fine-tuning tournament task
     function depositTaskBounty(uint256 taskId, uint256 bountyAmount, uint256 totalRounds) external {
-        require(!tasks[taskId].isActive, "Task ID already exists");
+        require(tasks[taskId].client == address(0), "Task ID already exists");
         require(bountyAmount > 0, "Bounty must be greater than 0");
         require(totalRounds > 0, "Total rounds must be at least 1");
 
