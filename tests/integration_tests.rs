@@ -1409,3 +1409,32 @@ fn test_security_qlora_forward_invalid_input_length_graceful() {
     assert_eq!(grad_b.rows, 4);
     assert_eq!(grad_b.cols, 2);
 }
+
+#[test]
+fn test_security_bft_proof_of_lock_violation_rejected() {
+    use DePEFT::consensus::{BftEngine, ConsensusValidator};
+    use DePEFT::crypto::AccountKeypair;
+
+    let kp1 = AccountKeypair::generate();
+    let kp2 = AccountKeypair::generate();
+
+    let validators = vec![
+        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
+        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+    ];
+
+    let mut bft = BftEngine::new(validators, [0xaa; 32]);
+    let proposer = bft.validator_set.get_proposer(1, 0);
+    let proposer_kp = if kp1.account_id() == proposer { &kp1 } else { &kp2 };
+    let proposal = bft.create_proposal(proposer_kp, Vec::new()).unwrap();
+
+    // Lock on candidate block
+    bft.round_state.locked_block = Some(proposal.clone());
+    bft.round_state.locked_round = Some(0);
+
+    // Voting for locked block hash succeeds
+    assert!(bft.cast_prevote(&kp1, Some(proposal.block_hash())).is_ok());
+
+    // Voting for a conflicting block hash while locked must be rejected
+    assert!(bft.cast_prevote(&kp1, Some([0x99; 32])).is_err(), "Conflicting prevote while locked must be rejected");
+}

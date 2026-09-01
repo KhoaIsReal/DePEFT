@@ -199,6 +199,18 @@ impl BftEngine {
             keypair.account_id()
         );
 
+        // Enforce Proof-of-Lock invariant: if locked on a candidate block, validator must vote for locked block
+        if let Some(locked) = &self.round_state.locked_block {
+            if let Some(h) = block_hash {
+                ensure!(
+                    h == locked.block_hash(),
+                    "Lock violation: Validator is locked on block {} and cannot prevote for conflicting block {}",
+                    hex::encode(locked.block_hash()),
+                    hex::encode(h)
+                );
+            }
+        }
+
         let sign_bytes = Vote::sign_bytes(
             VoteType::Prevote,
             self.current_height,
