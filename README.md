@@ -61,6 +61,33 @@ An end-to-end, production-grade Rust implementation of the **DePEFT Architecture
 
 ---
 
+## ✨ Complete Feature Matrix
+
+| Category | Feature | Description |
+|---|---|---|
+| **🧬 ReLoRA Tournament Protocol** | **Continuous Weight Evolution** | Merges optimal adapter updates into base weights: $W_{N+1} = W_N + \Delta W^*$ across sequential epochs. |
+| | **Configurable Top-K Distribution** | Supports `WinnerTakesAll` (100% to Top 1), `TopKDecay` (exponential decay 50%, 25%, 12.5%...), and `TopKBordaWeighted`. |
+| | **Multi-Miner Ensemble Merge** | Supports `SingleWinner` and `EnsembleWeighted` ($W_{N+1} = W_N + \sum \alpha_i \Delta W_i$) to fuse knowledge from Top-K miners. |
+| **⚡ Miner ML & PEFT Engine** | **Hugging Face Candle Autograd** | Native Rust deep learning engine for Decoder Transformer fine-tuning with backpropagation. |
+| | **Heterogeneous Quantization** | Native support for **LoRA** (FP32/BF16/FP16), **QLoRA-NF4** (4-bit NormalFloat), and **QLoRA-INT4** (4-bit Integer). |
+| | **Standard SafeTensors Export** | Zero-copy serializing and deserializing of low-rank adapter tensors compatible with Hugging Face Hub. |
+| | **Commit-Reveal Anti-Collusion** | Two-phase submission using `SHA256(adapter_hash || salt)` to prevent copycat miners and weight plagiarism. |
+| **🔒 Validator & TEE Security** | **Hardware TEE Remote Attestation** | Supports Intel SGX (DCAP), AMD SEV-SNP, and AWS Nitro enclaves with cryptographic attestation quotes. |
+| | **Private Test Set Evaluation** | Evaluates Cross-Entropy Loss & Perplexity on protected validation data inside the secure enclave. |
+| | **Relative Consensus (Borda Count)** | Ordinal ranking aggregation that is completely immune to hardware floating-point non-determinism (CUDA vs ROCm vs CPU). |
+| | **Vector DB Plagiarism Detector** | Embedded vector database computing cosine similarity between adapter signature vectors to flag copycats. |
+| **🏛️ App-Chain & CometBFT** | **CometBFT 2-Phase Commit** | Byzantine Fault Tolerant state machine replication with `Propose`, `Prevote`, `Precommit`, and `Commit` phases. |
+| | **Equivocation Slashing** | Automatic slash and removal of Byzantine validators caught double-signing conflicting blocks. |
+| | **On-Chain Escrow & Faucet** | Deterministic token balances, TaskSpec registry, escrowed bounty locking/release, and automated testnet faucet. |
+| **📦 Storage & P2P Networking** | **IPFS Kubo & Hybrid Storage** | Seamless bridge between local disk CAS (`~/.depeft/storage`) and global decentralized IPFS network. |
+| | **P2P Gossip Swarm** | Async TCP peer-to-peer overlay network with gossip broadcasting, deduplication, and DoS address limiting. |
+| **🖥️ Developer & Node Tooling** | **Embedded Web Explorer Dashboard** | Built-in UI served at `http://127.0.0.1:8545/` with live chain stats, task explorer, interactive JSON console, and faucet. |
+| | **Python SDK (`depeft`)** | Python client library with Ed25519 signing, RPC task management, and dataset/storage integration. |
+| | **Production EVM Contracts** | [`DePeftToken.sol`](./contracts/DePeftToken.sol) (ERC-20) & [`DePeftEscrow.sol`](./contracts/DePeftEscrow.sol) for EVM L1/L2 mainnets. |
+| | **Comprehensive CLI Suite** | Rich command-line tools for node daemons, miners, validators, keys, P2P, IPFS, benchmarks, and demos. |
+
+---
+
 ## 🖥️ Web Explorer & Real-Time Management Dashboard
 
 DePEFT comes with a built-in single-file Web Explorer and management portal served directly by any node at `http://127.0.0.1:8545/`:

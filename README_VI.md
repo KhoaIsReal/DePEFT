@@ -61,6 +61,33 @@ DePEFT là dự án mã nguồn mở viết bằng Rust, cho phép nhiều ngư�
 
 ---
 
+## ✨ Danh Sách Tính Năng Toàn Diện
+
+| Phân nhóm | Tính năng | Mô tả chi tiết |
+|---|---|---|
+| **🧬 Giao thức ReLoRA Tournament** | **Tiến hóa Trọng số Liên tục** | Ghép các cập nhật trọng số tốt nhất vào mô hình gốc: $W_{N+1} = W_N + \Delta W^*$ qua từng epoch giải đấu. |
+| | **Cơ chế Chia Thưởng Top-K Linh hoạt** | Hỗ trợ `WinnerTakesAll` (100% cho Top 1), `TopKDecay` (chia thưởng giảm dần 50%, 25%, 12.5%...) và `TopKBordaWeighted`. |
+| | **Gộp Trọng số Ensemble Đa Miner** | Hỗ trợ `SingleWinner` và `EnsembleWeighted` ($W_{N+1} = W_N + \sum \alpha_i \Delta W_i$) gộp tri thức của Top-K miner. |
+| **⚡ Mạng lưới Miner & Động cơ ML** | **Hugging Face Candle Autograd** | Engine Deep Learning thuần Rust cho phép huấn luyện Transformer với thuật toán lan truyền ngược (Backpropagation). |
+| | **Lượng tử hóa Đa dạng** | Hỗ trợ trực tiếp **LoRA** (FP32/BF16/FP16), **QLoRA-NF4** (4-bit NormalFloat), và **QLoRA-INT4** (4-bit Integer). |
+| | **Đóng gói Chuẩn SafeTensors** | Đọc/ghi nhị phân zero-copy các ma trận adapter tương thích hoàn toàn với hệ sinh thái Hugging Face Hub. |
+| | **Giao thức Commit-Reveal Chống Đạo Bài** | Gửi giao dịch 2 pha dùng mã băm `SHA256(adapter_hash \|\| salt)` ngăn chặn hành vi sao chép trọng số trước hạn chót. |
+| **🔒 Validator & Bảo mật Phần cứng TEE** | **Chứng thực Phần cứng TEE Từ xa** | Hỗ trợ Intel SGX (DCAP), AMD SEV-SNP, AWS Nitro với chữ ký số chứng thực phần cứng (Attestation Quote). |
+| | **Đánh giá trên Private Test Set** | Đánh giá Cross-Entropy Loss & Perplexity trên tập dữ liệu kiểm thử kín được bảo vệ hoàn toàn bên trong enclave TEE. |
+| | **Đồng thuận Thứ hạng Borda Count** | Cơ chế tổng hợp thứ hạng tương đối miễn nhiễm hoàn toàn với sai lệch số thực trôi (Floating-Point Drift) giữa các phần cứng GPU/CPU khác nhau. |
+| | **Phát hiện Đạo văn bằng Vector DB** | Cơ sở dữ liệu vector nhúng tính toán độ tương đồng Cosine Similarity để cảnh báo và loại bỏ bài nộp sao chép. |
+| **🏛️ App-Chain & Đồng thuận CometBFT** | **Đồng thuận CometBFT 2-Phase Commit** | Đồng thuận Byzantine Fault Tolerant đầy đủ 4 pha: `Propose`, `Prevote`, `Precommit`, và `Commit`. |
+| | **Cơ chế Phạt Equivocation Slashing** | Tự động phát hiện, tịch thu tiền cọc và loại bỏ các validator ký 2 khối mâu thuẫn (Double Signing). |
+| | **Ký quỹ Escrow & Faucet Tự động** | Quản trị số dư ví, TaskSpec, khóa/giải ngân tiền thưởng ký quỹ tự động và Faucet nhận token thử nghiệm. |
+| **📦 Hệ thống Lưu trữ & Mạng P2P** | **Lưu trữ Kết hợp IPFS Kubo & Local CAS** | Cầu nối liền mạch giữa bộ nhớ đệm cục bộ (`~/.depeft/storage`) và mạng lưu trữ phân tán IPFS toàn cầu. |
+| | **Mạng Gossip P2P Swarm** | Mạng P2P qua giao thức TCP bất đồng bộ với cơ chế lan truyền tin, lọc trùng lặp và giới hạn bộ nhớ chống tấn công DoS. |
+| **🖥️ Công cụ Lập trình & Quản trị Node** | **Giao diện Web Explorer Dashboard** | Dashboard tích hợp chạy tại `http://127.0.0.1:8545/` theo dõi block, task, storage CAS, JSON console và Faucet. |
+| | **Python SDK (`depeft`)** | Thư viện Python hỗ trợ ký giao dịch Ed25519, quản lý task và tích hợp với PyTorch / Hugging Face. |
+| | **Smart Contracts EVM Mainnet** | Hợp đồng [`DePeftToken.sol`](./contracts/DePeftToken.sol) (ERC-20) và [`DePeftEscrow.sol`](./contracts/DePeftEscrow.sol) cho mạng EVM L1/L2. |
+| | **Bộ Lệnh CLI Toàn diện** | CLI mạnh mẽ quản trị node, miner, validator, key, P2P, IPFS, benchmark lượng tử hóa và chạy demo. |
+
+---
+
 ## 🖥️ Giao diện Web Explorer Trực quan
 
 DePEFT tích hợp sẵn một trang Web Explorer gọn nhẹ, bạn có thể mở trực tiếp từ trình duyệt tại `http://127.0.0.1:8545/`:
