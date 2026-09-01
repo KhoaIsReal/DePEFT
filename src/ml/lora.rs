@@ -120,13 +120,25 @@ impl QLoRALinear {
         (grad_a, grad_b)
     }
 
-    /// Apply gradient update step to LoRA matrices.
+    /// Apply gradient update step to LoRA matrices with gradient clipping and finite checks.
     pub fn update_lora(&mut self, grad_a: &Matrix, grad_b: &Matrix, lr: f32) {
+        if !lr.is_finite() || lr <= 0.0 {
+            return;
+        }
+
+        const GRAD_CLIP: f32 = 5.0;
+
         for (a_val, g_val) in self.lora_a.data.iter_mut().zip(&grad_a.data) {
-            *a_val -= lr * g_val;
+            if g_val.is_finite() {
+                let clamped_grad = g_val.clamp(-GRAD_CLIP, GRAD_CLIP);
+                *a_val -= lr * clamped_grad;
+            }
         }
         for (b_val, g_val) in self.lora_b.data.iter_mut().zip(&grad_b.data) {
-            *b_val -= lr * g_val;
+            if g_val.is_finite() {
+                let clamped_grad = g_val.clamp(-GRAD_CLIP, GRAD_CLIP);
+                *b_val -= lr * clamped_grad;
+            }
         }
     }
 

@@ -2,7 +2,7 @@ use crate::crypto::SignedTransaction;
 use crate::p2p::codec::{read_message, write_message};
 use crate::p2p::types::{P2pMessage, PeerId};
 use anyhow::{bail, Context, Result};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use tokio::net::{TcpListener, TcpStream};
@@ -10,6 +10,9 @@ use tokio::sync::mpsc;
 
 const PROTOCOL_VERSION: &str = "depeft/1.0.0";
 const MAX_SEEN_CACHE: usize = 10_000;
+const MAX_CONNECTED_PEERS: usize = 64;
+
+type MessageDeduplicationCache = (HashSet<[u8; 32]>, VecDeque<[u8; 32]>);
 
 /// Network Swarm managing P2P overlay connections, peer discovery, and gossip routing.
 #[derive(Clone)]
@@ -17,7 +20,7 @@ pub struct P2pSwarm {
     pub local_peer_id: PeerId,
     pub listen_addr: SocketAddr,
     connected_peers: Arc<RwLock<HashMap<PeerId, mpsc::UnboundedSender<P2pMessage>>>>,
-    seen_messages: Arc<RwLock<HashSet<[u8; 32]>>>,
+    seen_messages: Arc<RwLock<MessageDeduplicationCache>>,
     known_addresses: Arc<RwLock<HashSet<String>>>,
     incoming_tx_sender: mpsc::UnboundedSender<SignedTransaction>,
     incoming_msg_sender: mpsc::UnboundedSender<(PeerId, P2pMessage)>,
@@ -39,7 +42,7 @@ impl P2pSwarm {
             local_peer_id,
             listen_addr,
             connected_peers: Arc::new(RwLock::new(HashMap::new())),
-            seen_messages: Arc::new(RwLock::new(HashSet::new())),
+            seen_messages: Arc::new(RwLock::new((HashSet::new(), VecDeque::new()))),
             known_addresses: Arc::new(RwLock::new(HashSet::new())),
             incoming_tx_sender: tx_sender,
             incoming_msg_sender: msg_sender,
@@ -50,17 +53,21 @@ impl P2pSwarm {
 
     /// Check if a message has already been processed/gossiped (deduplication).
     pub fn is_seen(&self, msg_id: &[u8; 32]) -> bool {
-        let seen = self.seen_messages.read().unwrap();
+        let (seen, _) = &*self.seen_messages.read().unwrap();
         seen.contains(msg_id)
     }
 
-    /// Mark a message ID as seen.
+    /// Mark a message ID as seen with FIFO eviction to prevent cache wipe attack.
     pub fn mark_seen(&self, msg_id: [u8; 32]) {
-        let mut seen = self.seen_messages.write().unwrap();
-        if seen.len() >= MAX_SEEN_CACHE {
-            seen.clear(); // Reset cache to keep memory bounded
+        let (seen, queue) = &mut *self.seen_messages.write().unwrap();
+        if seen.insert(msg_id) {
+            queue.push_back(msg_id);
+            if queue.len() > MAX_SEEN_CACHE {
+                if let Some(oldest) = queue.pop_front() {
+                    seen.remove(&oldest);
+                }
+            }
         }
-        seen.insert(msg_id);
     }
 
     /// Number of active connected peers.
@@ -171,6 +178,10 @@ impl P2pSwarm {
 
     /// Handle inbound connection handshake.
     async fn handle_incoming_connection(&self, mut stream: TcpStream, remote_addr: SocketAddr) -> Result<()> {
+        if self.peer_count() >= MAX_CONNECTED_PEERS {
+            bail!("Max peer limit reached ({}/{})", self.peer_count(), MAX_CONNECTED_PEERS);
+        }
+
         // 1. Read inbound Handshake
         let msg = read_message(&mut stream).await?;
         let (remote_peer_id, remote_listen) = match msg {

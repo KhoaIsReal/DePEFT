@@ -30,12 +30,19 @@ impl Dataset {
 
     /// Split dataset into Training Set and Private Test Set (for Validator TEE).
     pub fn train_test_split(&self, train_ratio: f32, rng: &mut impl Rng) -> (Dataset, Dataset) {
+        let valid_ratio = if train_ratio.is_finite() {
+            train_ratio.clamp(0.0, 1.0)
+        } else {
+            0.8
+        };
+
         let mut indices: Vec<usize> = (0..self.samples.len()).collect();
         indices.shuffle(rng);
 
-        let train_size = (self.samples.len() as f32 * train_ratio).round() as usize;
+        let train_size = ((self.samples.len() as f32) * valid_ratio).round() as usize;
+        let train_size = train_size.min(self.samples.len());
         let mut train_samples = Vec::with_capacity(train_size);
-        let mut test_samples = Vec::with_capacity(self.samples.len() - train_size);
+        let mut test_samples = Vec::with_capacity(self.samples.len().saturating_sub(train_size));
 
         for (i, &idx) in indices.iter().enumerate() {
             if i < train_size {

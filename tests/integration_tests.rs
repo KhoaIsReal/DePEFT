@@ -1046,3 +1046,46 @@ fn test_security_quantization_zero_block_size_safety() {
     assert_eq!(dequant_int4.rows, 4);
     assert_eq!(dequant_int4.cols, 4);
 }
+
+#[test]
+fn test_security_p2p_seen_cache_fifo_eviction() {
+    use DePEFT::p2p::{P2pSwarm, PeerId};
+    use std::net::SocketAddr;
+
+    let addr: SocketAddr = "127.0.0.1:29999".parse().unwrap();
+    let (swarm, _tx, _msg) = P2pSwarm::new(PeerId("local_peer".to_string()), addr);
+
+    let msg1 = [1u8; 32];
+    swarm.mark_seen(msg1);
+    assert!(swarm.is_seen(&msg1));
+
+    // Fill up seen cache up to MAX_SEEN_CACHE + 1
+    for i in 0..10_001 {
+        let mut hash = [0u8; 32];
+        hash[0..4].copy_from_slice(&(i as u32).to_le_bytes());
+        swarm.mark_seen(hash);
+    }
+
+    // Latest message should definitely be seen
+    let mut latest = [0u8; 32];
+    latest[0..4].copy_from_slice(&(10_000u32).to_le_bytes());
+    assert!(swarm.is_seen(&latest));
+}
+
+#[test]
+fn test_security_dataset_train_test_split_nan_ratio_clamped() {
+    use DePEFT::ml::dataset::Dataset;
+    use rand::SeedableRng;
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    let ds = Dataset::generate_synthetic_task(20, 4, 2, 1.0, &mut rng);
+
+    // Split with NaN ratio
+    let (train, test) = ds.train_test_split(f32::NAN, &mut rng);
+    assert_eq!(train.len() + test.len(), 20);
+
+    // Split with out-of-bounds ratio (1.5)
+    let (train_high, test_high) = ds.train_test_split(1.5, &mut rng);
+    assert_eq!(train_high.len(), 20);
+    assert_eq!(test_high.len(), 0);
+}

@@ -44,6 +44,14 @@ impl HybridStorageManager {
         // 2. Fetch from live IPFS network if configured
         if let Some(kubo) = &self.kubo_client {
             if let Ok(bytes) = kubo.cat_bytes(cid).await {
+                // Content-Integrity Verification: ensure returned bytes hash matches requested CID
+                if cid.starts_with("bafy") {
+                    let computed = DiskIpfsStorage::compute_cid(&bytes);
+                    if computed != cid {
+                        anyhow::bail!("IPFS Content Integrity mismatch: expected {}, computed {}", cid, computed);
+                    }
+                }
+
                 // Cache into local CAS for subsequent zero-latency reads
                 let _ = self.local_cas.put(&bytes);
                 return Ok(Some(bytes));
