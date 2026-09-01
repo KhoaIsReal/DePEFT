@@ -21,7 +21,8 @@ pub struct ConsensusResult {
 pub struct RelativeConsensusEngine;
 
 impl RelativeConsensusEngine {
-    /// Aggregate validator evaluations using Borda Count rank voting.
+    /// Aggregate validator evaluations using Strategic-Resistant Robust Borda & Consensus voting.
+    /// Filters malicious outlier validator rankings and awards consensus to the robust winner.
     pub fn aggregate(
         evaluations: &[ValidatorEvaluation],
         candidate_miners: &[AccountId],
@@ -30,20 +31,49 @@ impl RelativeConsensusEngine {
             return None;
         }
 
-        let mut score_map: HashMap<AccountId, usize> = HashMap::new();
+        let num_validators = evaluations.len();
+        let mut miner_ranks: HashMap<AccountId, Vec<usize>> = HashMap::new();
         for miner in candidate_miners {
-            score_map.insert(miner.clone(), 0);
+            miner_ranks.insert(miner.clone(), Vec::new());
         }
 
-        // Apply Borda count: 1st place gets (N-1) points, 2nd gets (N-2), etc.
+        // Collect each validator's ordinal position for each miner
         for eval in evaluations {
             let m = eval.ranking.len();
             for (rank_idx, miner) in eval.ranking.iter().enumerate() {
-                if rank_idx < m {
-                    let points = m.saturating_sub(1 + rank_idx);
-                    *score_map.entry(miner.clone()).or_insert(0) += points;
+                if let Some(ranks) = miner_ranks.get_mut(miner) {
+                    ranks.push(rank_idx);
                 }
             }
+            // For any candidate not ranked in evaluation, assign worst rank
+            for miner in candidate_miners {
+                if !eval.ranking.contains(miner) {
+                    if let Some(ranks) = miner_ranks.get_mut(miner) {
+                        ranks.push(m);
+                    }
+                }
+            }
+        }
+
+        let mut score_map: HashMap<AccountId, usize> = HashMap::new();
+        let m = candidate_miners.len();
+
+        for (miner, mut ranks) in miner_ranks {
+            ranks.sort_unstable();
+            // Robust Outlier Removal (Trimmed Borda Count):
+            // If >= 4 validators, trim highest and lowest rank to eliminate single-validator strategic manipulation
+            let trimmed_ranks = if ranks.len() >= 4 {
+                &ranks[1..ranks.len() - 1]
+            } else {
+                &ranks[..]
+            };
+
+            let mut total_points = 0;
+            for &rank in trimmed_ranks {
+                let points = m.saturating_sub(1 + rank);
+                total_points += points;
+            }
+            score_map.insert(miner, total_points);
         }
 
         let mut borda_scores: Vec<(AccountId, usize)> = score_map.into_iter().collect();
@@ -53,7 +83,7 @@ impl RelativeConsensusEngine {
         let consensus_ranking: Vec<AccountId> = borda_scores.iter().map(|(m, _)| m.clone()).collect();
         let winner = consensus_ranking[0].clone();
 
-        // Calculate consensus agreement rate: percentage of validators that agreed with the consensus winner
+        // Calculate consensus agreement rate
         let mut winner_votes = 0;
         for eval in evaluations {
             if let Some(first) = eval.ranking.first() {
@@ -62,7 +92,7 @@ impl RelativeConsensusEngine {
                 }
             }
         }
-        let agreement_rate = winner_votes as f64 / evaluations.len() as f64;
+        let agreement_rate = winner_votes as f64 / num_validators as f64;
 
         Some(ConsensusResult {
             consensus_ranking,
@@ -71,4 +101,5 @@ impl RelativeConsensusEngine {
             agreement_rate,
         })
     }
+
 }
