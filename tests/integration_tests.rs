@@ -89,17 +89,20 @@ fn test_commit_reveal_anti_collusion_verification() {
 
     // Create task
     chain
-        .apply_transaction(Transaction::CreateTask {
-            client: client.clone(),
-            base_model_id: b"test-model".to_vec(),
-            base_model_hash: [0; 32],
-            dataset_cid: b"test-cid".to_vec(),
-            peft_method: PeftType::QLoRA_NF4,
-            max_rank: 16,
-            target_modules: vec![b"q_proj".to_vec()],
-            bounty_pool: 5_000,
-            epoch_blocks: 50,
-        })
+        .apply_transaction(
+            Transaction::CreateTask {
+                client: client.clone(),
+                base_model_id: b"test-model".to_vec(),
+                base_model_hash: [0; 32],
+                dataset_cid: b"test-cid".to_vec(),
+                peft_method: PeftType::QLoRA_NF4,
+                max_rank: 16,
+                target_modules: vec![b"q_proj".to_vec()],
+                bounty_pool: 5_000,
+                epoch_blocks: 50,
+            },
+            &client,
+        )
         .unwrap();
 
     let task_id = 1;
@@ -111,12 +114,15 @@ fn test_commit_reveal_anti_collusion_verification() {
 
     // Miner commits hash
     chain
-        .apply_transaction(Transaction::CommitAdapter {
-            task_id,
-            round: 1,
-            miner: miner.clone(),
-            commit_hash,
-        })
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id,
+                round: 1,
+                miner: miner.clone(),
+                commit_hash,
+            },
+            &miner,
+        )
         .unwrap();
 
     // Transition to Reveal phase
@@ -133,7 +139,7 @@ fn test_commit_reveal_anti_collusion_verification() {
         salt: salt.clone(),
         adapter_hash,
     };
-    assert!(chain.apply_transaction(valid_reveal).is_ok());
+    assert!(chain.apply_transaction(valid_reveal, &miner).is_ok());
 
     // Invalid salt reveal fails
     let fake_miner = AccountId::new("miner-cheater");
@@ -159,7 +165,7 @@ fn test_commit_reveal_anti_collusion_verification() {
         salt: vec![0, 0, 0, 0],
         adapter_hash: [0x11; 32],
     };
-    assert!(chain.apply_transaction(invalid_reveal).is_err());
+    assert!(chain.apply_transaction(invalid_reveal, &fake_miner).is_err());
 }
 
 #[test]

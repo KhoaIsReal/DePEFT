@@ -72,17 +72,20 @@ impl TournamentEngine {
             b"out_proj".to_vec(),
         ];
 
-        chain.apply_transaction(Transaction::CreateTask {
-            client: client_address,
-            base_model_id: b"DePEFT-Llama3-Base".to_vec(),
-            base_model_hash,
-            dataset_cid: dataset_cid.as_bytes().to_vec(),
-            peft_method: peft_type,
-            max_rank: 64,
-            target_modules,
-            bounty_pool: total_bounty,
-            epoch_blocks: 100,
-        })?;
+        chain.apply_transaction(
+            Transaction::CreateTask {
+                client: client_address.clone(),
+                base_model_id: b"DePEFT-Llama3-Base".to_vec(),
+                base_model_hash,
+                dataset_cid: dataset_cid.as_bytes().to_vec(),
+                peft_method: peft_type,
+                max_rank: 64,
+                target_modules,
+                bounty_pool: total_bounty,
+                epoch_blocks: 100,
+            },
+            &client_address,
+        )?;
 
         let task_id = 1;
 
@@ -141,7 +144,7 @@ impl TournamentEngine {
                 &self.dataset_train,
                 &mut rng,
             )?;
-            self.chain.apply_transaction(commit_tx)?;
+            self.chain.apply_transaction(commit_tx, &miner.account_id)?;
             self.chain.advance_block();
         }
 
@@ -155,7 +158,7 @@ impl TournamentEngine {
         let mut revealed_pairs: Vec<(AccountId, String)> = Vec::new();
         for miner in &mut self.miners {
             let (reveal_tx, cid) = miner.reveal_adapter(self.task_id, round_num, &self.ipfs)?;
-            self.chain.apply_transaction(reveal_tx)?;
+            self.chain.apply_transaction(reveal_tx, &miner.account_id)?;
             revealed_pairs.push((miner.account_id.clone(), cid));
             self.chain.advance_block();
         }
@@ -175,7 +178,7 @@ impl TournamentEngine {
                 &self.base_model,
                 &revealed_pairs,
             )?;
-            self.chain.apply_transaction(eval_tx)?;
+            self.chain.apply_transaction(eval_tx, &validator.account_id)?;
             self.chain.advance_block();
         }
 

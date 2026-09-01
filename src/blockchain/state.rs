@@ -115,7 +115,7 @@ impl AppChainState {
     }
 
     /// Process an on-chain transaction deterministically.
-    pub fn apply_transaction(&mut self, tx: Transaction) -> Result<()> {
+    pub fn apply_transaction(&mut self, tx: Transaction, sender: &AccountId) -> Result<()> {
         match tx {
             Transaction::CreateTask {
                 client,
@@ -128,6 +128,12 @@ impl AppChainState {
                 bounty_pool,
                 epoch_blocks,
             } => {
+                ensure!(
+                    &client == sender,
+                    "Unauthorized: Transaction sender {} does not match client address {}",
+                    sender,
+                    client
+                );
                 let client_bal = self.balance_of(&client);
                 ensure!(
                     client_bal >= bounty_pool,
@@ -163,6 +169,12 @@ impl AppChainState {
                 miner,
                 commit_hash,
             } => {
+                ensure!(
+                    &miner == sender,
+                    "Unauthorized: Transaction sender {} does not match miner address {}",
+                    sender,
+                    miner
+                );
                 let ctx = self
                     .round_contexts
                     .get_mut(&(task_id, round))
@@ -192,6 +204,12 @@ impl AppChainState {
                 salt,
                 adapter_hash,
             } => {
+                ensure!(
+                    &miner == sender,
+                    "Unauthorized: Transaction sender {} does not match miner address {}",
+                    sender,
+                    miner
+                );
                 let ctx = self
                     .round_contexts
                     .get_mut(&(task_id, round))
@@ -232,6 +250,12 @@ impl AppChainState {
                 round,
                 evaluation,
             } => {
+                ensure!(
+                    &evaluation.validator_address == sender,
+                    "Unauthorized: Transaction sender {} does not match validator address {}",
+                    sender,
+                    evaluation.validator_address
+                );
                 let ctx = self
                     .round_contexts
                     .get_mut(&(task_id, round))
@@ -242,6 +266,8 @@ impl AppChainState {
                     self.tee_verifier
                         .verify_quote(quote, task_id, round, &evaluation.ranking)
                         .map_err(|e| anyhow::anyhow!("On-Chain TEE Attestation verification rejected: {}", e))?;
+                } else if self.tee_verifier.enforce_attestation {
+                    anyhow::bail!("On-Chain TEE Attestation rejected: missing required hardware quote");
                 }
 
                 ctx.evaluations

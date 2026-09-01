@@ -124,7 +124,7 @@ async fn submit_signed_tx(
 
     // 2. Deterministically apply transaction to AppChainState
     let mut chain = ctx.chain.write().unwrap();
-    match chain.apply_transaction(signed_tx.tx.clone()) {
+    match chain.apply_transaction(signed_tx.tx.clone(), &sender) {
         Ok(_) => {
             // 3. Broadcast to P2P network overlay
             if let Some(swarm) = &ctx.swarm {

@@ -791,7 +791,7 @@ async fn main() -> anyhow::Result<()> {
                     while let Some(signed_tx) = tx_rx.recv().await {
                         if let Ok(sender) = signed_tx.verify_signature() {
                             let mut c = chain_p2p.write().unwrap();
-                            if c.apply_transaction(signed_tx.tx).is_ok() {
+                            if c.apply_transaction(signed_tx.tx, &sender).is_ok() {
                                 println!("[P2P Gossip] Successfully applied transaction from {}", sender);
                             }
                         }
