@@ -32,7 +32,7 @@ An end-to-end, production-grade Rust implementation of the **DePEFT Architecture
                                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 1. Consensus & State Layer (App-Chain State Machine & CometBFT)                                         │
-│    • Deterministic State Machine (Escrow, Balances, TaskSpec Registry)                                 │
+│    • Deterministic State Machine (Escrow, Balances, TaskSpec Registry, Faucet API)                      │
 │    • Tendermint/CometBFT 2-Phase Commit Consensus (Propose -> Prevote -> Precommit -> Commit)          │
 │    • Relative Consensus Engine (Borda Count Rank Aggregation & Floating-Point Drift Resistance)         │
 │    • On-Chain Hardware TEE Attestation Verifier (MRENCLAVE / MRSIGNER Whitelist Checking)              │
@@ -60,26 +60,13 @@ An end-to-end, production-grade Rust implementation of the **DePEFT Architecture
 
 ---
 
-## 🔄 5-Phase ReLoRA Tournament Lifecycle
+## 🖥️ Web Explorer & Real-Time Management Dashboard
 
-For each tournament round $N \in \{1, 2, \dots, K\}$:
-
-1. **Task Initialization ($W_N$)**:
-   - Client creates a `TaskSpec`, specifying Base Model $W_N$, IPFS dataset CID, PEFT method (`QLoRA_NF4`), target modules (`q_proj`, `v_proj`, `out_proj`), and locks bounty funds into escrow.
-2. **Commit Phase**:
-   - Heterogeneous miners (NVIDIA CUDA, AMD ROCm, bare-metal CPU) fine-tune local LoRA matrices $\Delta W$ using Candle autograd.
-   - Miners submit an on-chain commitment: `commit_hash = SHA256(adapter_hash || salt)` to prevent front-running and plagiarism.
-3. **Reveal Phase**:
-   - Miners upload `.safetensors` adapter files to IPFS and reveal `(adapter_cid, salt)`.
-   - The App-Chain deterministically validates that `SHA256(SHA256(safetensors) || salt) == commit_hash`.
-4. **Evaluation Phase (Private Test Set & Relative Consensus)**:
-   - Validators download adapters from IPFS and evaluate them inside an isolated **Hardware TEE Sandbox** on a **Private Test Set** (preventing data leakage and overfitting).
-   - Rather than relying on fragile floating-point equality across heterogeneous GPUs, validators submit **Relative Rankings** accompanied by cryptographic **Hardware Attestation Quotes**.
-   - The App-Chain runs **Borda Count Relative Consensus** to elect the Top-1 winner.
-5. **Merge Phase (Weight Evolution $W_{N+1}$)**:
-   - The winning adapter weights are permanently fused into the base model:
-     $$W_{N+1} = W_N + \frac{\alpha}{r} (B^* A^*)$$
-   - The winning miner receives the escrowed bounty reward, and the network advances to epoch $N+1$.
+DePEFT comes with a built-in single-file Web Explorer and management portal served directly by any node at `http://127.0.0.1:8545/`:
+- **Real-Time Metrics**: Current Block Height, Active PEFT Tournaments, CAS Storage Artifacts, and Connected P2P Peers.
+- **Task Browser**: Inspect registered Base Models (`Qwen2.5-7B`, `LLaMA-3`), LoRA configurations, and escrowed bounty balances.
+- **🚰 On-Chain Testnet Faucet**: Instantly claim 10,000 $DEPEFT testnet tokens to fund or simulate tasks.
+- **Interactive JSON Console**: Query REST/JSON-RPC node state directly from the browser.
 
 ---
 
@@ -87,165 +74,92 @@ For each tournament round $N \in \{1, 2, \dots, K\}$:
 
 ```
 DePEFT/
-├── src/
+├── contracts/                       # Layer 1: EVM & App-Chain Smart Contracts
+│   ├── DePeftToken.sol              # Standard ERC-20 Network Token ($DEPEFT)
+│   ├── DePeftEscrow.sol             # Task Bounty Escrow & Automated Winner Settlement
+│   └── scripts/deploy.js            # Hardhat / Node Deployment Script
+├── sdk/                             # Developer SDKs & AI Tooling
+│   └── python/                      # Python Client Library (depeft) for PyTorch & HF Candle
+│       ├── depeft/
+│       │   ├── client.py            # DePeftClient (Task management, Storage, Faucet, RPC)
+│       │   ├── crypto.py            # Ed25519 key generation and transaction signing
+│       │   └── __init__.py
+│       └── setup.py
+├── scripts/                         # Automation & Network Orchestration
+│   └── start_local_testnet.sh       # 1-Click Multi-Node Local P2P Testnet Launcher
+├── src/                             # Core Rust App-Chain Protocol
 │   ├── lib.rs                       # Crate root exporting all layers
 │   ├── main.rs                      # Comprehensive CLI, Node Daemon & Tournament Simulator
-│   ├── consensus/                   # Layer 1: Tendermint/CometBFT 2-Phase Commit Engine
-│   │   ├── types.rs                 # Block, BlockHeader, Vote, VoteType, BlockCommit
-│   │   ├── state_machine.rs         # BftEngine (Propose -> Prevote -> Precommit -> Commit)
-│   │   ├── validator_set.rs         # ValidatorSet (2/3+ Quorum, Proposer round-robin)
-│   │   ├── slashing.rs              # SlashingEngine (Equivocation double-vote detection)
-│   │   └── mod.rs
+│   ├── consensus/                   # CometBFT 2-Phase Commit Engine
 │   ├── tee/                         # Hardware TEE Remote Attestation Engine
-│   │   ├── types.rs                 # AttestationQuote, EnclaveMeasurement (MRENCLAVE/MRSIGNER)
-│   │   ├── enclave.rs               # HardwareTeeEnclave (Intel SGX DCAP / AMD SEV-SNP quotes)
-│   │   ├── verifier.rs              # OnChainTeeVerifier (Cryptographic Quote & Registry checking)
-│   │   └── mod.rs
 │   ├── candle_peft/                 # Real Deep Learning LLM Engine with Candle
-│   │   ├── transformer.rs           # Decoder Transformer LM (LLaMA/Qwen) with RMSNorm & SwiGLU
-│   │   ├── lora.rs                  # CandleLoraLinear (Forward, Autograd, SafeTensors export)
-│   │   ├── trainer.rs               # CandleMinerTrainer (SGD autograd optimization)
-│   │   ├── evaluator.rs             # CandleValidatorEvaluator (Cross-entropy & Perplexity)
-│   │   ├── merger.rs                # CandleWeightMerger (ReLoRA weight fusion)
-│   │   ├── tokenizer.rs             # SimpleByteTokenizer for text processing
-│   │   └── mod.rs
 │   ├── p2p/                         # P2P Overlay Network & Gossip Protocol
-│   │   ├── types.rs                 # PeerId, P2pMessage (Handshake, BroadcastTx, AnnounceCid)
-│   │   ├── codec.rs                 # Async Length-Delimited TCP framing codec
-│   │   ├── swarm.rs                 # P2pSwarm, Peer routing table, Gossip deduplication
-│   │   └── mod.rs
-│   ├── crypto/                      # Production Cryptography & Signing
-│   │   ├── keys.rs                  # Ed25519 AccountKeypair & SignedTransaction envelope
-│   │   └── mod.rs
-│   ├── node/                        # Live App-Chain HTTP REST/JSON-RPC Node
-│   │   ├── server.rs                # Axum server, API endpoints, P2P state synchronization
-│   │   └── mod.rs
-│   ├── client/                      # RPC Client
-│   │   ├── rpc.rs                   # DePeftClient talking to live node over HTTP
-│   │   └── mod.rs
-│   ├── blockchain/                  # Layer 1: App-Chain State Machine
-│   │   ├── types.rs                 # TaskSpec, AccountId, PeftType, RoundPhase, Summary
-│   │   ├── state.rs                 # AppChainState, Escrow, Balances, RoundContext
-│   │   ├── transactions.rs          # CreateTask, CommitAdapter, RevealAdapter, SubmitEvaluation
-│   │   └── relative_consensus.rs    # Borda Count rank aggregation engine
-│   ├── miner/                       # Layer 2: Miner Compute Network
-│   │   ├── trainer.rs               # QLoRA fine-tuning engine, commit-reveal hashing
-│   │   └── worker.rs                # MinerNode worker and automated lifecycle
-│   ├── validator/                   # Layer 3: Validator Off-Chain Workers
-│   │   ├── tee.rs                   # TEE Sandbox enclave for Private Test Set isolation
-│   │   ├── evaluator.rs             # Multi-hardware evaluation with float drift tolerance
-│   │   └── worker.rs                # ValidatorNode worker
-│   ├── storage/                     # Layer 4: Decentralized Storage & CAS Database
-│   │   ├── kubo_client.rs           # Live IPFS Kubo RPC client (/api/v0/add, /api/v0/cat, /api/v0/pin)
-│   │   ├── hybrid_storage.rs        # HybridStorageManager (Disk CAS cache + Live IPFS network)
-│   │   ├── disk_ipfs.rs             # Persistent Disk-backed CAS for ~/.depeft/storage
-│   │   ├── ipfs.rs                  # Content Addressable Storage (CAS) simulator
-│   │   ├── safetensors.rs           # Standard SafeTensors serializer / parser
-│   │   └── vector_db.rs             # Embedded Lightweight Vector DB (Cosine Similarity)
-│   ├── ml/                          # Mathematical PEFT Primitives
-│   │   ├── tensor.rs                # Matrix ops, NF4 (NormalFloat4) and INT4 quantization
-│   │   ├── lora.rs                  # QLoRALinear layer, forward, backward, adapter merge
-│   │   ├── model.rs                 # Multi-module DePEFTModel with full backpropagation
-│   │   └── dataset.rs               # Train/test split and synthetic domain benchmark generator
-│   └── tournament/                  # ReLoRA Orchestration
-│       └── engine.rs                # Multi-round ReLoRA Tournament Engine
-└── tests/
-    └── integration_tests.rs         # Comprehensive unit, crypto, CAS, Candle, TEE, IPFS, BFT, and P2P tests
+│   ├── crypto/                      # Ed25519 Cryptography & Signed Transactions
+│   ├── node/                        # Live App-Chain HTTP REST/JSON-RPC Node & Web Dashboard
+│   │   ├── dashboard.rs             # Embedded HTML/CSS/JS Web Explorer
+│   │   └── server.rs                # Axum REST & Faucet API
+│   ├── client/                      # Rust RPC Client
+│   ├── blockchain/                  # App-Chain State Machine & Relative Consensus
+│   ├── miner/                       # Miner Network Layer & Autograd Worker
+│   ├── validator/                   # Validator Layer & TEE Evaluation Worker
+│   ├── storage/                     # Storage Layer (Hybrid CAS, IPFS, Vector DB)
+│   ├── ml/                          # Mathematical PEFT Primitives (NF4, INT4)
+│   └── tournament/                  # ReLoRA Multi-Round Tournament Engine
+├── tests/
+│   └── integration_tests.rs         # 16 Comprehensive Integration & Protocol Tests
+└── .github/workflows/ci.yml         # Automated GitHub Actions CI Testing & Build Pipeline
 ```
 
 ---
 
-## 🚀 Quickstart & CLI Usage
+## 🚀 Quickstart & Real Network Operations
 
-### 1. Run Real Candle LLM Transformer ReLoRA Tournament
+### 1. Launch Multi-Node Local Testnet (1-Click)
+Deploy a full 2-node P2P testnet swarm with bootstrap consensus and live web dashboard:
+```bash
+./scripts/start_local_testnet.sh
+```
+Open **http://127.0.0.1:8545** in your browser to access the Web Explorer.
+
+---
+
+### 2. Use the Python SDK (`depeft`)
+Interact with the live network from Python scripts or Jupyter Notebooks:
+```python
+from depeft import DePeftClient, generate_keypair
+
+client = DePeftClient("http://127.0.0.1:8545")
+
+# 1. Request testnet tokens from faucet
+account = generate_keypair()
+print(client.request_faucet(account["account_id"], amount=10000))
+
+# 2. Check balance & chain status
+print("Status:", client.get_status())
+print("Balance:", client.get_balance(account["account_id"]))
+```
+
+---
+
+### 3. Run Real Candle LLM Transformer ReLoRA Tournament
 Fine-tune real LoRA adapters on a Decoder Transformer language model with autograd, HuggingFace `.safetensors` export, TEE evaluation, and ReLoRA weight fusion:
 ```bash
 cargo run -- llm-demo --rounds 3 --steps 10
 ```
 
-### 2. Run Byzantine Fault Tolerant (BFT) State Finality & Consensus
-Execute Tendermint/CometBFT 2-phase commit with 2/3+ validator quorum, aggregate signatures, and equivocation slashing:
+---
+
+### 4. Run Byzantine Fault Tolerant (BFT) State Finality & Consensus
+Execute Tendermint/CometBFT 2-phase commit with 2/3+ validator quorum and equivocation slashing:
 ```bash
 cargo run -- bft-demo --validators 4 --blocks 3
 ```
 
-### 3. Verify Hardware TEE Remote Attestation Quote & Anti-Fraud Security
-Generate and verify cryptographic Intel SGX / AMD SEV hardware quotes on-chain:
-```bash
-cargo run -- tee-quote
-```
+---
 
-### 4. Live IPFS Kubo & Decentralized Storage Network Integration
-Inspect local/remote IPFS Kubo daemon status & connected peers:
+### 5. Deploy Smart Contracts ($DEPEFT & Escrow)
 ```bash
-cargo run -- ipfs status --api-url http://127.0.0.1:5001
-```
-Upload and pin `.safetensors` model weights or datasets to IPFS:
-```bash
-cargo run -- ipfs put ./model_weights.safetensors
-```
-Retrieve content by CID from the global IPFS swarm:
-```bash
-cargo run -- ipfs cat <CID> --output ./downloaded.safetensors
-```
-
-### 5. Keypair Generation & Wallet Management
-Generate a cryptographically secure Ed25519 account keypair:
-```bash
-cargo run -- key generate
-```
-Inspect an existing private key:
-```bash
-cargo run -- key inspect <0x_secret_key>
-```
-
-### 6. Run Live App-Chain Node Daemon with P2P Overlay
-Start Node 1 (Bootstrap node with P2P on port 9000, HTTP on 8545):
-```bash
-cargo run -- node start --port 8545 --p2p-port 9000
-```
-Start Node 2 (Connects to Node 1 via P2P bootnodes):
-```bash
-cargo run -- node start --port 8546 --p2p-port 9001 --bootnodes 127.0.0.1:9000
-```
-
-### 7. P2P Peer Discovery & Management
-List connected P2P peers:
-```bash
-cargo run -- p2p peers --node-url http://127.0.0.1:8545
-```
-Connect to a remote P2P peer over TCP:
-```bash
-cargo run -- p2p connect --node-url http://127.0.0.1:8545 --addr 127.0.0.1:9001
-```
-
-### 8. Client Task Submission & Query
-Submit a new fine-tuning task on the live network (automatically gossiped to all peers):
-```bash
-cargo run -- task create --node-url http://127.0.0.1:8545 --secret-key <0x_key> --model "Qwen/Qwen2.5-7B" --bounty 30000
-```
-List active network tasks:
-```bash
-cargo run -- task list --node-url http://127.0.0.1:8545
-```
-
-### 9. Run Miner & Validator Daemons Against Live Node
-Run a Miner daemon (fine-tunes QLoRA, signs commit-reveal, uploads `.safetensors` to CAS):
-```bash
-cargo run -- miner run --node-url http://127.0.0.1:8545 --secret-key <0x_miner_key> --task-id 1 --hardware "NVIDIA RTX 4090 / CUDA"
-```
-Run a Validator daemon (evaluates adapters in secure TEE sandbox and submits consensus rank vote):
-```bash
-cargo run -- validator run --node-url http://127.0.0.1:8545 --secret-key <0x_val_key> --task-id 1 --hardware "Intel Xeon / AVX-512"
-```
-
-### 10. Run PEFT Quantization Benchmarks & Vector DB Search
-```bash
-# Benchmark NF4 vs INT4 vs FP32
-cargo run -- benchmark
-
-# Search Embedded Vector DB for adapter signatures
-cargo run -- vector-query
+node contracts/scripts/deploy.js
 ```
 
 ---

@@ -1,6 +1,6 @@
 # 🤖 AGENTS.md : Autonomous Agent & Node Operator Guide
 
-This document specifies the protocols, APIs, and execution lifecycles for autonomous AI agents, automated miners, TEE validators, and node operators interacting with the **DePEFT Decentralized Parameter-Efficient Fine-Tuning Network**.
+This document specifies the protocols, APIs, SDK tooling, and execution lifecycles for autonomous AI agents, automated miners, TEE validators, and node operators interacting with the **DePEFT Decentralized Parameter-Efficient Fine-Tuning Network**.
 
 ---
 
@@ -38,17 +38,18 @@ graph TD
 
 Autonomous agents generate and maintain Ed25519 cryptographic keypairs for transaction authentication and balance management.
 
-### Agent Keypair Generation
+### Agent Keypair Generation (CLI / Rust)
 ```bash
 cargo run -- key generate
 ```
-Example Output:
-```json
-{
-  "account_id": "0x404bb34320987b91769156755149dc7d052ade207e198343169bbe7838dcc007",
-  "public_key": "0x404bb34320987b91769156755149dc7d052ade207e198343169bbe7838dcc007",
-  "secret_key": "0x1a8f9c2d..."
-}
+
+### Agent Keypair Generation (Python SDK)
+```python
+from depeft import generate_keypair
+
+account = generate_keypair()
+print("Secret Key:", account["secret_key"])
+print("Account ID:", account["account_id"])
 ```
 
 Agents store their `secret_key` in secure environment variables:
@@ -68,28 +69,39 @@ Autonomous agents communicate with any live App-Chain Node over HTTP/JSON-RPC (d
   ```json
   {
     "block_height": 142,
-    "total_tasks": 12,
-    "active_rounds": 3,
-    "connected_p2p_peers": 8
+    "tasks_count": 12,
+    "storage_objects_count": 45,
+    "connected_peers_count": 8,
+    "version": "0.1.0-depeft"
   }
   ```
 
 ### 2. Query Account Balance
-- **`GET /api/v1/balance/{account_id}`**
+- **`GET /api/v1/accounts/{account_id}/balance`**
   ```json
   {
-    "account_id": "0x404bb343...",
+    "account": "0x404bb343...",
     "balance": 50000
   }
   ```
 
-### 3. Task Management Endpoints
-- **`GET /api/v1/tasks`**: Returns array of all active [`TaskSpec`](file:///home/khoa/DePEFT/src/blockchain/types.rs#L45-L65) records.
+### 3. Testnet Faucet
+- **`POST /api/v1/faucet`**
+  - Payload:
+  ```json
+  {
+    "account": "0x404bb343...",
+    "amount": 10000
+  }
+  ```
+
+### 4. Task Management Endpoints
+- **`GET /api/v1/tasks`**: Returns array of all active `TaskSpec` records.
 - **`GET /api/v1/tasks/{task_id}`**: Retrieves task configuration, dataset CID, base model ID, and current round state.
 
-### 4. Signed Transaction Submission
+### 5. Signed Transaction Submission
 - **`POST /api/v1/tx`**
-  - Payload: [`SignedTransaction`](file:///home/khoa/DePEFT/src/crypto/keys.rs#L70-L80)
+  - Payload: `SignedTransaction`
   ```json
   {
     "tx": {
@@ -110,8 +122,8 @@ Autonomous agents communicate with any live App-Chain Node over HTTP/JSON-RPC (d
   }
   ```
 
-### 5. Content-Addressable Storage (CAS)
-- **`POST /api/v1/storage`**: Uploads raw binary (multipart form or binary body), returns multihash CID.
+### 6. Content-Addressable Storage (CAS)
+- **`POST /api/v1/storage`**: Uploads raw binary (hex encoded body), returns multihash CID.
 - **`GET /api/v1/storage/{cid}`**: Downloads raw `.safetensors` model weights or dataset chunks.
 
 ---
@@ -196,27 +208,27 @@ cargo run -- bft-demo --validators 4 --blocks 5
 
 ---
 
-## 🤖 CI / CD & Automated Bot Workflows
+## 🤖 Python Autonomous Agent Script Example
 
-For continuous benchmarking and headless node operation in headless Docker or Kubernetes clusters:
+```python
+from depeft import DePeftClient, generate_keypair
+import time
 
-```yaml
-# Example Kubernetes Pod definition for DePEFT Miner Node
-apiVersion: v1
-kind: Pod
-metadata:
-  name: depeft-miner-worker
-spec:
-  containers:
-  - name: depeft-miner
-    image: depeft-node:latest
-    command: ["cargo", "run", "--release", "--", "miner", "run"]
-    args:
-      - "--node-url=http://depeft-validator-node:8545"
-      - "--secret-key=$(DEPEFT_MINER_KEY)"
-      - "--task-id=1"
-      - "--hardware=NVIDIA A100 / CUDA 12.2"
-    resources:
-      limits:
-        nvidia.com/gpu: 1
+client = DePeftClient("http://127.0.0.1:8545")
+bot_account = generate_keypair()
+
+# Request initial funds from faucet
+client.request_faucet(bot_account["account_id"], 20000)
+
+print(f"[*] Agent started with address: {bot_account['account_id']}")
+
+while True:
+    status = client.get_status()
+    print(f"[#] Block #{status['block_height']} | Tasks: {status['tasks_count']}")
+    
+    tasks = client.get_tasks()
+    for task in tasks:
+        print(f"    - Task #{task['task_id']}: Bounty {task['bounty_pool']} $DEPEFT")
+        
+    time.sleep(10)
 ```

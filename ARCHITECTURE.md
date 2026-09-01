@@ -8,11 +8,12 @@ DePEFT is an application-specific decentralized blockchain and compute protocol 
 
 ```mermaid
 graph TD
-    subgraph Layer1["Layer 1: App-Chain State Machine & Consensus"]
-        ChainState["AppChainState (Balances, Escrows, TaskSpecs)"]
+    subgraph Layer1["Layer 1: App-Chain State Machine, Consensus & Escrow"]
+        ChainState["AppChainState (Balances, Escrows, TaskSpecs, Faucet)"]
         BftEngine["CometBFT Consensus Engine (2-Phase Commit)"]
         BordaEngine["Relative Consensus Engine (Borda Count)"]
         TeeVerifier["On-Chain TEE Remote Attestation Verifier"]
+        SmartContracts["EVM Contracts (DePeftToken.sol & DePeftEscrow.sol)"]
     end
 
     subgraph Layer2["Layer 2: Miner Compute Network"]
@@ -59,6 +60,10 @@ To eliminate floating-point divergence caused by non-deterministic GPU kernel ex
 $$\text{Score}(M_i) = \sum_{v \in V} (N - \text{Rank}_v(M_i))$$
 
 Where $N$ is the number of candidate miners, and $\text{Rank}_v(M_i)$ is the ordinal position assigned by validator $v$.
+
+### 1.3 Smart Contracts & Escrow Settlement
+- **`DePeftToken.sol`**: Standard ERC-20 token ($DEPEFT) for network utilities, bounty escrow, and staking.
+- **`DePeftEscrow.sol`**: Manages client task funding and multi-round reward payouts directly to winning miners upon round finalization.
 
 ---
 
