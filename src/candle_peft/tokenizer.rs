@@ -7,6 +7,12 @@ pub struct SimpleByteTokenizer {
     pub vocab_size: usize,
 }
 
+impl Default for SimpleByteTokenizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimpleByteTokenizer {
     pub fn new() -> Self {
         Self { vocab_size: 256 }
@@ -29,16 +35,13 @@ impl SimpleByteTokenizer {
         let mut flat = Vec::with_capacity(batch.len() * max_len);
 
         for seq in batch {
-            for &t in seq {
-                flat.push(t);
-            }
+            flat.extend_from_slice(seq);
             // Pad sequence with 0 (NULL / PAD byte)
-            for _ in seq.len()..max_len {
-                flat.push(0u32);
-            }
+            flat.resize(flat.len() + (max_len - seq.len()), 0u32);
         }
 
         let tensor = Tensor::from_vec(flat, (batch.len(), max_len), device)?;
         Ok(tensor)
     }
 }
+

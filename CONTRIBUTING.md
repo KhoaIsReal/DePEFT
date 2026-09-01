@@ -73,9 +73,9 @@ cargo test test_candle_llm_transformer_relora_tournament -- --nocapture
    ```bash
    cargo fmt --check
    ```
-2. **Clippy**: Run Clippy and ensure zero warnings:
+2. **Clippy (Zero Warnings Enforcement)**: Run Clippy with warnings treated as errors and ensure clean compilation:
    ```bash
-   cargo clippy --all-targets --all-features
+   cargo clippy --all-targets --all-features -- -D warnings
    ```
 3. **Error Handling**: Use `anyhow::Result` and descriptive errors via `ensure!` or `bail!` in domain logic. Avoid unhandled `.unwrap()` calls in production code paths.
 4. **Documentation**: Add Rustdoc comments (`///`) to all public structs, enums, traits, and functions.

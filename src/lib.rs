@@ -1,4 +1,15 @@
 #![allow(non_snake_case)]
+#![allow(clippy::large_enum_variant)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_borrows_for_generic_args)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::collapsible_if)]
+#![allow(clippy::manual_find)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::redundant_pattern_matching)]
+#![allow(clippy::excessive_precision)]
+#![allow(clippy::chunks_exact_to_as_chunks)]
+#![allow(clippy::while_let_loop)]
 
 pub mod blockchain;
 pub mod candle_peft;

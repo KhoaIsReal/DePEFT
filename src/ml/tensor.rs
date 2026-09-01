@@ -153,7 +153,7 @@ impl QuantizedWeight {
         let rows = matrix.rows;
         let cols = matrix.cols;
         let total = rows * cols;
-        let num_blocks = (total + block_size - 1) / block_size;
+        let num_blocks = total.div_ceil(block_size);
         let mut absmax_scales = Vec::with_capacity(num_blocks);
         let mut quantized_indices = Vec::with_capacity(total);
 
@@ -188,7 +188,7 @@ impl QuantizedWeight {
         }
 
         // Pack two 4-bit nibbles into one u8
-        let mut packed_data = Vec::with_capacity((total + 1) / 2);
+        let mut packed_data = Vec::with_capacity(total.div_ceil(2));
         for chunk in quantized_indices.chunks(2) {
             let high = chunk[0] & 0x0F;
             let low = if chunk.len() > 1 { chunk[1] & 0x0F } else { 0 };
@@ -209,7 +209,7 @@ impl QuantizedWeight {
         let rows = matrix.rows;
         let cols = matrix.cols;
         let total = rows * cols;
-        let num_blocks = (total + block_size - 1) / block_size;
+        let num_blocks = total.div_ceil(block_size);
         let mut absmax_scales = Vec::with_capacity(num_blocks);
         let mut quantized_indices = Vec::with_capacity(total);
 
@@ -235,12 +235,13 @@ impl QuantizedWeight {
             }
         }
 
-        let mut packed_data = Vec::with_capacity((total + 1) / 2);
+        let mut packed_data = Vec::with_capacity(total.div_ceil(2));
         for chunk in quantized_indices.chunks(2) {
             let high = chunk[0] & 0x0F;
             let low = if chunk.len() > 1 { chunk[1] & 0x0F } else { 0 };
             packed_data.push((high << 4) | low);
         }
+
 
         Self::INT4 {
             rows,

@@ -157,9 +157,23 @@ cargo run -- bft-demo --validators 4 --blocks 3
 
 ---
 
-### 5. Deploy Smart Contracts ($DEPEFT & Escrow)
+### 5. Deploy EVM Smart Contracts ($DEPEFT & Escrow)
+Deploy smart contracts to Sepolia or Base Sepolia testnet using Hardhat:
 ```bash
-node contracts/scripts/deploy.js
+cd contracts
+npm install
+cp .env.example .env # Configure PRIVATE_KEY
+npm run deploy:sepolia
+# or deploy to Base Sepolia
+npm run deploy:base-sepolia
+```
+
+---
+
+### 6. Deploy 1-Click Public App-Chain Testnet to VPS / Cloud
+Deploy a live public testnet node with IPFS Kubo storage on any cloud instance:
+```bash
+./scripts/deploy_vps_testnet.sh
 ```
 
 ---

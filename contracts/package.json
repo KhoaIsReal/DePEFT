@@ -1,0 +1,17 @@
+{
+  "name": "depeft-contracts",
+  "version": "1.0.0",
+  "description": "Smart contracts for DePEFT Network bounty escrow & rewards",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "deploy:base-sepolia": "hardhat run scripts/deploy.js --network baseSepolia"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.0"
+  }
+}
