@@ -32,7 +32,13 @@ impl IpfsStorage {
     /// Upload data to IPFS and return its CID.
     pub fn put(&self, data: &[u8]) -> String {
         let cid = Self::compute_cid(data);
+        const MAX_STORE_OBJECTS: usize = 10_000;
         let mut store = self.storage.write().unwrap();
+        if store.len() >= MAX_STORE_OBJECTS && !store.contains_key(&cid) {
+            if let Some(first_key) = store.keys().next().cloned() {
+                store.remove(&first_key);
+            }
+        }
         store.insert(cid.clone(), data.to_vec());
         cid
     }
