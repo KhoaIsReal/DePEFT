@@ -420,6 +420,16 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
     <script>
         document.getElementById('node-endpoint').textContent = window.location.origin;
 
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return String(str);
+            return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
         function switchTab(tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -448,16 +458,20 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-muted);">No tasks registered yet</td></tr>';
                 } else {
                     tbody.innerHTML = tasks.map(t => {
-                        const model = typeof t.base_model_id === 'string' ? t.base_model_id : new TextDecoder().decode(new Uint8Array(t.base_model_id));
-                        const modules = t.target_modules ? t.target_modules.map(m => typeof m === 'string' ? m : new TextDecoder().decode(new Uint8Array(m))).join(', ') : 'N/A';
+                        const rawModel = typeof t.base_model_id === 'string' ? t.base_model_id : new TextDecoder().decode(new Uint8Array(t.base_model_id));
+                        const rawModules = t.target_modules ? t.target_modules.map(m => typeof m === 'string' ? m : new TextDecoder().decode(new Uint8Array(m))).join(', ') : 'N/A';
+                        const model = escapeHtml(rawModel);
+                        const modules = escapeHtml(rawModules);
+                        const client = escapeHtml((t.client_address || '').slice(0, 16));
+                        const peft = escapeHtml(t.peft_method || 'QLoRA_NF4');
                         return `
                             <tr>
                                 <td><span class="code-pill">#${t.task_id}</span></td>
                                 <td style="font-weight: 600; color: #fff;">${model}</td>
-                                <td><span class="tag-pill tag-qlora">${t.peft_method || 'QLoRA_NF4'}</span></td>
+                                <td><span class="tag-pill tag-qlora">${peft}</span></td>
                                 <td><span class="code-pill">${modules}</span></td>
                                 <td style="color: var(--accent-green); font-weight: 600;">${t.bounty_pool}</td>
-                                <td><span class="code-pill">${t.client_address.slice(0, 16)}...</span></td>
+                                <td><span class="code-pill">${client}...</span></td>
                                 <td>#${t.epoch_end_block}</td>
                             </tr>
                         `;
@@ -478,7 +492,7 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                 } else {
                     peerList.innerHTML = data.connected_peers.map(p => `
                         <li style="padding: 0.5rem; background: #1f2937; border-radius: 6px; font-family: 'JetBrains Mono', monospace;">
-                            🔗 ${p}
+                            🔗 ${escapeHtml(p)}
                         </li>
                     `).join('');
                 }
