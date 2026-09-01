@@ -53,9 +53,16 @@ impl MinerTrainer {
         let mut model = base_model.clone();
         let target_modules = task_spec.target_modules_str();
 
+        let lr = if hyperparams.learning_rate.is_finite() && hyperparams.learning_rate > 0.0 {
+            hyperparams.learning_rate.min(10.0)
+        } else {
+            0.05
+        };
+        let epochs = hyperparams.epochs.clamp(1, 100);
+
         // Train local QLoRA adapters across configured epochs
-        for _ in 0..hyperparams.epochs {
-            model.train_epoch(dataset, hyperparams.learning_rate, &target_modules);
+        for _ in 0..epochs {
+            model.train_epoch(dataset, lr, &target_modules);
         }
 
         let (train_loss, _) = model.evaluate(dataset, 0.0);
