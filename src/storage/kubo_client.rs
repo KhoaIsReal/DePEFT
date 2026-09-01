@@ -111,8 +111,17 @@ impl IpfsKuboClient {
         Ok(add_resp.hash)
     }
 
+    /// Validate that a CID string is safe and conforms to standard alphanumeric multihash format.
+    fn validate_cid(cid: &str) -> Result<()> {
+        if cid.is_empty() || cid.len() > 128 || !cid.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            bail!("Invalid or unsafe IPFS CID format: '{}'", cid);
+        }
+        Ok(())
+    }
+
     /// Download binary bytes from IPFS by CID via `/api/v0/cat`.
     pub async fn cat_bytes(&self, cid: &str) -> Result<Vec<u8>> {
+        Self::validate_cid(cid)?;
         let url = format!("{}/api/v0/cat?arg={}", self.api_url, cid);
         let resp = self
             .http
@@ -131,6 +140,7 @@ impl IpfsKuboClient {
 
     /// Pin a CID on the IPFS daemon so it is protected against garbage collection.
     pub async fn pin_add(&self, cid: &str) -> Result<()> {
+        Self::validate_cid(cid)?;
         let url = format!("{}/api/v0/pin/add?arg={}", self.api_url, cid);
         let resp = self
             .http

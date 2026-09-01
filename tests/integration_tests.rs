@@ -845,3 +845,83 @@ fn test_security_relative_consensus_validator_deduplication() {
     let res = RelativeConsensusEngine::aggregate(&evals, &candidates).unwrap();
     assert_eq!(res.winner, m1, "Consensus winner must be honest miner despite duplicate evaluation submission attempt");
 }
+
+#[test]
+fn test_security_slashing_forged_vote_signature_rejected() {
+    use DePEFT::consensus::{SlashingEngine, Vote, VoteType};
+    use DePEFT::crypto::AccountKeypair;
+
+    let kp_victim = AccountKeypair::generate();
+    let kp_attacker = AccountKeypair::generate();
+
+    let mut slasher = SlashingEngine::new();
+
+    // Victim submits valid vote A
+    let sign_bytes = Vote::sign_bytes(VoteType::Prevote, 1, 0, Some([0x11; 32]));
+    let sig_valid = kp_victim.sign_message(&sign_bytes);
+    let vote_a = Vote {
+        vote_type: VoteType::Prevote,
+        height: 1,
+        round: 0,
+        block_hash: Some([0x11; 32]),
+        validator: kp_victim.account_id(),
+        signature: sig_valid,
+    };
+    assert!(slasher.check_vote(&vote_a).unwrap().is_none());
+
+    // Attacker crafts forged conflicting vote B pretending to be victim (signed with attacker key)
+    let sign_bytes_b = Vote::sign_bytes(VoteType::Prevote, 1, 0, Some([0x22; 32]));
+    let sig_forged = kp_attacker.sign_message(&sign_bytes_b);
+    let vote_b_forged = Vote {
+        vote_type: VoteType::Prevote,
+        height: 1,
+        round: 0,
+        block_hash: Some([0x22; 32]),
+        validator: kp_victim.account_id(), // Target honest victim
+        signature: sig_forged,
+    };
+
+    // Slashing check must fail cryptographic signature verification and NOT slash victim
+    let check_res = slasher.check_vote(&vote_b_forged);
+    assert!(check_res.is_err(), "Forged vote signature must be rejected");
+    assert!(!slasher.is_slashed(&kp_victim.account_id()), "Honest validator must not be slashed by forged evidence");
+}
+
+#[test]
+fn test_security_vector_db_nan_and_dimension_safety() {
+    use DePEFT::blockchain::types::AccountId;
+    use DePEFT::storage::vector_db::{AdapterVectorRecord, EmbeddedVectorDb};
+
+    let vdb = EmbeddedVectorDb::new(4);
+    let miner = AccountId::new("miner-test");
+
+    // 1. Dimension mismatch must be ignored gracefully without panic
+    vdb.insert(AdapterVectorRecord {
+        adapter_cid: "bafy_bad_dim".to_string(),
+        miner_address: miner.clone(),
+        task_id: 1,
+        round: 1,
+        signature: vec![1.0, 2.0], // len 2 != 4
+    });
+    assert_eq!(vdb.count(), 0);
+
+    // 2. NaN / Inf vector must be ignored gracefully without panic
+    vdb.insert(AdapterVectorRecord {
+        adapter_cid: "bafy_nan".to_string(),
+        miner_address: miner.clone(),
+        task_id: 1,
+        round: 1,
+        signature: vec![f32::NAN, 1.0, 0.0, 0.0],
+    });
+    assert_eq!(vdb.count(), 0);
+
+    // 3. Valid vector inserted successfully
+    vdb.insert(AdapterVectorRecord {
+        adapter_cid: "bafy_valid".to_string(),
+        miner_address: miner,
+        task_id: 1,
+        round: 1,
+        signature: vec![1.0, 0.0, 0.0, 0.0],
+    });
+    assert_eq!(vdb.count(), 1);
+}

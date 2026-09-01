@@ -152,6 +152,12 @@ impl AppChainState {
                     sender,
                     client
                 );
+                ensure!(bounty_pool > 0, "Bounty pool must be greater than 0 tokens");
+                ensure!(epoch_blocks >= 5, "Epoch duration must be at least 5 blocks");
+                ensure!(max_rank > 0 && max_rank <= 256, "Max rank must be between 1 and 256");
+                ensure!(!base_model_id.is_empty(), "Base model ID cannot be empty");
+                ensure!(!dataset_cid.is_empty(), "Dataset CID cannot be empty");
+
                 let client_bal = self.balance_of(&client);
                 ensure!(
                     client_bal >= bounty_pool,
@@ -159,7 +165,9 @@ impl AppChainState {
                 );
 
                 // Deduct from client balance and lock into escrow
-                *self.balances.get_mut(&client).unwrap() -= bounty_pool;
+                if let Some(bal) = self.balances.get_mut(&client) {
+                    *bal = bal.saturating_sub(bounty_pool);
+                }
                 let task_id = self.next_task_id;
                 self.next_task_id += 1;
 

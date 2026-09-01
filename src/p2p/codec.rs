@@ -2,7 +2,8 @@ use crate::p2p::types::P2pMessage;
 use anyhow::{bail, Context, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-const MAX_FRAME_SIZE: usize = 32 * 1024 * 1024; // 32 MB maximum frame size
+const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024; // 16 MB maximum frame size
+const MIN_FRAME_SIZE: usize = 2; // Minimal JSON payload "{}"
 
 /// Asynchronously write a length-delimited P2pMessage to a stream.
 pub async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &P2pMessage) -> Result<()> {
@@ -25,8 +26,8 @@ pub async fn read_message<R: AsyncRead + Unpin>(reader: &mut R) -> Result<P2pMes
     reader.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
 
-    if len > MAX_FRAME_SIZE {
-        bail!("Incoming frame size exceeds maximum allowed: {} > {}", len, MAX_FRAME_SIZE);
+    if !(MIN_FRAME_SIZE..=MAX_FRAME_SIZE).contains(&len) {
+        bail!("Incoming frame size outside valid bounds ({}..={}): got {}", MIN_FRAME_SIZE, MAX_FRAME_SIZE, len);
     }
 
     let mut payload = vec![0u8; len];

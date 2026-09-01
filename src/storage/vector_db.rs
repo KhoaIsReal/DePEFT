@@ -34,18 +34,37 @@ impl EmbeddedVectorDb {
         }
     }
 
-    /// Insert an adapter signature into the vector database.
+    /// Insert an adapter signature into the vector database safely.
     pub fn insert(&self, record: AdapterVectorRecord) {
-        assert_eq!(record.signature.len(), self.dimension, "Signature dimension mismatch");
+        if record.signature.len() != self.dimension {
+            return;
+        }
+        // Sanitize vector: reject signatures containing NaN or Infinity
+        if record.signature.iter().any(|x| !x.is_finite()) {
+            return;
+        }
         let mut recs = self.records.write().unwrap();
         recs.push(record);
     }
 
     /// Compute cosine similarity between two unit-normalized vectors: $u \cdot v$.
     pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-        let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if a.len() != b.len() || a.is_empty() {
+            return 0.0;
+        }
+        let mut dot: f32 = 0.0;
+        let mut norm_a: f32 = 0.0;
+        let mut norm_b: f32 = 0.0;
+        for (x, y) in a.iter().zip(b) {
+            if !x.is_finite() || !y.is_finite() {
+                return 0.0;
+            }
+            dot += x * y;
+            norm_a += x * x;
+            norm_b += y * y;
+        }
+        norm_a = norm_a.sqrt();
+        norm_b = norm_b.sqrt();
         if norm_a < 1e-6 || norm_b < 1e-6 {
             0.0
         } else {

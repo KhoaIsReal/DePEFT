@@ -29,8 +29,12 @@ impl SlashingEngine {
     }
 
     /// Process a new vote and check for equivocation.
+    /// Cryptographically verifies vote signature before processing to prevent forged evidence attacks.
     /// If double-voting is detected, returns `Some(EquivocationEvidence)`.
     pub fn check_vote(&mut self, vote: &Vote) -> Result<Option<EquivocationEvidence>> {
+        // Anti-Forgery check: Verify cryptographic signature of the vote first
+        vote.verify_signature()?;
+
         let key = (
             vote.validator.clone(),
             vote.height,
