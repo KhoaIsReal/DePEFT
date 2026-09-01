@@ -49,8 +49,13 @@ impl ValidatorNode {
         reveals: &[(AccountId, String)], // list of (miner_id, adapter_cid)
     ) -> Result<Transaction> {
         let mut scores: Vec<(AccountId, f64, f64)> = Vec::new();
+        let mut seen_miners = std::collections::HashSet::new();
 
         for (miner, cid) in reveals {
+            if !seen_miners.insert(miner) {
+                continue;
+            }
+
             let bytes = match ipfs.get(cid) {
                 Some(b) => b,
                 None => {

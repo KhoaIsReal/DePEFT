@@ -64,6 +64,11 @@ impl Dataset {
         domain_complexity: f32,
         rng: &mut impl Rng,
     ) -> Self {
+        let domain_complexity = if domain_complexity.is_finite() {
+            domain_complexity
+        } else {
+            1.0
+        };
         let mut samples = Vec::with_capacity(num_samples);
 
         for _ in 0..num_samples {
