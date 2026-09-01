@@ -182,8 +182,19 @@ async fn connect_to_p2p_peer(
     State(ctx): State<NodeContext>,
     Json(payload): Json<ConnectPeerRequest>,
 ) -> Result<Json<GenericResponse>, (StatusCode, Json<GenericResponse>)> {
+    let addr = payload.addr.trim();
+    if addr.is_empty() || addr.len() > 256 || !addr.contains(':') {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(GenericResponse {
+                status: "invalid_address",
+                message: "Peer address must be in 'host:port' or 'ip:port' format (max 256 chars)".to_string(),
+            }),
+        ));
+    }
+
     if let Some(swarm) = &ctx.swarm {
-        match swarm.connect_peer(&payload.addr).await {
+        match swarm.connect_peer(addr).await {
             Ok(peer_id) => Ok(Json(GenericResponse {
                 status: "ok",
                 message: format!("Successfully connected to peer {}", peer_id),
