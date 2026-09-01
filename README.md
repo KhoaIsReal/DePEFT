@@ -210,6 +210,11 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ---
 
-## 📄 License
+## 📄 Licensing & Open Source Permissions
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
+DePEFT uses a modular multi-license architecture to protect core blockchain innovation while maximizing developer adoption:
+
+- **Core Node & Consensus Engine (`src/`, `Cargo.toml`)**: Licensed under the **[GNU General Public License v3.0 (GPL-3.0)](./LICENSE)**. Any forks or network distributions of the core node must remain open-source.
+- **Python Client SDK (`sdk/python/`)**: Dual-licensed under **[Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)** OR **[MIT](https://opensource.org/licenses/MIT)**, allowing external AI developers and agents to freely integrate DePEFT into proprietary or open workflows.
+- **Smart Contracts (`contracts/`)**: Dual-licensed under **[Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)** OR **[MIT](https://opensource.org/licenses/MIT)** for permissive EVM deployment and DApp integration.
+
