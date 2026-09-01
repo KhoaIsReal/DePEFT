@@ -73,8 +73,12 @@ impl DePeftClient {
     /// Query specific task by ID.
     pub async fn get_task(&self, task_id: u64) -> Result<TaskSpec> {
         let url = format!("{}/api/v1/tasks/{}", self.base_url, task_id);
-        let resp = self.http.get(&url).send().await?.json::<TaskSpec>().await?;
-        Ok(resp)
+        let resp = self.http.get(&url).send().await?;
+        if !resp.status().is_success() {
+            bail!("Failed to get task #{}: status {}", task_id, resp.status());
+        }
+        let task = resp.json::<TaskSpec>().await?;
+        Ok(task)
     }
 
     /// Submit a signed transaction.
@@ -110,8 +114,9 @@ impl DePeftClient {
         Ok(res.cid)
     }
 
-    /// Download binary artifact from CAS storage via HTTP.
+    /// Download binary artifact from CAS storage via HTTP with size protection.
     pub async fn download_storage(&self, cid: &str) -> Result<Vec<u8>> {
+        const MAX_DOWNLOAD_SIZE: usize = 128 * 1024 * 1024; // 128 MB maximum artifact
         let url = format!("{}/api/v1/storage/{}", self.base_url, cid);
         let resp = self.http.get(&url).send().await?;
 
@@ -119,7 +124,16 @@ impl DePeftClient {
             bail!("Storage download failed for CID {}: status {}", cid, resp.status());
         }
 
+        if let Some(content_len) = resp.content_length() {
+            if content_len > MAX_DOWNLOAD_SIZE as u64 {
+                bail!("Downloaded artifact exceeds maximum allowed size of {} bytes", MAX_DOWNLOAD_SIZE);
+            }
+        }
+
         let bytes = resp.bytes().await?.to_vec();
+        if bytes.len() > MAX_DOWNLOAD_SIZE {
+            bail!("Downloaded artifact exceeds maximum allowed size of {} bytes", MAX_DOWNLOAD_SIZE);
+        }
         Ok(bytes)
     }
 
@@ -132,7 +146,11 @@ impl DePeftClient {
     /// Query account info (balance and nonce).
     pub async fn get_account(&self, account_hex: &str) -> Result<AccountInfo> {
         let url = format!("{}/api/v1/accounts/{}/balance", self.base_url, account_hex);
-        let info = self.http.get(&url).send().await?.json::<AccountInfo>().await?;
+        let resp = self.http.get(&url).send().await?;
+        if !resp.status().is_success() {
+            bail!("Failed to get account {}: status {}", account_hex, resp.status());
+        }
+        let info = resp.json::<AccountInfo>().await?;
         Ok(info)
     }
 
