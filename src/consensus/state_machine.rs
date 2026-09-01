@@ -197,6 +197,9 @@ impl BftEngine {
             vote.validator
         );
 
+        // Verify cryptographic signature of the vote
+        vote.verify_signature()?;
+
         match vote.vote_type {
             VoteType::Prevote => {
                 self.round_state.prevotes.insert(vote.validator.clone(), vote);

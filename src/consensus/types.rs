@@ -1,10 +1,11 @@
 use crate::blockchain::types::AccountId;
 use crate::crypto::SignedTransaction;
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
 
-/// Block Header containing cryptographic commitments to state and transactions.
+/// Block Header containing state root, tx root, and consensus metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockHeader {
     pub height: u64,
@@ -24,13 +25,13 @@ impl BlockHeader {
         hasher.update(&self.prev_block_hash);
         hasher.update(&self.state_root);
         hasher.update(&self.tx_root);
-        hasher.update(self.proposer.0.as_bytes());
+        hasher.update(self.proposer.as_str().as_bytes());
         hasher.update(&self.timestamp.to_be_bytes());
         hasher.finalize().into()
     }
 }
 
-/// Cryptographic 2/3+ Commit proof signed by the validator set.
+/// Finalized Block Commit with gathered 2/3+ Precommit cryptographic signatures.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockCommit {
     pub height: u64,
@@ -39,7 +40,7 @@ pub struct BlockCommit {
     pub signatures: Vec<(AccountId, Vec<u8>)>,
 }
 
-/// Finalized Block on the DePEFT App-Chain.
+/// Full Candidate Block proposed by the consensus leader.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Block {
     pub header: BlockHeader,
@@ -141,6 +142,38 @@ impl Vote {
             bytes.push(0);
         }
         bytes
+    }
+
+    /// Cryptographically verify the Ed25519 signature of the vote.
+    pub fn verify_signature(&self) -> anyhow::Result<()> {
+        let addr_hex = self.validator.as_str().trim_start_matches("0x");
+        let pubkey_bytes = hex::decode(addr_hex)
+            .map_err(|e| anyhow::anyhow!("Invalid validator account hex: {}", e))?;
+
+        if pubkey_bytes.len() != 32 {
+            anyhow::bail!("Validator account id is not a 32-byte Ed25519 public key");
+        }
+
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(&pubkey_bytes);
+
+        let verifying_key = VerifyingKey::from_bytes(&key_arr)
+            .map_err(|e| anyhow::anyhow!("Invalid verifying key bytes: {}", e))?;
+
+        if self.signature.len() != 64 {
+            anyhow::bail!("Invalid signature length for vote: expected 64 bytes");
+        }
+
+        let sig_bytes: [u8; 64] = self.signature.as_slice().try_into()?;
+        let signature = Signature::from_bytes(&sig_bytes);
+
+        let sign_bytes = Self::sign_bytes(self.vote_type, self.height, self.round, self.block_hash);
+
+        verifying_key
+            .verify(&sign_bytes, &signature)
+            .map_err(|e| anyhow::anyhow!("Cryptographic signature verification failed for vote from {}: {}", self.validator, e))?;
+
+        Ok(())
     }
 }
 

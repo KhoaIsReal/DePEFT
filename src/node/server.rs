@@ -203,6 +203,17 @@ async fn upload_storage(
         }
     };
 
+    const MAX_UPLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB maximum upload
+    if data.len() > MAX_UPLOAD_SIZE {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(GenericResponse {
+                status: "error",
+                message: format!("Payload exceeds maximum allowed size of {} bytes", MAX_UPLOAD_SIZE),
+            }),
+        ));
+    }
+
     let size_bytes = data.len();
     match ctx.storage.put(&data) {
         Ok(cid) => Ok(Json(StorageUploadResponse { cid, size_bytes })),
@@ -256,15 +267,39 @@ async fn request_faucet(
     State(ctx): State<NodeContext>,
     Json(payload): Json<FaucetRequest>,
 ) -> Result<Json<GenericResponse>, (StatusCode, Json<GenericResponse>)> {
-    let account = AccountId::new(payload.account);
+    let clean_addr = payload.account.trim_start_matches("0x");
+    if clean_addr.len() != 64 || hex::decode(clean_addr).is_err() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(GenericResponse {
+                status: "invalid_account",
+                message: "Account must be a valid 32-byte hex public key (e.g. 0x...)".to_string(),
+            }),
+        ));
+    }
+
+    let account = AccountId::new(format!("0x{}", clean_addr.to_lowercase()));
     let amount = payload.amount.unwrap_or(10_000).min(100_000); // default 10k, max 100k per request
 
     let mut chain = ctx.chain.write().unwrap();
-    chain.mint(account.clone(), amount);
+    const MAX_FAUCET_BALANCE: u128 = 1_000_000;
+    let current_bal = chain.balance_of(&account);
+    if current_bal >= MAX_FAUCET_BALANCE {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(GenericResponse {
+                status: "faucet_limit_reached",
+                message: format!("Account {} has reached maximum faucet allocation of {} tokens", account, MAX_FAUCET_BALANCE),
+            }),
+        ));
+    }
+
+    let grant = amount.min(MAX_FAUCET_BALANCE - current_bal);
+    chain.mint(account.clone(), grant);
 
     Ok(Json(GenericResponse {
         status: "ok",
-        message: format!("Successfully minted {} tokens to {}", amount, account),
+        message: format!("Successfully minted {} tokens to {}", grant, account),
     }))
 }
 

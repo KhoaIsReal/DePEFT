@@ -32,6 +32,15 @@ impl DiskIpfsStorage {
         format!("bafy{}", hex::encode(hash))
     }
 
+    /// Validate CID to prevent Path Traversal attacks (e.g. `../../etc/passwd`).
+    fn validate_cid(cid: &str) -> bool {
+        if cid.is_empty() || cid.len() > 128 {
+            return false;
+        }
+        // Strict alphanumeric and standard IPFS base32/base58/hex chars
+        cid.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    }
+
     /// Store binary data on disk and return its CID.
     pub fn put(&self, data: &[u8]) -> Result<String> {
         let cid = Self::compute_cid(data);
@@ -40,14 +49,28 @@ impl DiskIpfsStorage {
         Ok(cid)
     }
 
-    /// Retrieve binary data by CID.
+    /// Retrieve binary data by CID with path traversal protection.
     pub fn get(&self, cid: &str) -> Option<Vec<u8>> {
+        if !Self::validate_cid(cid) {
+            return None;
+        }
         let file_path = self.root_dir.join(cid);
+        // Verify canonical path resides strictly inside root_dir
+        if let Ok(canonical) = file_path.canonicalize() {
+            if let Ok(root_canonical) = self.root_dir.canonicalize() {
+                if !canonical.starts_with(root_canonical) {
+                    return None;
+                }
+            }
+        }
         fs::read(file_path).ok()
     }
 
     /// Check if a CID exists on disk.
     pub fn contains(&self, cid: &str) -> bool {
+        if !Self::validate_cid(cid) {
+            return false;
+        }
         let file_path = self.root_dir.join(cid);
         file_path.exists()
     }
