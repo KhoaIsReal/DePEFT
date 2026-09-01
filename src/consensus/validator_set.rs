@@ -23,7 +23,7 @@ impl ValidatorSet {
             .collect();
         deduped.sort_by(|a, b| a.address.cmp(&b.address));
 
-        let total_voting_power: u64 = deduped.iter().map(|v| v.voting_power).sum();
+        let total_voting_power: u64 = deduped.iter().fold(0u64, |acc, v| acc.saturating_add(v.voting_power));
         Self {
             validators: deduped,
             total_voting_power,
@@ -32,7 +32,10 @@ impl ValidatorSet {
 
     /// Calculate strict 2/3+ threshold required for BFT quorum ($> 2/3$).
     pub fn two_thirds_threshold(&self) -> u64 {
-        (self.total_voting_power * 2) / 3 + 1
+        if self.total_voting_power == 0 {
+            return 0;
+        }
+        self.total_voting_power.saturating_mul(2) / 3 + 1
     }
 
     /// Deterministic weighted round-robin proposer selection based on height & round.
