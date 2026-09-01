@@ -11,6 +11,7 @@ use std::collections::HashSet;
 pub struct OnChainTeeVerifier {
     pub approved_mrenclaves: HashSet<[u8; 32]>,
     pub approved_mrsigners: HashSet<[u8; 32]>,
+    pub approved_platform_keys: HashSet<[u8; 32]>,
     pub enforce_attestation: bool,
 }
 
@@ -19,10 +20,12 @@ impl Default for OnChainTeeVerifier {
         let mut verifier = Self {
             approved_mrenclaves: HashSet::new(),
             approved_mrsigners: HashSet::new(),
+            approved_platform_keys: HashSet::new(),
             enforce_attestation: true,
         };
-        // Register canonical official validator enclave measurement by default
+        // Register canonical official validator enclave measurement and hardware platform key by default
         verifier.register_mrenclave(HardwareTeeEnclave::canonical_mrenclave());
+        verifier.register_platform_key(HardwareTeeEnclave::canonical_platform_public_key());
         verifier
     }
 }
@@ -42,6 +45,11 @@ impl OnChainTeeVerifier {
     /// Whitelist an approved enclave author signing key.
     pub fn register_mrsigner(&mut self, mrsigner: [u8; 32]) {
         self.approved_mrsigners.insert(mrsigner);
+    }
+
+    /// Whitelist an approved hardware platform root public key (Root of Trust).
+    pub fn register_platform_key(&mut self, platform_key: [u8; 32]) {
+        self.approved_platform_keys.insert(platform_key);
     }
 
     /// Verify an Attestation Quote on-chain before admitting a validator evaluation.
@@ -72,7 +80,15 @@ impl OnChainTeeVerifier {
             }
         }
 
-        // 3. Cryptographically verify Hardware Platform Quote Signature
+        // 3. Verify Hardware Platform Public Key against Root-of-Trust whitelist
+        if !self.approved_platform_keys.is_empty() && !self.approved_platform_keys.contains(&quote.platform_public_key) {
+            bail!(
+                "Unauthorized TEE Platform Public Key: 0x{} is not signed or whitelisted by Hardware Root of Trust",
+                hex::encode(quote.platform_public_key)
+            );
+        }
+
+        // 4. Cryptographically verify Hardware Platform Quote Signature
         let verifying_key = VerifyingKey::from_bytes(&quote.platform_public_key)
             .map_err(|e| anyhow::anyhow!("Invalid TEE platform public key: {}", e))?;
 

@@ -37,17 +37,30 @@ impl RelativeConsensusEngine {
             miner_ranks.insert(miner.clone(), Vec::new());
         }
 
-        // Collect each validator's ordinal position for each miner
+        // Collect each validator's ordinal position for each miner with deduplication
+        let mut seen_validators = std::collections::HashSet::new();
         for eval in evaluations {
-            let m = eval.ranking.len();
-            for (rank_idx, miner) in eval.ranking.iter().enumerate() {
+            if !seen_validators.insert(&eval.validator_address) {
+                continue; // Ignore duplicate submissions from the same validator address
+            }
+
+            // Deduplicate ranking items from this validator to prevent ranking inflation
+            let mut unique_ranking: Vec<AccountId> = Vec::new();
+            for miner in &eval.ranking {
+                if !unique_ranking.contains(miner) {
+                    unique_ranking.push(miner.clone());
+                }
+            }
+
+            let m = unique_ranking.len();
+            for (rank_idx, miner) in unique_ranking.iter().enumerate() {
                 if let Some(ranks) = miner_ranks.get_mut(miner) {
                     ranks.push(rank_idx);
                 }
             }
             // For any candidate not ranked in evaluation, assign worst rank
             for miner in candidate_miners {
-                if !eval.ranking.contains(miner) {
+                if !unique_ranking.contains(miner) {
                     if let Some(ranks) = miner_ranks.get_mut(miner) {
                         ranks.push(m);
                     }
@@ -61,9 +74,15 @@ impl RelativeConsensusEngine {
         for (miner, mut ranks) in miner_ranks {
             ranks.sort_unstable();
             // Robust Outlier Removal (Trimmed Borda Count):
-            // If >= 4 validators, trim highest and lowest rank to eliminate single-validator strategic manipulation
-            let trimmed_ranks = if ranks.len() >= 4 {
-                &ranks[1..ranks.len() - 1]
+            // Dynamically scale trimming for larger validator sets to eliminate Sybil collusion
+            let trim_count = if ranks.len() >= 4 {
+                (ranks.len() / 4).max(1)
+            } else {
+                0
+            };
+
+            let trimmed_ranks = if ranks.len() > 2 * trim_count {
+                &ranks[trim_count..ranks.len() - trim_count]
             } else {
                 &ranks[..]
             };

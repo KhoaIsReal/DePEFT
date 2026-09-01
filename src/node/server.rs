@@ -4,14 +4,16 @@ use crate::crypto::SignedTransaction;
 use crate::storage::disk_ipfs::DiskIpfsStorage;
 use crate::storage::vector_db::EmbeddedVectorDb;
 use anyhow::Result;
-use axum::extract::{Path, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 use crate::p2p::P2pSwarm;
 use tower_http::cors::CorsLayer;
 
@@ -22,6 +24,24 @@ pub struct NodeContext {
     pub storage: Arc<DiskIpfsStorage>,
     pub vector_db: Arc<EmbeddedVectorDb>,
     pub swarm: Option<Arc<P2pSwarm>>,
+    pub faucet_cooldowns: Arc<RwLock<HashMap<AccountId, u64>>>,
+}
+
+impl NodeContext {
+    pub fn new(
+        chain: Arc<RwLock<AppChainState>>,
+        storage: Arc<DiskIpfsStorage>,
+        vector_db: Arc<EmbeddedVectorDb>,
+        swarm: Option<Arc<P2pSwarm>>,
+    ) -> Self {
+        Self {
+            chain,
+            storage,
+            vector_db,
+            swarm,
+            faucet_cooldowns: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -191,6 +211,20 @@ async fn upload_storage(
     State(ctx): State<NodeContext>,
     Json(payload): Json<StorageUploadRequest>,
 ) -> Result<Json<StorageUploadResponse>, (StatusCode, Json<GenericResponse>)> {
+    const MAX_UPLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB maximum upload
+    const MAX_HEX_STRING_LEN: usize = MAX_UPLOAD_SIZE * 2; // 2 hex chars per byte
+
+    // Check payload string length BEFORE decoding to prevent memory exhaustion DoS
+    if payload.data_hex.len() > MAX_HEX_STRING_LEN {
+        return Err((
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(GenericResponse {
+                status: "error",
+                message: format!("Payload exceeds maximum allowed size of {} bytes", MAX_UPLOAD_SIZE),
+            }),
+        ));
+    }
+
     let data = match hex::decode(&payload.data_hex) {
         Ok(d) => d,
         Err(e) => {
@@ -204,7 +238,6 @@ async fn upload_storage(
         }
     };
 
-    const MAX_UPLOAD_SIZE: usize = 64 * 1024 * 1024; // 64 MB maximum upload
     if data.len() > MAX_UPLOAD_SIZE {
         return Err((
             StatusCode::PAYLOAD_TOO_LARGE,
@@ -284,6 +317,28 @@ async fn request_faucet(
     let account = AccountId::new(format!("0x{}", clean_addr.to_lowercase()));
     let amount = payload.amount.unwrap_or(10_000).min(100_000); // default 10k, max 100k per request
 
+    // Anti-Sybil Rate Limiting: enforce cooldown per account to mitigate faucet exhaustion
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    {
+        let mut cooldowns = ctx.faucet_cooldowns.write().unwrap();
+        if let Some(last_time) = cooldowns.get(&account) {
+            if now.saturating_sub(*last_time) < 10 {
+                return Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(GenericResponse {
+                        status: "rate_limited",
+                        message: "Faucet request too frequent. Please wait 10 seconds between requests.".to_string(),
+                    }),
+                ));
+            }
+        }
+        cooldowns.insert(account.clone(), now);
+    }
+
     let mut chain = ctx.chain.write().unwrap();
     const MAX_FAUCET_BALANCE: u128 = 1_000_000;
     let current_bal = chain.balance_of(&account);
@@ -325,6 +380,7 @@ pub fn create_app(ctx: NodeContext) -> Router {
         .route("/api/v1/storage/:cid", get(download_storage))
         .route("/api/v1/accounts/:account/balance", get(get_account_balance))
         .route("/api/v1/faucet", post(request_faucet))
+        .layer(DefaultBodyLimit::max(70 * 1024 * 1024))
         .layer(CorsLayer::permissive())
         .with_state(ctx)
 }
@@ -337,12 +393,7 @@ pub async fn start_node_server(
     swarm: Option<Arc<P2pSwarm>>,
     addr: SocketAddr,
 ) -> Result<()> {
-    let ctx = NodeContext {
-        chain,
-        storage,
-        vector_db,
-        swarm,
-    };
+    let ctx = NodeContext::new(chain, storage, vector_db, swarm);
 
     let app = create_app(ctx);
 

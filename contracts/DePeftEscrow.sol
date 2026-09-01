@@ -67,16 +67,19 @@ contract DePeftEscrow {
         require(roundWinners[taskId][round] == address(0), "Round already settled");
         require(winner != address(0), "Invalid winner address");
 
-        uint256 rewardPerRound = task.bountyPool / task.totalRounds;
-        require(task.remainingBounty >= rewardPerRound, "Insufficient remaining bounty");
+        uint256 rewardPerRound;
+        if (task.completedRounds + 1 >= task.totalRounds) {
+            // Final round payout sweeps all remaining bounty to prevent integer division dust from being trapped
+            rewardPerRound = task.remainingBounty;
+            task.isActive = false;
+        } else {
+            rewardPerRound = task.bountyPool / task.totalRounds;
+            require(task.remainingBounty >= rewardPerRound, "Insufficient remaining bounty");
+        }
 
         task.remainingBounty -= rewardPerRound;
         task.completedRounds += 1;
         roundWinners[taskId][round] = winner;
-
-        if (task.completedRounds == task.totalRounds) {
-            task.isActive = false;
-        }
 
         require(token.transfer(winner, rewardPerRound), "Reward payout transfer failed");
         emit RoundSettled(taskId, round, winner, rewardPerRound);

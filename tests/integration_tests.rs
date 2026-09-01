@@ -400,12 +400,12 @@ async fn test_live_node_http_rpc_integration() {
 
     // Spawn server in background tokio task
     tokio::spawn(async move {
-        let app = DePEFT::node::create_app(DePEFT::node::NodeContext {
-            chain: server_chain,
-            storage: server_storage,
-            vector_db: server_vdb,
-            swarm: None,
-        });
+        let app = DePEFT::node::create_app(DePEFT::node::NodeContext::new(
+            server_chain,
+            server_storage,
+            server_vdb,
+            None,
+        ));
         axum::serve(listener, app).await.unwrap();
     });
 
@@ -764,4 +764,84 @@ fn test_bft_consensus_2_phase_commit_and_equivocation_slashing() {
     let evidence = slasher.check_vote(&vote_b).unwrap();
     assert!(evidence.is_some(), "Double voting must be detected");
     assert!(slasher.is_slashed(&kp4.account_id()));
+}
+
+#[test]
+fn test_security_tee_platform_key_spoofing_rejected() {
+    use DePEFT::blockchain::types::AccountId;
+    use DePEFT::crypto::AccountKeypair;
+    use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeType};
+
+    let m1 = AccountId::new("miner-alpha");
+    let m2 = AccountId::new("miner-beta");
+    let ranking = vec![m1.clone(), m2.clone()];
+
+    // Attacker creates their own enclave with unapproved platform keypair
+    let rogue_keypair = AccountKeypair::generate();
+    let enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
+    let mut spoofed_quote = enclave.generate_quote(1, 1, &ranking).unwrap();
+
+    // Attacker replaces platform public key with their own and re-signs
+    spoofed_quote.platform_public_key = rogue_keypair.public_key_bytes();
+    let mut payload = Vec::new();
+    payload.push(spoofed_quote.tee_type as u8);
+    payload.extend_from_slice(&spoofed_quote.measurement.mrenclave);
+    payload.extend_from_slice(&spoofed_quote.measurement.mrsigner);
+    payload.extend_from_slice(&spoofed_quote.report_data);
+    payload.extend_from_slice(&spoofed_quote.timestamp.to_be_bytes());
+    spoofed_quote.quote_signature = rogue_keypair.sign_message(&payload);
+
+    let verifier = OnChainTeeVerifier::default();
+    let result = verifier.verify_quote(&spoofed_quote, 1, 1, &ranking);
+    assert!(
+        result.is_err(),
+        "Spoofed platform key must be rejected by Root of Trust whitelist"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("Unauthorized TEE Platform Public Key"));
+}
+
+#[test]
+fn test_security_relative_consensus_validator_deduplication() {
+    use DePEFT::blockchain::relative_consensus::RelativeConsensusEngine;
+    use DePEFT::blockchain::types::{AccountId, ValidatorEvaluation};
+
+    let m1 = AccountId::new("miner-honest");
+    let m2 = AccountId::new("miner-rogue");
+    let candidates = vec![m1.clone(), m2.clone()];
+
+    let val1 = AccountId::new("val-1");
+    let val2 = AccountId::new("val-2");
+
+    let eval_honest_1 = ValidatorEvaluation {
+        validator_address: val1.clone(),
+        ranking: vec![m1.clone(), m2.clone()],
+        loss_scores: vec![(m1.clone(), 0.1), (m2.clone(), 0.5)],
+        accuracy_scores: vec![(m1.clone(), 0.9), (m2.clone(), 0.5)],
+        hardware_info: "CPU".to_string(),
+        attestation_quote: None,
+    };
+
+    let eval_honest_2 = ValidatorEvaluation {
+        validator_address: val2.clone(),
+        ranking: vec![m1.clone(), m2.clone()],
+        loss_scores: vec![(m1.clone(), 0.1), (m2.clone(), 0.5)],
+        accuracy_scores: vec![(m1.clone(), 0.9), (m2.clone(), 0.5)],
+        hardware_info: "CPU".to_string(),
+        attestation_quote: None,
+    };
+
+    // Rogue validator attempts to submit multiple duplicate evaluations to skew Borda count
+    let eval_rogue_dupe = ValidatorEvaluation {
+        validator_address: val1.clone(),
+        ranking: vec![m2.clone(), m1.clone()],
+        loss_scores: vec![(m2.clone(), 0.01), (m1.clone(), 0.9)],
+        accuracy_scores: vec![(m2.clone(), 0.99), (m1.clone(), 0.1)],
+        hardware_info: "CPU".to_string(),
+        attestation_quote: None,
+    };
+
+    let evals = vec![eval_honest_1, eval_honest_2, eval_rogue_dupe];
+    let res = RelativeConsensusEngine::aggregate(&evals, &candidates).unwrap();
+    assert_eq!(res.winner, m1, "Consensus winner must be honest miner despite duplicate evaluation submission attempt");
 }
