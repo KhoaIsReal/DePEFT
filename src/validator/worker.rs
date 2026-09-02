@@ -7,6 +7,7 @@ use crate::storage::vector_db::{AdapterVectorRecord, EmbeddedVectorDb};
 use crate::tee::{HardwareTeeEnclave, TeeType};
 use crate::validator::tee::TeeSandbox;
 use anyhow::Result;
+use sha2::{Digest, Sha256};
 
 /// Validator Off-Chain Worker Node.
 #[derive(Clone)]
@@ -46,12 +47,12 @@ impl ValidatorNode {
         round: usize,
         nonce: u64,
         base_model: &DePEFTModel,
-        reveals: &[(AccountId, String)], // list of (miner_id, adapter_cid)
+        reveals: &[(AccountId, String, [u8; 32])], // (miner_id, adapter_cid, committed hash)
     ) -> Result<Transaction> {
         let mut scores: Vec<(AccountId, f64, f64)> = Vec::new();
         let mut seen_miners = std::collections::HashSet::new();
 
-        for (miner, cid) in reveals {
+        for (miner, cid, expected_adapter_hash) in reveals {
             if !seen_miners.insert(miner) {
                 continue;
             }
@@ -63,6 +64,12 @@ impl ValidatorNode {
                     continue;
                 }
             };
+
+            let actual_adapter_hash: [u8; 32] = Sha256::digest(&bytes).into();
+            if actual_adapter_hash != *expected_adapter_hash {
+                scores.push((miner.clone(), 9999.0, 0.0));
+                continue;
+            }
 
             let adapter_pkg = match deserialize_safetensors(&bytes) {
                 Ok(pkg) => pkg,

@@ -1,5 +1,4 @@
 use crate::blockchain::types::AccountId;
-use crate::tee::enclave::HardwareTeeEnclave;
 use crate::tee::types::AttestationQuote;
 use anyhow::{bail, Result};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -17,16 +16,12 @@ pub struct OnChainTeeVerifier {
 
 impl Default for OnChainTeeVerifier {
     fn default() -> Self {
-        let mut verifier = Self {
+        Self {
             approved_mrenclaves: HashSet::new(),
             approved_mrsigners: HashSet::new(),
             approved_platform_keys: HashSet::new(),
             enforce_attestation: true,
-        };
-        // Register canonical official validator enclave measurement and hardware platform key by default
-        verifier.register_mrenclave(HardwareTeeEnclave::canonical_mrenclave());
-        verifier.register_platform_key(HardwareTeeEnclave::canonical_platform_public_key());
-        verifier
+        }
     }
 }
 
@@ -52,6 +47,13 @@ impl OnChainTeeVerifier {
         self.approved_platform_keys.insert(platform_key);
     }
 
+    /// Explicitly trust a quote source. This is intended for tests and local
+    /// simulators only; production roots must be provisioned outside source.
+    pub fn trust_quote_source(&mut self, mrenclave: [u8; 32], platform_key: [u8; 32]) {
+        self.register_mrenclave(mrenclave);
+        self.register_platform_key(platform_key);
+    }
+
     /// Verify an Attestation Quote on-chain before admitting a validator evaluation.
     pub fn verify_quote(
         &self,
@@ -70,18 +72,34 @@ impl OnChainTeeVerifier {
             );
         }
 
+        // Development simulations can opt out explicitly. Production uses the
+        // default (`enforce_attestation = true`) and never reaches this branch.
+        if !self.enforce_attestation
+            && self.approved_mrenclaves.is_empty()
+            && self.approved_mrsigners.is_empty()
+            && self.approved_platform_keys.is_empty()
+        {
+            return Ok(());
+        }
+
         // 2. Verify Enclave Measurement against on-chain whitelist
-        if !self.approved_mrenclaves.is_empty() && !self.approved_mrenclaves.contains(&quote.measurement.mrenclave) {
-            if !self.approved_mrsigners.contains(&quote.measurement.mrsigner) {
-                bail!(
-                    "Unauthorized MRENCLAVE measurement: {} is not in approved on-chain enclave registry",
-                    quote.measurement.mrenclave_hex()
-                );
-            }
+        if self.enforce_attestation && self.approved_mrenclaves.is_empty() {
+            bail!("TEE attestation is required but no enclave measurement trust root is configured");
+        }
+        if !self.approved_mrenclaves.contains(&quote.measurement.mrenclave)
+            && !self.approved_mrsigners.contains(&quote.measurement.mrsigner)
+        {
+            bail!(
+                "Unauthorized MRENCLAVE measurement: {} is not in approved on-chain enclave registry",
+                quote.measurement.mrenclave_hex()
+            );
         }
 
         // 3. Verify Hardware Platform Public Key against Root-of-Trust whitelist
-        if !self.approved_platform_keys.is_empty() && !self.approved_platform_keys.contains(&quote.platform_public_key) {
+        if self.enforce_attestation && self.approved_platform_keys.is_empty() {
+            bail!("TEE attestation is required but no platform-key trust root is configured");
+        }
+        if !self.approved_platform_keys.contains(&quote.platform_public_key) {
             bail!(
                 "Unauthorized TEE Platform Public Key: 0x{} is not signed or whitelisted by Hardware Root of Trust",
                 hex::encode(quote.platform_public_key)

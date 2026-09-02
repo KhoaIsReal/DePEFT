@@ -65,6 +65,8 @@ contract DePeftEscrow {
     function settleRoundReward(uint256 taskId, uint256 round, address winner) external onlyOwner {
         TaskEscrow storage task = tasks[taskId];
         require(task.isActive, "Task is not active");
+        require(task.completedRounds < task.totalRounds, "All rounds already settled");
+        require(round == task.completedRounds + 1, "Round must settle sequentially");
         require(roundWinners[taskId][round] == address(0), "Round already settled");
         require(winner != address(0), "Invalid winner address");
 
@@ -96,14 +98,23 @@ contract DePeftEscrow {
         require(winners.length > 0 && winners.length == rewardAmounts.length, "Invalid Top-K parameters");
         TaskEscrow storage task = tasks[taskId];
         require(task.isActive, "Task is not active");
+        require(task.completedRounds < task.totalRounds, "All rounds already settled");
+        require(round == task.completedRounds + 1, "Round must settle sequentially");
         require(roundWinners[taskId][round] == address(0), "Round already settled");
 
         uint256 totalPayout = 0;
         for (uint256 i = 0; i < rewardAmounts.length; i++) {
             require(winners[i] != address(0), "Invalid winner address in Top-K");
+            for (uint256 j = 0; j < i; j++) {
+                require(winners[j] != winners[i], "Duplicate Top-K winner");
+            }
             totalPayout += rewardAmounts[i];
         }
 
+        uint256 expectedPayout = task.completedRounds + 1 == task.totalRounds
+            ? task.remainingBounty
+            : task.bountyPool / task.totalRounds;
+        require(totalPayout == expectedPayout, "Top-K payout must equal round budget");
         require(task.remainingBounty >= totalPayout, "Insufficient remaining bounty for Top-K payout");
 
         task.remainingBounty -= totalPayout;

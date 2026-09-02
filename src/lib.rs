@@ -46,7 +46,7 @@ pub use ml::{
     AdapterPackage, Dataset, DePEFTModel, Matrix, ModuleAdapter, QLoRALinear, QuantizedWeight,
     Sample,
 };
-pub use node::{create_app, start_node_server, NodeContext};
+pub use node::{create_app, start_node_server, NodeContext, NodeSecurityConfig};
 pub use p2p::{read_message, write_message, P2pMessage, P2pSwarm, PeerId};
 pub use storage::{
     deserialize_safetensors, serialize_safetensors, AdapterVectorRecord, DiskIpfsStorage,

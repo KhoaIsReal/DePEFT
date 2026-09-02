@@ -46,34 +46,13 @@ impl HardwareTeeEnclave {
         }
     }
 
-    /// Canonical root seed for official DePEFT hardware enclave platform key.
-    pub fn canonical_platform_key_seed() -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(b"depeft_canonical_hardware_platform_root_key_v1");
-        hasher.finalize().into()
-    }
-
-    /// Fixed canonical public key for official DePEFT hardware platform.
-    pub fn canonical_platform_public_key() -> [u8; 32] {
-        let seed = Self::canonical_platform_key_seed();
-        let kp = AccountKeypair::from_secret_bytes(&seed);
-        kp.public_key_bytes()
-    }
-
-    /// Fixed canonical measurement for official DePEFT validator enclaves.
-    pub fn canonical_mrenclave() -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(b"depeft_tee_validator_evaluator_v1.0.0");
-        hasher.update(b"official-validator-enclave");
-        hasher.finalize().into()
-    }
-
-    /// Generate official enclave with canonical measurement and authorized platform key.
+    /// Construct a local simulator enclave.
+    ///
+    /// This is deliberately *not* a production trust root: its signing key is
+    /// generated in process and must be explicitly registered by a test. Real
+    /// deployments must obtain quotes from a vendor-backed attestation service.
     pub fn official(tee_type: TeeType) -> Self {
-        let mut enclave = Self::new(tee_type, "official-validator-enclave");
-        let seed = Self::canonical_platform_key_seed();
-        enclave.platform_keypair = AccountKeypair::from_secret_bytes(&seed);
-        enclave
+        Self::new(tee_type, "official-validator-enclave")
     }
 
     /// Get platform public key bytes.

@@ -531,7 +531,8 @@ async fn test_live_node_http_rpc_integration() {
             server_storage,
             server_vdb,
             None,
-        ));
+        )
+        .with_security(DePEFT::node::NodeSecurityConfig::development()));
         axum::serve(listener, app).await.unwrap();
     });
 
@@ -777,22 +778,28 @@ fn test_hardware_tee_remote_attestation_and_on_chain_verification() {
     let enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
     let quote = enclave.generate_quote(10, 2, &ranking).expect("Failed to generate quote");
 
-    // 2. On-Chain Verifier checks valid quote
-    let verifier = OnChainTeeVerifier::default();
+    // 2. Production verifier fails closed until a trust root is provisioned.
+    assert!(OnChainTeeVerifier::default()
+        .verify_quote(&quote, 10, 2, &ranking)
+        .is_err());
+
+    // 3. Explicit test trust source admits the quote.
+    let mut verifier = OnChainTeeVerifier::default();
+    verifier.trust_quote_source(enclave.measurement.mrenclave, enclave.platform_public_key());
     assert!(verifier.verify_quote(&quote, 10, 2, &ranking).is_ok(), "Valid quote must pass on-chain verification");
 
-    // 3. Tampered ranking (e.g. malicious validator tried to flip winner to miner-beta)
+    // 4. Tampered ranking (e.g. malicious validator tried to flip winner to miner-beta)
     let tampered_ranking = vec![m2.clone(), m1.clone()];
     let tamper_res = verifier.verify_quote(&quote, 10, 2, &tampered_ranking);
     assert!(tamper_res.is_err(), "Tampered ranking must fail report_data check");
 
-    // 4. Rogue enclave with unapproved MRENCLAVE measurement
+    // 5. Rogue enclave with unapproved MRENCLAVE measurement
     let rogue_enclave = HardwareTeeEnclave::new(TeeType::IntelSgxDcap, "malicious-unapproved-enclave");
     let rogue_quote = rogue_enclave.generate_quote(10, 2, &ranking).unwrap();
     let rogue_res = verifier.verify_quote(&rogue_quote, 10, 2, &ranking);
     assert!(rogue_res.is_err(), "Unapproved MRENCLAVE must be rejected on-chain");
 
-    // 5. Forged quote signature
+    // 6. Forged quote signature
     let mut forged_quote = quote.clone();
     forged_quote.quote_signature[0] ^= 0xff;
     let forge_res = verifier.verify_quote(&forged_quote, 10, 2, &ranking);
@@ -923,7 +930,10 @@ fn test_security_tee_platform_key_spoofing_rejected() {
     payload.extend_from_slice(&spoofed_quote.timestamp.to_be_bytes());
     spoofed_quote.quote_signature = rogue_keypair.sign_message(&payload);
 
-    let verifier = OnChainTeeVerifier::default();
+    let mut verifier = OnChainTeeVerifier::default();
+    // Trust the simulator's measurement, but not the attacker-controlled key.
+    verifier.register_mrenclave(enclave.measurement.mrenclave);
+    verifier.register_platform_key(enclave.platform_public_key());
     let result = verifier.verify_quote(&spoofed_quote, 1, 1, &ranking);
     assert!(
         result.is_err(),
@@ -1237,6 +1247,7 @@ fn test_security_validator_tolerates_corrupted_miner_cid() {
     use DePEFT::validator::tee::TeeSandbox;
     use DePEFT::validator::worker::ValidatorNode;
     use rand::SeedableRng;
+    use sha2::Digest;
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let ipfs = IpfsStorage::new();
@@ -1256,9 +1267,10 @@ fn test_security_validator_tolerates_corrupted_miner_cid() {
     let good_cid = ipfs.put(&good_bytes);
 
     // List with one valid and one non-existent / corrupted CID
+    let good_hash: [u8; 32] = sha2::Sha256::digest(&good_bytes).into();
     let reveals = vec![
-        (miner_good.account_id(), good_cid),
-        (miner_bad.account_id(), "bafy_non_existent_cid".to_string()),
+        (miner_good.account_id(), good_cid, good_hash),
+        (miner_bad.account_id(), "bafy_non_existent_cid".to_string(), [0; 32]),
     ];
 
     // Validator should succeed without failing or panicking

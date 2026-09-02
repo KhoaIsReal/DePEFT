@@ -7,9 +7,9 @@ services:
     container_name: depeft-ipfs
     restart: unless-stopped
     ports:
-      - "4001:4001"     # IPFS Swarm
-      - "5001:5001"     # IPFS RPC API
-      - "8080:8080"     # IPFS Gateway
+      - "127.0.0.1:4001:4001" # IPFS Swarm: expose via an authenticated gateway if needed
+      - "127.0.0.1:5001:5001" # Kubo RPC must never be public
+      - "127.0.0.1:8080:8080" # Gateway is local-only by default
     volumes:
       - ipfs_staging:/export
       - ipfs_data:/data/ipfs
@@ -20,8 +20,8 @@ services:
     container_name: depeft-bootstrap-node
     restart: unless-stopped
     ports:
-      - "8545:8545"     # JSON-RPC HTTP
-      - "9000:9000"     # P2P Gossip TCP
+      - "127.0.0.1:8545:8545" # Put mTLS reverse proxy in front of HTTP
+      - "127.0.0.1:9000:9000" # Do not expose unauthenticated P2P publicly
     command: ["node", "start", "--port", "8545", "--p2p-port", "9000"]
     depends_on:
       - ipfs-kubo
@@ -34,8 +34,8 @@ services:
     container_name: depeft-peer-node
     restart: unless-stopped
     ports:
-      - "8546:8546"     # JSON-RPC HTTP
-      - "9001:9001"     # P2P Gossip TCP
+      - "127.0.0.1:8546:8546"
+      - "127.0.0.1:9001:9001"
     command: ["node", "start", "--port", "8546", "--p2p-port", "9001", "--bootnodes", "depeft-node-1:9000"]
     depends_on:
       - depeft-node-1

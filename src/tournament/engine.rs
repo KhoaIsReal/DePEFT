@@ -11,6 +11,7 @@ use crate::validator::worker::ValidatorNode;
 use anyhow::Result;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use sha2::Digest;
 
 /// Multi-Round ReLoRA Tournament Orchestrator.
 pub struct TournamentEngine {
@@ -40,6 +41,9 @@ impl TournamentEngine {
         peft_type: PeftType,
     ) -> Result<Self> {
         let mut chain = AppChainState::new();
+        // TournamentEngine is an in-process simulation. It does not claim to
+        // provide a vendor-attested TEE and must never be used by a public node.
+        chain.tee_verifier.enforce_attestation = false;
         let ipfs = IpfsStorage::new();
         let vector_db = EmbeddedVectorDb::new(64);
 
@@ -160,12 +164,16 @@ impl TournamentEngine {
         self.chain
             .set_round_phase(self.task_id, round_num, RoundPhase::RevealPhase)?;
 
-        let mut revealed_pairs: Vec<(AccountId, String)> = Vec::new();
+        let mut revealed_pairs: Vec<(AccountId, String, [u8; 32])> = Vec::new();
         for miner in &mut self.miners {
             let miner_nonce = self.chain.nonce_of(&miner.account_id);
             let (reveal_tx, cid) = miner.reveal_adapter(self.task_id, round_num, miner_nonce, &self.ipfs)?;
+            let adapter_hash = match &reveal_tx {
+                Transaction::RevealAdapter { adapter_hash, .. } => *adapter_hash,
+                _ => anyhow::bail!("miner returned a non-reveal transaction"),
+            };
             self.chain.apply_transaction(reveal_tx, &miner.account_id)?;
-            revealed_pairs.push((miner.account_id.clone(), cid));
+            revealed_pairs.push((miner.account_id.clone(), cid, adapter_hash));
             self.chain.advance_block();
         }
 
@@ -234,6 +242,11 @@ impl TournamentEngine {
                     .ipfs
                     .get(&winning_reveal.adapter_cid)
                     .ok_or_else(|| anyhow::anyhow!("Winning safetensors not found in IPFS"))?;
+                let actual_hash: [u8; 32] = sha2::Sha256::digest(&winning_bytes).into();
+                anyhow::ensure!(
+                    actual_hash == winning_reveal.adapter_hash,
+                    "Winning adapter content does not match its committed hash"
+                );
                 let winning_pkg = deserialize_safetensors(&winning_bytes)?;
 
                 // Load winning adapter into base model and execute permanent ReLoRA weight merge:
@@ -249,6 +262,10 @@ impl TournamentEngine {
                 for miner_id in consensus.consensus_ranking.iter().take(k) {
                     if let Some(reveal) = round_ctx.reveals.get(miner_id) {
                         if let Some(bytes) = self.ipfs.get(&reveal.adapter_cid) {
+                            let actual_hash: [u8; 32] = sha2::Sha256::digest(&bytes).into();
+                            if actual_hash != reveal.adapter_hash {
+                                continue;
+                            }
                             if let Ok(pkg) = deserialize_safetensors(&bytes) {
                                 pkgs.push(pkg);
                                 valid_miners.push(miner_id.clone());

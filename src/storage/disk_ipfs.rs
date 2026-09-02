@@ -63,7 +63,15 @@ impl DiskIpfsStorage {
                 }
             }
         }
-        fs::read(file_path).ok()
+        let metadata = fs::metadata(&file_path).ok()?;
+        if !metadata.is_file() {
+            return None;
+        }
+        let bytes = fs::read(file_path).ok()?;
+        if cid.starts_with("bafy") && Self::compute_cid(&bytes) != cid {
+            return None;
+        }
+        Some(bytes)
     }
 
     /// Check if a CID exists on disk.
@@ -72,7 +80,7 @@ impl DiskIpfsStorage {
             return false;
         }
         let file_path = self.root_dir.join(cid);
-        file_path.exists()
+        fs::metadata(file_path).map(|meta| meta.is_file()).unwrap_or(false)
     }
 
     /// Count total stored objects.

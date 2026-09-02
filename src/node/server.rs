@@ -15,7 +15,23 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::p2p::P2pSwarm;
-use tower_http::cors::CorsLayer;
+
+/// Security policy for a node API. Operator endpoints are disabled by default:
+/// a public deployment must expose them only through an mTLS reverse proxy.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NodeSecurityConfig {
+    pub enable_operator_endpoints: bool,
+    pub enable_testnet_faucet: bool,
+}
+
+impl NodeSecurityConfig {
+    pub fn development() -> Self {
+        Self {
+            enable_operator_endpoints: true,
+            enable_testnet_faucet: true,
+        }
+    }
+}
 
 /// Shared runtime state of the DePEFT App-Chain Node.
 #[derive(Clone)]
@@ -25,6 +41,7 @@ pub struct NodeContext {
     pub vector_db: Arc<EmbeddedVectorDb>,
     pub swarm: Option<Arc<P2pSwarm>>,
     pub faucet_cooldowns: Arc<RwLock<HashMap<AccountId, u64>>>,
+    pub security: NodeSecurityConfig,
 }
 
 impl NodeContext {
@@ -40,7 +57,13 @@ impl NodeContext {
             vector_db,
             swarm,
             faucet_cooldowns: Arc::new(RwLock::new(HashMap::new())),
+            security: NodeSecurityConfig::default(),
         }
+    }
+
+    pub fn with_security(mut self, security: NodeSecurityConfig) -> Self {
+        self.security = security;
+        self
     }
 }
 
@@ -325,6 +348,15 @@ async fn request_faucet(
     State(ctx): State<NodeContext>,
     Json(payload): Json<FaucetRequest>,
 ) -> Result<Json<GenericResponse>, (StatusCode, Json<GenericResponse>)> {
+    if !ctx.security.enable_testnet_faucet {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(GenericResponse {
+                status: "disabled",
+                message: "The testnet faucet is disabled on this node".to_string(),
+            }),
+        ));
+    }
     let clean_addr = payload.account.trim_start_matches("0x");
     if clean_addr.len() != 64 || hex::decode(clean_addr).is_err() {
         return Err((
@@ -395,7 +427,9 @@ async fn get_dashboard() -> axum::response::Html<&'static str> {
 
 /// Create the Axum Router for the Node API.
 pub fn create_app(ctx: NodeContext) -> Router {
-    Router::new()
+    let enable_operator_endpoints = ctx.security.enable_operator_endpoints;
+    let enable_testnet_faucet = ctx.security.enable_testnet_faucet;
+    let mut app = Router::new()
         .route("/", get(get_dashboard))
         .route("/dashboard", get(get_dashboard))
         .route("/api/v1/status", get(get_status))
@@ -403,14 +437,19 @@ pub fn create_app(ctx: NodeContext) -> Router {
         .route("/api/v1/tasks/:id", get(get_task_by_id))
         .route("/api/v1/tx", post(submit_signed_tx))
         .route("/api/v1/p2p/peers", get(get_connected_peers))
-        .route("/api/v1/p2p/connect", post(connect_to_p2p_peer))
-        .route("/api/v1/storage", post(upload_storage))
         .route("/api/v1/storage/:cid", get(download_storage))
         .route("/api/v1/accounts/:account/balance", get(get_account_balance))
-        .route("/api/v1/faucet", post(request_faucet))
-        .layer(DefaultBodyLimit::max(70 * 1024 * 1024))
-        .layer(CorsLayer::permissive())
-        .with_state(ctx)
+        .layer(DefaultBodyLimit::max(70 * 1024 * 1024));
+
+    if enable_operator_endpoints {
+        app = app
+            .route("/api/v1/p2p/connect", post(connect_to_p2p_peer))
+            .route("/api/v1/storage", post(upload_storage));
+    }
+    if enable_testnet_faucet {
+        app = app.route("/api/v1/faucet", post(request_faucet));
+    }
+    app.with_state(ctx)
 }
 
 /// Start the real DePEFT App-Chain Node HTTP/JSON-RPC Server.
@@ -421,7 +460,18 @@ pub async fn start_node_server(
     swarm: Option<Arc<P2pSwarm>>,
     addr: SocketAddr,
 ) -> Result<()> {
-    let ctx = NodeContext::new(chain, storage, vector_db, swarm);
+    let production = std::env::var("DEPEFT_ENV")
+        .map(|value| value.eq_ignore_ascii_case("production"))
+        .unwrap_or(true);
+    if production && !addr.ip().is_loopback() {
+        anyhow::bail!("production node API must bind to loopback/private proxy, not {}", addr);
+    }
+    let security = if production {
+        NodeSecurityConfig::default()
+    } else {
+        NodeSecurityConfig::development()
+    };
+    let ctx = NodeContext::new(chain, storage, vector_db, swarm).with_security(security);
 
     let app = create_app(ctx);
 

@@ -9,6 +9,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         "requests>=2.28.0",
+        "cryptography>=41.0.0",
     ],
     classifiers=[
         "License :: OSI Approved :: Apache Software License",
@@ -17,4 +18,3 @@ setup(
     ],
     python_requires=">=3.8",
 )
-
