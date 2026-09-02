@@ -2,6 +2,7 @@ use crate::blockchain::state::AppChainState;
 use crate::blockchain::types::{AccountId, TaskSpec};
 use crate::crypto::SignedTransaction;
 use crate::storage::disk_ipfs::DiskIpfsStorage;
+use crate::storage::chain_store::ChainStore;
 use crate::storage::vector_db::EmbeddedVectorDb;
 use anyhow::Result;
 use axum::extract::{DefaultBodyLimit, Path, State};
@@ -12,7 +13,7 @@ use axum::Router;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::p2p::P2pSwarm;
 
@@ -42,6 +43,7 @@ pub struct NodeContext {
     pub swarm: Option<Arc<P2pSwarm>>,
     pub faucet_cooldowns: Arc<RwLock<HashMap<AccountId, u64>>>,
     pub security: NodeSecurityConfig,
+    pub chain_store: Option<Arc<Mutex<ChainStore>>>,
 }
 
 impl NodeContext {
@@ -58,11 +60,17 @@ impl NodeContext {
             swarm,
             faucet_cooldowns: Arc::new(RwLock::new(HashMap::new())),
             security: NodeSecurityConfig::default(),
+            chain_store: None,
         }
     }
 
     pub fn with_security(mut self, security: NodeSecurityConfig) -> Self {
         self.security = security;
+        self
+    }
+
+    pub fn with_chain_store(mut self, chain_store: Arc<Mutex<ChainStore>>) -> Self {
+        self.chain_store = Some(chain_store);
         self
     }
 }
@@ -168,8 +176,21 @@ async fn submit_signed_tx(
 
     // 2. Deterministically apply transaction to AppChainState
     let mut chain = ctx.chain.write().unwrap();
+    let state_before = chain.clone();
     match chain.apply_transaction(signed_tx.tx.clone(), &sender) {
         Ok(_) => {
+            if let Some(store) = &ctx.chain_store {
+                if let Err(error) = store.lock().unwrap().save(&chain) {
+                    *chain = state_before;
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(GenericResponse {
+                            status: "persistence_error",
+                            message: format!("Transaction was not persisted: {error}"),
+                        }),
+                    ));
+                }
+            }
             // 3. Broadcast to P2P network overlay
             if let Some(swarm) = &ctx.swarm {
                 swarm.broadcast_transaction(signed_tx);
@@ -400,6 +421,7 @@ async fn request_faucet(
     }
 
     let mut chain = ctx.chain.write().unwrap();
+    let state_before = chain.clone();
     const MAX_FAUCET_BALANCE: u128 = 1_000_000;
     let current_bal = chain.balance_of(&account);
     if current_bal >= MAX_FAUCET_BALANCE {
@@ -414,6 +436,18 @@ async fn request_faucet(
 
     let grant = amount.min(MAX_FAUCET_BALANCE - current_bal);
     chain.mint(account.clone(), grant);
+    if let Some(store) = &ctx.chain_store {
+        if let Err(error) = store.lock().unwrap().save(&chain) {
+            *chain = state_before;
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(GenericResponse {
+                    status: "persistence_error",
+                    message: format!("Faucet grant was not persisted: {error}"),
+                }),
+            ));
+        }
+    }
 
     Ok(Json(GenericResponse {
         status: "ok",
@@ -460,6 +494,18 @@ pub async fn start_node_server(
     swarm: Option<Arc<P2pSwarm>>,
     addr: SocketAddr,
 ) -> Result<()> {
+    start_node_server_with_store(chain, storage, vector_db, swarm, addr, None).await
+}
+
+/// Start a node with an optional durable chain store.
+pub async fn start_node_server_with_store(
+    chain: Arc<RwLock<AppChainState>>,
+    storage: Arc<DiskIpfsStorage>,
+    vector_db: Arc<EmbeddedVectorDb>,
+    swarm: Option<Arc<P2pSwarm>>,
+    addr: SocketAddr,
+    chain_store: Option<Arc<Mutex<ChainStore>>>,
+) -> Result<()> {
     let production = std::env::var("DEPEFT_ENV")
         .map(|value| value.eq_ignore_ascii_case("production"))
         .unwrap_or(true);
@@ -471,7 +517,10 @@ pub async fn start_node_server(
     } else {
         NodeSecurityConfig::development()
     };
-    let ctx = NodeContext::new(chain, storage, vector_db, swarm).with_security(security);
+    let mut ctx = NodeContext::new(chain, storage, vector_db, swarm).with_security(security);
+    if let Some(store) = chain_store {
+        ctx = ctx.with_chain_store(store);
+    }
 
     let app = create_app(ctx);
 

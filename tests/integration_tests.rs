@@ -497,6 +497,37 @@ fn test_disk_ipfs_storage_persistence() {
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
 
+#[test]
+fn test_chain_store_persists_and_verifies_canonical_state() {
+    use DePEFT::storage::ChainStore;
+
+    let db_path = std::env::temp_dir().join(format!(
+        "depeft_chain_store_{}.sqlite",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut state = AppChainState::new();
+    state.mint(AccountId::new("persisted-account"), 42);
+    state.advance_block();
+    let expected_hash = ChainStore::state_hash(&state).unwrap();
+
+    {
+        let mut store = ChainStore::open(&db_path).unwrap();
+        assert_eq!(store.save(&state).unwrap(), expected_hash);
+    }
+    let store = ChainStore::open(&db_path).unwrap();
+    let restored = store.load().unwrap().expect("state must be persisted");
+    assert_eq!(restored.block_height, state.block_height);
+    assert_eq!(restored.balance_of(&AccountId::new("persisted-account")), 42);
+    assert_eq!(ChainStore::state_hash(&restored).unwrap(), expected_hash);
+
+    let _ = std::fs::remove_file(&db_path);
+    let _ = std::fs::remove_file(format!("{}-wal", db_path.display()));
+    let _ = std::fs::remove_file(format!("{}-shm", db_path.display()));
+}
+
 #[tokio::test]
 async fn test_live_node_http_rpc_integration() {
     use DePEFT::client::DePeftClient;

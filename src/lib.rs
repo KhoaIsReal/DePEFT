@@ -46,11 +46,11 @@ pub use ml::{
     AdapterPackage, Dataset, DePEFTModel, Matrix, ModuleAdapter, QLoRALinear, QuantizedWeight,
     Sample,
 };
-pub use node::{create_app, start_node_server, NodeContext, NodeSecurityConfig};
+pub use node::{create_app, start_node_server, start_node_server_with_store, NodeContext, NodeSecurityConfig};
 pub use p2p::{read_message, write_message, P2pMessage, P2pSwarm, PeerId};
 pub use storage::{
     deserialize_safetensors, serialize_safetensors, AdapterVectorRecord, DiskIpfsStorage,
-    EmbeddedVectorDb, HybridStorageManager, IpfsAddResponse, IpfsKuboClient, IpfsNodeInfo,
+    ChainStore, EmbeddedVectorDb, HybridStorageManager, IpfsAddResponse, IpfsKuboClient, IpfsNodeInfo,
     IpfsStorage, VectorSearchResult,
 };
 pub use tee::{AttestationQuote, EnclaveMeasurement, HardwareTeeEnclave, OnChainTeeVerifier, TeeType};

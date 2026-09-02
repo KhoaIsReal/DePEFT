@@ -14,8 +14,9 @@ use DePEFT::miner::{MinerHyperparams, MinerNode, MinerTrainer};
 use DePEFT::ml::dataset::Dataset;
 use DePEFT::ml::model::DePEFTModel;
 use DePEFT::ml::tensor::{Matrix, QuantizedWeight};
-use DePEFT::node::start_node_server;
+use DePEFT::node::start_node_server_with_store;
 use DePEFT::storage::disk_ipfs::DiskIpfsStorage;
+use DePEFT::storage::ChainStore;
 use DePEFT::storage::safetensors::deserialize_safetensors;
 use DePEFT::storage::vector_db::{AdapterVectorRecord, EmbeddedVectorDb};
 use DePEFT::tournament::TournamentEngine;
@@ -24,7 +25,7 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 #[derive(Parser, Debug)]
@@ -791,7 +792,9 @@ async fn main() -> anyhow::Result<()> {
                         .join("storage")
                 });
                 let storage = Arc::new(DiskIpfsStorage::new(&storage_path)?);
-                let chain = Arc::new(RwLock::new(AppChainState::new()));
+                let chain_store = Arc::new(Mutex::new(ChainStore::open(storage_path.join("chain.sqlite"))?));
+                let loaded_state = chain_store.lock().unwrap().load()?.unwrap_or_else(AppChainState::new);
+                let chain = Arc::new(RwLock::new(loaded_state));
                 let vector_db = Arc::new(EmbeddedVectorDb::new(64));
 
                 // Generate ephemeral node account/peer identity
@@ -820,12 +823,19 @@ async fn main() -> anyhow::Result<()> {
 
                 // Background task: Process transactions received via P2P gossip
                 let chain_p2p = chain.clone();
+                let store_p2p = chain_store.clone();
                 tokio::spawn(async move {
                     while let Some(signed_tx) = tx_rx.recv().await {
                         if let Ok(sender) = signed_tx.verify_signature() {
                             let mut c = chain_p2p.write().unwrap();
+                            let state_before = c.clone();
                             if c.apply_transaction(signed_tx.tx, &sender).is_ok() {
-                                println!("[P2P Gossip] Successfully applied transaction from {}", sender);
+                                if store_p2p.lock().unwrap().save(&c).is_ok() {
+                                    println!("[P2P Gossip] Successfully applied transaction from {}", sender);
+                                } else {
+                                    *c = state_before;
+                                    eprintln!("[P2P Gossip] Refused transaction because persistence failed");
+                                }
                             }
                         }
                     }
@@ -840,7 +850,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("HTTP JSON-RPC:    http://{}", addr);
                 println!("P2P Overlay TCP:  tcp://{}", p2p_addr);
 
-                start_node_server(chain, storage, vector_db, Some(swarm), addr).await?;
+                start_node_server_with_store(chain, storage, vector_db, Some(swarm), addr, Some(chain_store)).await?;
             }
         },
 

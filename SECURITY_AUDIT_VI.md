@@ -46,5 +46,6 @@ Mục chỉ được gạch khi source và regression test chứng minh được
 - ~~Trust root TEE giả lập hoặc private key nằm trong source~~: verifier production không còn trust canonical key; không có root cấu hình sẽ fail closed.
 - ~~Faucet và operator endpoint mặc định public~~: mặc định production không mount operator routes/faucet, CORS permissive đã bị bỏ. Endpoint chỉ được bật trong development hoặc sau mTLS reverse proxy.
 - ~~CAS trả dữ liệu sai CID nội bộ~~: disk CAS từ chối object `bafy...` không hash đúng và không đọc non-regular file.
+- ~~State chỉ nằm RAM, mất sau restart~~: SQLite WAL lưu snapshot canonical cùng state hash; HTTP, faucet và P2P rollback mutation nếu persist thất bại.
 
 Các mục còn mở phải được giữ mở cho đến khi có test exploit/regression và implementation tương ứng.
