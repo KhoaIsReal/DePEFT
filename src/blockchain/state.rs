@@ -189,7 +189,7 @@ impl AppChainState {
                 let task_spec = TaskSpec {
                     task_id,
                     client_address: client,
-                    base_model_id,
+                    base_model_id: base_model_id.clone(),
                     base_model_hash,
                     dataset_cid,
                     peft_method,
@@ -217,6 +217,16 @@ impl AppChainState {
                     sender,
                     miner
                 );
+
+                // Auto initialize round context if not yet started
+                if !self.round_contexts.contains_key(&(task_id, round)) {
+                    if let Some(task) = self.tasks.get(&task_id) {
+                        let base_model_cid_str = task.base_model_id_str();
+                        let context = RoundContext::new(task_id, round, base_model_cid_str.to_string());
+                        self.round_contexts.insert((task_id, round), context);
+                    }
+                }
+
                 let ctx = self
                     .round_contexts
                     .get_mut(&(task_id, round))
@@ -266,7 +276,7 @@ impl AppChainState {
                     .ok_or_else(|| anyhow::anyhow!("Round context not found"))?;
 
                 ensure!(
-                    ctx.phase == RoundPhase::RevealPhase,
+                    ctx.phase == RoundPhase::RevealPhase || ctx.phase == RoundPhase::CommitPhase,
                     "Reveal rejected: Round is in phase {:?}",
                     ctx.phase
                 );
@@ -320,7 +330,7 @@ impl AppChainState {
                     .ok_or_else(|| anyhow::anyhow!("Round context not found"))?;
 
                 ensure!(
-                    ctx.phase == RoundPhase::EvaluationPhase,
+                    ctx.phase == RoundPhase::EvaluationPhase || ctx.phase == RoundPhase::RevealPhase || ctx.phase == RoundPhase::CommitPhase,
                     "Evaluation rejected: Round is in phase {:?}",
                     ctx.phase
                 );
