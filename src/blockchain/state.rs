@@ -60,6 +60,10 @@ impl Default for AppChainState {
 }
 
 impl AppChainState {
+    const MAX_ADAPTER_CID_LEN: usize = 128;
+    const MAX_REVEAL_SALT_LEN: usize = 1024;
+    const MAX_HARDWARE_INFO_LEN: usize = 256;
+
     pub fn new() -> Self {
         Self {
             block_height: 1,
@@ -101,6 +105,57 @@ impl AppChainState {
         hasher.update(adapter_hash);
         hasher.update(salt);
         hasher.finalize().into()
+    }
+
+    /// Reject malformed CIDs before they are persisted in consensus state.  This
+    /// prevents invalid identifiers from later reaching storage backends that may
+    /// interpret them as paths or URLs.
+    fn is_safe_cid(cid: &str) -> bool {
+        !cid.is_empty()
+            && cid.len() <= Self::MAX_ADAPTER_CID_LEN
+            && cid
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    }
+
+    /// An evaluation is only meaningful when it ranks every and only every
+    /// revealed candidate once.  In particular, accepting partial rankings lets
+    /// a validator assign arbitrary worst ranks in Borda aggregation, while
+    /// accepting unknown accounts makes the rank scale attacker-controlled.
+    fn validate_evaluation(ctx: &RoundContext, evaluation: &ValidatorEvaluation) -> Result<()> {
+        ensure!(
+            evaluation.ranking.len() == ctx.reveals.len(),
+            "Evaluation ranking must contain every revealed miner exactly once"
+        );
+        ensure!(
+            evaluation.hardware_info.len() <= Self::MAX_HARDWARE_INFO_LEN,
+            "Validator hardware info exceeds {} bytes",
+            Self::MAX_HARDWARE_INFO_LEN
+        );
+
+        let mut ranked = std::collections::HashSet::with_capacity(evaluation.ranking.len());
+        for miner in &evaluation.ranking {
+            ensure!(
+                ctx.reveals.contains_key(miner),
+                "Evaluation ranking contains miner without a revealed adapter: {}",
+                miner
+            );
+            ensure!(ranked.insert(miner), "Evaluation ranking contains duplicate miner: {}", miner);
+        }
+
+        for (miner, loss) in &evaluation.loss_scores {
+            ensure!(ranked.contains(miner), "Loss score contains unranked miner: {}", miner);
+            ensure!(loss.is_finite() && *loss >= 0.0, "Loss score must be finite and non-negative");
+        }
+        for (miner, accuracy) in &evaluation.accuracy_scores {
+            ensure!(ranked.contains(miner), "Accuracy score contains unranked miner: {}", miner);
+            ensure!(
+                accuracy.is_finite() && (0.0..=1.0).contains(accuracy),
+                "Accuracy score must be finite and within [0, 1]"
+            );
+        }
+
+        Ok(())
     }
 
     /// Initialize a new round context for a task.
@@ -276,9 +331,20 @@ impl AppChainState {
                     .ok_or_else(|| anyhow::anyhow!("Round context not found"))?;
 
                 ensure!(
-                    ctx.phase == RoundPhase::RevealPhase || ctx.phase == RoundPhase::CommitPhase,
+                    ctx.phase == RoundPhase::RevealPhase,
                     "Reveal rejected: Round is in phase {:?}",
                     ctx.phase
+                );
+
+                ensure!(
+                    Self::is_safe_cid(&adapter_cid),
+                    "Reveal rejected: adapter CID is malformed or exceeds {} bytes",
+                    Self::MAX_ADAPTER_CID_LEN
+                );
+                ensure!(
+                    !salt.is_empty() && salt.len() <= Self::MAX_REVEAL_SALT_LEN,
+                    "Reveal rejected: salt must contain 1-{} bytes",
+                    Self::MAX_REVEAL_SALT_LEN
                 );
 
                 ensure!(
@@ -330,7 +396,7 @@ impl AppChainState {
                     .ok_or_else(|| anyhow::anyhow!("Round context not found"))?;
 
                 ensure!(
-                    ctx.phase == RoundPhase::EvaluationPhase || ctx.phase == RoundPhase::RevealPhase || ctx.phase == RoundPhase::CommitPhase,
+                    ctx.phase == RoundPhase::EvaluationPhase,
                     "Evaluation rejected: Round is in phase {:?}",
                     ctx.phase
                 );
@@ -341,6 +407,8 @@ impl AppChainState {
                     evaluation.validator_address,
                     round
                 );
+
+                Self::validate_evaluation(ctx, &evaluation)?;
 
                 // Cryptographically verify Hardware TEE Attestation Quote if present
                 if let Some(quote) = &evaluation.attestation_quote {

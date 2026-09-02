@@ -180,6 +180,123 @@ fn test_commit_reveal_anti_collusion_verification() {
 }
 
 #[test]
+fn test_evaluation_requires_a_complete_unique_revealed_ranking() {
+    let mut chain = AppChainState::new();
+    chain.tee_verifier.enforce_attestation = false;
+    let client = AccountId::new("client-ranking");
+    let miner_a = AccountId::new("miner-ranking-a");
+    let miner_b = AccountId::new("miner-ranking-b");
+    let validator = AccountId::new("validator-ranking");
+    chain.mint(client.clone(), 10_000);
+
+    chain
+        .apply_transaction(
+            Transaction::CreateTask {
+                client: client.clone(),
+                nonce: chain.nonce_of(&client),
+                base_model_id: b"test-model".to_vec(),
+                base_model_hash: [0; 32],
+                dataset_cid: b"test-cid".to_vec(),
+                peft_method: PeftType::QLoRA_NF4,
+                max_rank: 16,
+                target_modules: vec![b"q_proj".to_vec()],
+                bounty_pool: 5_000,
+                epoch_blocks: 50,
+                reward_distribution: Default::default(),
+                merge_strategy: Default::default(),
+            },
+            &client,
+        )
+        .unwrap();
+    chain.start_round(1, 1, "bafy_base".to_string()).unwrap();
+
+    for miner in [&miner_a, &miner_b] {
+        let adapter_hash = if miner == &miner_a { [1; 32] } else { [2; 32] };
+        let salt = vec![1; 16];
+        chain
+            .apply_transaction(
+                Transaction::CommitAdapter {
+                    task_id: 1,
+                    round: 1,
+                    miner: (*miner).clone(),
+                    nonce: chain.nonce_of(miner),
+                    commit_hash: AppChainState::compute_commit_hash(&adapter_hash, &salt),
+                },
+                miner,
+            )
+            .unwrap();
+    }
+    chain
+        .set_round_phase(1, 1, DePEFT::blockchain::RoundPhase::RevealPhase)
+        .unwrap();
+    for miner in [&miner_a, &miner_b] {
+        let adapter_hash = if miner == &miner_a { [1; 32] } else { [2; 32] };
+        chain
+            .apply_transaction(
+                Transaction::RevealAdapter {
+                    task_id: 1,
+                    round: 1,
+                    miner: (*miner).clone(),
+                    nonce: chain.nonce_of(miner),
+                    adapter_cid: format!("bafy_adapter_{}", miner.as_str()),
+                    salt: vec![1; 16],
+                    adapter_hash,
+                },
+                miner,
+            )
+            .unwrap();
+    }
+    chain
+        .set_round_phase(1, 1, DePEFT::blockchain::RoundPhase::EvaluationPhase)
+        .unwrap();
+
+    let incomplete = Transaction::SubmitEvaluation {
+        task_id: 1,
+        round: 1,
+        nonce: chain.nonce_of(&validator),
+        evaluation: ValidatorEvaluation {
+            validator_address: validator.clone(),
+            ranking: vec![miner_a.clone()],
+            loss_scores: vec![],
+            accuracy_scores: vec![],
+            hardware_info: "test".to_string(),
+            attestation_quote: None,
+        },
+    };
+    assert!(chain.apply_transaction(incomplete, &validator).is_err());
+
+    let duplicate = Transaction::SubmitEvaluation {
+        task_id: 1,
+        round: 1,
+        nonce: chain.nonce_of(&validator),
+        evaluation: ValidatorEvaluation {
+            validator_address: validator.clone(),
+            ranking: vec![miner_a.clone(), miner_a.clone()],
+            loss_scores: vec![],
+            accuracy_scores: vec![],
+            hardware_info: "test".to_string(),
+            attestation_quote: None,
+        },
+    };
+    assert!(chain.apply_transaction(duplicate, &validator).is_err());
+
+    let valid = Transaction::SubmitEvaluation {
+        task_id: 1,
+        round: 1,
+        nonce: chain.nonce_of(&validator),
+        evaluation: ValidatorEvaluation {
+            validator_address: validator.clone(),
+            ranking: vec![miner_a, miner_b],
+            loss_scores: vec![],
+            accuracy_scores: vec![],
+            hardware_info: "test".to_string(),
+            attestation_quote: None,
+        },
+    };
+    assert!(chain.apply_transaction(valid, &validator).is_ok());
+}
+
+#[test]
 fn test_nf4_quantization_and_dequantization() {
     let mut rng = StdRng::seed_from_u64(12345);
     let original = Matrix::xavier_uniform(64, 64, &mut rng);
@@ -1570,4 +1687,3 @@ fn test_top_k_bounty_distribution_and_ensemble_merge() {
     assert!(bal3 > 0, "Top 3 reward must be non-zero");
     assert_eq!(bal1 + bal2 + bal3, 10_000, "Total distributed bounty must equal 10,000");
 }
-
