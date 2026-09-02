@@ -1,3 +1,4 @@
+pub mod device;
 pub mod evaluator;
 pub mod lora;
 pub mod merger;
@@ -5,6 +6,7 @@ pub mod tokenizer;
 pub mod trainer;
 pub mod transformer;
 
+pub use device::{DeviceBackendType, DeviceInfo, DeviceManager};
 pub use evaluator::CandleValidatorEvaluator;
 pub use lora::CandleLoraLinear;
 pub use merger::CandleWeightMerger;

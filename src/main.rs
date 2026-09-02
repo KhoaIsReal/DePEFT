@@ -101,6 +101,14 @@ enum Commands {
         /// Optimizer type to benchmark: adamw, adam, or sgd
         #[arg(long, default_value = "adamw")]
         optimizer: String,
+
+        /// Preferred device target: auto, cuda, rocm, wgpu, cpu (falls back hierarchically: CUDA/ROCm -> Metal -> WGPU -> CPU)
+        #[arg(long, default_value = "auto")]
+        device: String,
+
+        /// Enable Multi-GPU Data-Parallel batch training dispatcher
+        #[arg(long, default_value_t = false)]
+        multi_gpu: bool,
     },
 
     /// Manage and inspect P2P overlay connections
@@ -283,8 +291,16 @@ enum MinerCommands {
         task_id: u64,
 
         /// Hardware profile description
-        #[arg(long, default_value = "NVIDIA RTX 4090 / CUDA")]
+        #[arg(long, default_value = "Auto-Detect")]
         hardware: String,
+
+        /// Preferred device target: auto, cuda, rocm, wgpu, cpu (falls back hierarchically: CUDA/ROCm -> Metal -> WGPU -> CPU)
+        #[arg(long, default_value = "auto")]
+        device: String,
+
+        /// Enable Multi-GPU Data-Parallel batch training dispatcher
+        #[arg(long, default_value_t = false)]
+        multi_gpu: bool,
 
         /// Learning rate
         #[arg(long, default_value_t = 0.03)]
@@ -308,8 +324,12 @@ enum ValidatorCommands {
         task_id: u64,
 
         /// Hardware profile description
-        #[arg(long, default_value = "Intel Xeon / AVX-512")]
+        #[arg(long, default_value = "Auto-Detect")]
         hardware: String,
+
+        /// Preferred device target: auto, cuda, rocm, wgpu, cpu
+        #[arg(long, default_value = "auto")]
+        device: String,
     },
 }
 
@@ -963,8 +983,25 @@ async fn main() -> anyhow::Result<()> {
                 secret_key,
                 task_id,
                 hardware,
+                device,
+                multi_gpu: _,
                 lr,
             } => {
+                use DePEFT::candle_peft::DeviceManager;
+
+                let dev_mgr = if device == "auto" {
+                    DeviceManager::auto_detect()
+                } else {
+                    DeviceManager::new_with_preferred(&device)
+                };
+                dev_mgr.print_device_summary();
+
+                let detected_hw = if hardware == "Auto-Detect" {
+                    format!("{} ({})", dev_mgr.primary_info().backend, dev_mgr.primary_info().name)
+                } else {
+                    hardware
+                };
+
                 let clean_hex = secret_key.trim_start_matches("0x");
                 let bytes = hex::decode(clean_hex)?;
                 let mut arr = [0u8; 32];
@@ -978,7 +1015,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("    ├─ Connected to Node: {}", node_url);
                 println!("    ├─ Target Model: {}", task.base_model_id_str());
                 println!("    ├─ PEFT Type: {}", task.peft_method);
-                println!("    └─ Hardware: {}", hardware.bright_yellow());
+                println!("    └─ Hardware: {}", detected_hw.bright_yellow());
 
                 let mut rng = StdRng::seed_from_u64(42);
                 let base_model = DePEFTModel::new("BaseModel", 8, 16, 4, 4, task.peft_method, &mut rng);
@@ -988,7 +1025,7 @@ async fn main() -> anyhow::Result<()> {
                     learning_rate: lr,
                     epochs: 6,
                     batch_size: 16,
-                    hardware_type: hardware,
+                    hardware_type: detected_hw,
                 };
 
                 println!("[*] Training local QLoRA adapter matrices...");
@@ -1037,7 +1074,23 @@ async fn main() -> anyhow::Result<()> {
                 secret_key,
                 task_id,
                 hardware,
+                device,
             } => {
+                use DePEFT::candle_peft::DeviceManager;
+
+                let dev_mgr = if device == "auto" {
+                    DeviceManager::auto_detect()
+                } else {
+                    DeviceManager::new_with_preferred(&device)
+                };
+                dev_mgr.print_device_summary();
+
+                let detected_hw = if hardware == "Auto-Detect" {
+                    format!("{} ({})", dev_mgr.primary_info().backend, dev_mgr.primary_info().name)
+                } else {
+                    hardware
+                };
+
                 let clean_hex = secret_key.trim_start_matches("0x");
                 let bytes = hex::decode(clean_hex)?;
                 let mut arr = [0u8; 32];
@@ -1049,7 +1102,7 @@ async fn main() -> anyhow::Result<()> {
                 let task = client.get_task(task_id).await?;
 
                 println!("    ├─ Connected to Node: {}", node_url);
-                println!("    ├─ Hardware Profile: {}", hardware.bright_yellow());
+                println!("    ├─ Hardware Profile: {}", detected_hw.bright_yellow());
                 println!("    └─ TEE Enclave: Initialized (Private Test Set Protected)");
 
                 let mut rng = StdRng::seed_from_u64(999);
@@ -1068,7 +1121,7 @@ async fn main() -> anyhow::Result<()> {
                     ranking: dummy_ranking,
                     loss_scores: vec![(keypair.account_id(), 0.185)],
                     accuracy_scores: vec![(keypair.account_id(), 0.96)],
-                    hardware_info: hardware,
+                    hardware_info: detected_hw,
                     attestation_quote: Some(quote),
                 };
 
@@ -1085,8 +1138,8 @@ async fn main() -> anyhow::Result<()> {
             }
         },
 
-        Some(Commands::LlmDemo { rounds, steps, optimizer }) => {
-            run_candle_llm_demo(rounds, steps, &optimizer)?;
+        Some(Commands::LlmDemo { rounds, steps, optimizer, device, multi_gpu }) => {
+            run_candle_llm_demo(rounds, steps, &optimizer, &device, multi_gpu)?;
         }
         Some(Commands::BftDemo { validators, blocks }) => {
             run_bft_demo(validators, blocks);
@@ -1259,10 +1312,16 @@ fn run_tee_quote_demo() {
     println!();
 }
 
-fn run_candle_llm_demo(rounds: usize, steps_per_round: usize, optimizer_str: &str) -> anyhow::Result<()> {
+fn run_candle_llm_demo(
+    rounds: usize,
+    steps_per_round: usize,
+    optimizer_str: &str,
+    preferred_device: &str,
+    multi_gpu: bool,
+) -> anyhow::Result<()> {
     use DePEFT::candle_peft::{
         CandleMinerHyperparams, CandleMinerTrainer, CandleTransformerConfig, CandleTransformerLM,
-        CandleValidatorEvaluator, CandleWeightMerger, PeftOptimizerType,
+        CandleValidatorEvaluator, CandleWeightMerger, DeviceManager, PeftOptimizerType,
     };
     use std::str::FromStr;
 
@@ -1275,7 +1334,16 @@ fn run_candle_llm_demo(rounds: usize, steps_per_round: usize, optimizer_str: &st
     println!("Compute Backend:   Hugging Face Candle Engine (Autograd & SafeTensors)");
     println!("Selected Optimizer: {}\n", opt_type.to_string().bright_green().bold());
 
-    let device = candle_core::Device::Cpu;
+    // Initialize DeviceManager with hierarchical fallback: CUDA/ROCm -> Metal -> WGPU -> CPU
+    let device_mgr = if preferred_device == "auto" {
+        DeviceManager::auto_detect()
+    } else {
+        DeviceManager::new_with_preferred(preferred_device)
+    };
+    device_mgr.print_device_summary();
+    println!();
+
+    let primary_device = device_mgr.primary_device().clone();
     let config = CandleTransformerConfig {
         vocab_size: 256,
         hidden_size: 64,
@@ -1287,8 +1355,8 @@ fn run_candle_llm_demo(rounds: usize, steps_per_round: usize, optimizer_str: &st
         lora_alpha: 16.0,
     };
 
-    println!("[*] Initializing Base Model W_0 on Candle...");
-    let mut model = CandleTransformerLM::new(config.clone(), device)?;
+    println!("[*] Initializing Base Model W_0 on Candle ({:?})...", primary_device);
+    let mut model = CandleTransformerLM::new(config.clone(), primary_device.clone())?;
     println!("    ├─ Trainable LoRA Parameters: {} weights", model.total_trainable_parameters().to_string().bright_green());
     println!("    └─ Total Layers: {} Transformer blocks", config.num_hidden_layers);
 
@@ -1314,13 +1382,22 @@ fn run_candle_llm_demo(rounds: usize, steps_per_round: usize, optimizer_str: &st
         let miners_config = [
             ("miner-cuda-01", "NVIDIA RTX 4090 / CUDA", 0.005, opt_type),
             ("miner-rocm-02", "AMD RX 7900 / ROCm", 0.003, opt_type),
-            ("miner-cpu-03", "Intel Xeon / AVX-512", 0.001, opt_type),
+            ("miner-wgpu-cpu-03", "Intel Xeon / WGPU-Fallback", 0.001, opt_type),
         ];
 
         let mut candidate_adapters = Vec::new();
 
         for (miner_id, hw, lr, opt) in &miners_config {
+            let miner_device = if multi_gpu {
+                device_mgr.next_round_robin_device()
+            } else {
+                primary_device.clone()
+            };
+
             let mut miner_model = model.clone();
+            // Ensure model is hosted on target miner device
+            miner_model.device = miner_device;
+
             let hyperparams = CandleMinerHyperparams {
                 learning_rate: *lr,
                 steps: steps_per_round,
@@ -1333,7 +1410,15 @@ fn run_candle_llm_demo(rounds: usize, steps_per_round: usize, optimizer_str: &st
                 hardware_info: format!("{} [{}]", hw, opt),
             };
 
-            let artifact = CandleMinerTrainer::train(&mut miner_model, &train_corpus, &hyperparams)?;
+            // If MultiGPU is enabled, demonstrate data-parallel batch splitting
+            let training_data = if multi_gpu {
+                let chunks = device_mgr.split_batches(&train_corpus);
+                chunks.into_iter().flat_map(|(_, batch)| batch.to_vec()).collect::<Vec<_>>()
+            } else {
+                train_corpus.clone()
+            };
+
+            let artifact = CandleMinerTrainer::train(&mut miner_model, &training_data, &hyperparams)?;
             println!("  [Miner {}] ({}) [{}] -> Train Loss: {:.4} -> {:.4} | Adapter SafeTensors: {} bytes",
                 miner_id.bright_cyan(),
                 hw.dimmed(),

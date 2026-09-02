@@ -33,7 +33,7 @@ pub use blockchain::{
 pub use candle_peft::{
     CandleLoraLinear, CandleMinerHyperparams, CandleMinerTrainer, CandleTrainingArtifact,
     CandleTransformerConfig, CandleTransformerLM, CandleValidatorEvaluator, CandleWeightMerger,
-    PeftOptimizerType, SimpleByteTokenizer,
+    DeviceBackendType, DeviceInfo, DeviceManager, PeftOptimizerType, SimpleByteTokenizer,
 };
 pub use client::{AccountInfo, DePeftClient, NodeStatus};
 pub use consensus::{
