@@ -22,7 +22,7 @@ services:
     ports:
       - "127.0.0.1:8545:8545" # Put mTLS reverse proxy in front of HTTP
       - "127.0.0.1:9000:9000" # Do not expose unauthenticated P2P publicly
-    command: ["node", "start", "--port", "8545", "--p2p-port", "9000"]
+    command: ["node", "start", "--port", "8545", "--p2p-port", "9000", "--testnet-tee-sim", "--enable-operator-endpoints", "--enable-faucet"]
     depends_on:
       - ipfs-kubo
     volumes:
@@ -36,7 +36,7 @@ services:
     ports:
       - "127.0.0.1:8546:8546"
       - "127.0.0.1:9001:9001"
-    command: ["node", "start", "--port", "8546", "--p2p-port", "9001", "--bootnodes", "depeft-node-1:9000"]
+    command: ["node", "start", "--port", "8546", "--p2p-port", "9001", "--bootnodes", "depeft-node-1:9000", "--testnet-tee-sim", "--enable-operator-endpoints", "--enable-faucet"]
     depends_on:
       - depeft-node-1
     volumes:

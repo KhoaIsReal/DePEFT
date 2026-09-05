@@ -497,7 +497,7 @@ pub async fn start_node_server(
     start_node_server_with_store(chain, storage, vector_db, swarm, addr, None).await
 }
 
-/// Start a node with an optional durable chain store.
+/// Start a node with an optional durable chain store and custom security configuration.
 pub async fn start_node_server_with_store(
     chain: Arc<RwLock<AppChainState>>,
     storage: Arc<DiskIpfsStorage>,
@@ -506,17 +506,32 @@ pub async fn start_node_server_with_store(
     addr: SocketAddr,
     chain_store: Option<Arc<Mutex<ChainStore>>>,
 ) -> Result<()> {
+    start_node_server_with_security(chain, storage, vector_db, swarm, addr, chain_store, None).await
+}
+
+/// Start a node with explicit security configuration and durable chain store.
+pub async fn start_node_server_with_security(
+    chain: Arc<RwLock<AppChainState>>,
+    storage: Arc<DiskIpfsStorage>,
+    vector_db: Arc<EmbeddedVectorDb>,
+    swarm: Option<Arc<P2pSwarm>>,
+    addr: SocketAddr,
+    chain_store: Option<Arc<Mutex<ChainStore>>>,
+    custom_security: Option<NodeSecurityConfig>,
+) -> Result<()> {
     let production = std::env::var("DEPEFT_ENV")
         .map(|value| value.eq_ignore_ascii_case("production"))
         .unwrap_or(true);
     if production && !addr.ip().is_loopback() {
         anyhow::bail!("production node API must bind to loopback/private proxy, not {}", addr);
     }
-    let security = if production {
-        NodeSecurityConfig::default()
-    } else {
-        NodeSecurityConfig::development()
-    };
+    let security = custom_security.unwrap_or_else(|| {
+        if production {
+            NodeSecurityConfig::default()
+        } else {
+            NodeSecurityConfig::development()
+        }
+    });
     let mut ctx = NodeContext::new(chain, storage, vector_db, swarm).with_security(security);
     if let Some(store) = chain_store {
         ctx = ctx.with_chain_store(store);

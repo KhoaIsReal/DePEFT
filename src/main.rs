@@ -14,7 +14,6 @@ use DePEFT::miner::{MinerHyperparams, MinerNode, MinerTrainer};
 use DePEFT::ml::dataset::Dataset;
 use DePEFT::ml::model::DePEFTModel;
 use DePEFT::ml::tensor::{Matrix, QuantizedWeight};
-use DePEFT::node::start_node_server_with_store;
 use DePEFT::storage::disk_ipfs::DiskIpfsStorage;
 use DePEFT::storage::ChainStore;
 use DePEFT::storage::safetensors::deserialize_safetensors;
@@ -208,6 +207,30 @@ enum NodeCommands {
         /// Local data directory for blockchain state and CAS storage
         #[arg(short, long)]
         data_dir: Option<PathBuf>,
+
+        /// Comma-separated or repeatable whitelisted MRENCLAVE measurements in hex
+        #[arg(long, value_delimiter = ',')]
+        trusted_mrenclave: Vec<String>,
+
+        /// Comma-separated or repeatable whitelisted MRSIGNER measurements in hex
+        #[arg(long, value_delimiter = ',')]
+        trusted_mrsigner: Vec<String>,
+
+        /// Comma-separated or repeatable whitelisted TEE platform public keys in hex
+        #[arg(long, value_delimiter = ',')]
+        trusted_platform_key: Vec<String>,
+
+        /// Enable official testnet TEE simulation measurements and platform keys
+        #[arg(long, default_value_t = false)]
+        testnet_tee_sim: bool,
+
+        /// Enable operator endpoints (e.g. POST /api/v1/storage for miner adapter upload)
+        #[arg(long, default_value_t = false)]
+        enable_operator_endpoints: bool,
+
+        /// Enable testnet faucet (POST /api/v1/faucet)
+        #[arg(long, default_value_t = false)]
+        enable_faucet: bool,
     },
 }
 
@@ -784,6 +807,12 @@ async fn main() -> anyhow::Result<()> {
                 host,
                 bootnodes,
                 data_dir,
+                trusted_mrenclave,
+                trusted_mrsigner,
+                trusted_platform_key,
+                testnet_tee_sim,
+                enable_operator_endpoints,
+                enable_faucet,
             } => {
                 let storage_path = data_dir.unwrap_or_else(|| {
                     dirs::home_dir()
@@ -793,7 +822,48 @@ async fn main() -> anyhow::Result<()> {
                 });
                 let storage = Arc::new(DiskIpfsStorage::new(&storage_path)?);
                 let chain_store = Arc::new(Mutex::new(ChainStore::open(storage_path.join("chain.sqlite"))?));
-                let loaded_state = chain_store.lock().unwrap().load()?.unwrap_or_else(AppChainState::new);
+                let mut loaded_state = chain_store.lock().unwrap().load()?.unwrap_or_else(AppChainState::new);
+
+                // Register trusted TEE measurements and platform keys
+                let mut configured_roots = 0;
+                for hex_str in &trusted_mrenclave {
+                    let clean = hex_str.trim().trim_start_matches("0x");
+                    if let Ok(arr) = hex::decode(clean).map_err(|_| ()).and_then(|b| b.try_into().map_err(|_| ())) {
+                        loaded_state.tee_verifier.register_mrenclave(arr);
+                        configured_roots += 1;
+                    }
+                }
+                for hex_str in &trusted_mrsigner {
+                    let clean = hex_str.trim().trim_start_matches("0x");
+                    if let Ok(arr) = hex::decode(clean).map_err(|_| ()).and_then(|b| b.try_into().map_err(|_| ())) {
+                        loaded_state.tee_verifier.register_mrsigner(arr);
+                        configured_roots += 1;
+                    }
+                }
+                for hex_str in &trusted_platform_key {
+                    let clean = hex_str.trim().trim_start_matches("0x");
+                    if let Ok(arr) = hex::decode(clean).map_err(|_| ()).and_then(|b| b.try_into().map_err(|_| ())) {
+                        loaded_state.tee_verifier.register_platform_key(arr);
+                        configured_roots += 1;
+                    }
+                }
+
+                // If testnet TEE simulation mode is enabled, register the official simulator hardware roots
+                if testnet_tee_sim {
+                    use DePEFT::tee::{HardwareTeeEnclave, TeeType};
+                    let sgx_enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
+                    loaded_state.tee_verifier.trust_quote_source(
+                        sgx_enclave.measurement.mrenclave,
+                        sgx_enclave.platform_public_key(),
+                    );
+                    let sev_enclave = HardwareTeeEnclave::official(TeeType::AmdSevSnp);
+                    loaded_state.tee_verifier.trust_quote_source(
+                        sev_enclave.measurement.mrenclave,
+                        sev_enclave.platform_public_key(),
+                    );
+                    println!("[*] Testnet TEE Simulator Root of Trust enabled (Intel SGX + AMD SEV)");
+                }
+
                 let chain = Arc::new(RwLock::new(loaded_state));
                 let vector_db = Arc::new(EmbeddedVectorDb::new(64));
 
@@ -849,8 +919,26 @@ async fn main() -> anyhow::Result<()> {
                 println!("Storage CAS Path: {:?}", storage.path());
                 println!("HTTP JSON-RPC:    http://{}", addr);
                 println!("P2P Overlay TCP:  tcp://{}", p2p_addr);
+                println!("TEE Trust Roots:  {} custom measurements/keys loaded", configured_roots);
 
-                start_node_server_with_store(chain, storage, vector_db, Some(swarm), addr, Some(chain_store)).await?;
+                let production = std::env::var("DEPEFT_ENV")
+                    .map(|value| value.eq_ignore_ascii_case("production"))
+                    .unwrap_or(true);
+                let security = DePEFT::node::NodeSecurityConfig {
+                    enable_operator_endpoints: enable_operator_endpoints || !production,
+                    enable_testnet_faucet: enable_faucet || !production,
+                };
+
+                DePEFT::node::start_node_server_with_security(
+                    chain,
+                    storage,
+                    vector_db,
+                    Some(swarm),
+                    addr,
+                    Some(chain_store),
+                    Some(security),
+                )
+                .await?;
             }
         },
 
@@ -1303,7 +1391,8 @@ fn run_tee_quote_demo() {
     println!("    └─ Timestamp:             {}", quote.timestamp);
 
     println!("\n[*] Submitting to On-Chain TEE Verifier (App-Chain State Machine)...");
-    let verifier = OnChainTeeVerifier::default();
+    let mut verifier = OnChainTeeVerifier::default();
+    verifier.trust_quote_source(enclave.measurement.mrenclave, enclave.platform_public_key());
     match verifier.verify_quote(&quote, 1, 1, &ranking) {
         Ok(_) => println!("{}", "[✓] On-Chain Attestation Verified: MRENCLAVE is whitelisted, report_data matches ranking, signature is valid!".bright_green().bold()),
         Err(e) => println!("{} {}", "[✗] On-Chain Attestation Rejected:".bright_red().bold(), e),
