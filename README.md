@@ -2,248 +2,387 @@
 ### ReLoRA Multi-Round Tournament Protocol on an Application-Specific Blockchain
 
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/tests-16%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-44%20passed-brightgreen.svg)]()
+[![Clippy](https://img.shields.io/badge/clippy-0%20warnings-brightgreen.svg)]()
 [![Engine](https://img.shields.io/badge/ML%20Engine-Hugging%20Face%20Candle-blue.svg)](https://github.com/huggingface/candle)
 [![Consensus](https://img.shields.io/badge/consensus-CometBFT%20%2F%20Tendermint-blueviolet.svg)]()
 [![TEE](https://img.shields.io/badge/TEE-Intel%20SGX%20%7C%20AMD%20SEV--SNP-informational.svg)]()
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPLv3-blue.svg)](./LICENSE)
 
-An end-to-end, production-grade Rust implementation of the **DePEFT Architecture Design** specification for decentralized AI fine-tuning using Hugging Face Candle QLoRA, Hardware TEE Remote Attestation, IPFS decentralized storage, and CometBFT 2-phase commit consensus.
+**DePEFT** is an open-source decentralized network that allows anyone to fund, train, and evaluate Large Language Models (LLMs) collectively without trusting a centralized AI cloud provider. 
+
+Instead of full model retraining (which costs millions of dollars), DePEFT uses **Parameter-Efficient Fine-Tuning (PEFT / QLoRA)**: miners only train tiny low-rank adapter matrices ($\Delta W$). Across successive tournament epochs, optimal adapters are verified inside **Hardware TEE Enclaves**, ranked via **Borda Count Consensus**, and permanently merged into the base model weights ($W_{N+1} = W_N + \Delta W^*$).
 
 ---
 
-## 📚 Documentation Index
-
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** (Tiếng Việt: **[ARCHITECTURE_VI.md](./ARCHITECTURE_VI.md)**): Deep-dive whitepaper specification of all 4 layers, ReLoRA weight fusion, Borda count aggregation, and CometBFT 2-phase commit.
-- **[AGENTS.md](./AGENTS.md)**: Autonomous agent guide, node operator manual, REST/JSON-RPC API schema, and miner/validator execution loops.
-- **[CONTRIBUTING.md](./CONTRIBUTING.md)** (Tiếng Việt: **[CONTRIBUTING_VI.md](./CONTRIBUTING_VI.md)**): Contribution guidelines, toolchain setup, architectural invariants, code standards, and PR workflows.
-- **[SECURITY.md](./SECURITY.md)** (Tiếng Việt: **[SECURITY_VI.md](./SECURITY_VI.md)**): Threat modeling, anti-fraud guarantees, TEE attestation verification, and vulnerability disclosure policy.
-- **[README_VI.md](./README_VI.md)**: Bản tài liệu tiếng Việt đầy đủ cho dự án DePEFT.
+## 📖 Table of Contents
+1. [How DePEFT Works in Plain English](#-how-depeft-works-in-plain-english)
+2. [Network Roles](#-network-roles)
+3. [Complete Step-by-Step Usage Guide](#-complete-step-by-step-usage-guide)
+   - [Step 1: Installation & Building](#step-1-installation--building)
+   - [Step 2: Generate Cryptographic Account Keypairs](#step-2-generate-cryptographic-account-keypairs)
+   - [Step 3: Start an App-Chain Node Daemon](#step-3-start-an-app-chain-node-daemon)
+   - [Step 4: Claim Free Testnet Tokens (Faucet)](#step-4-claim-free-testnet-tokens-faucet)
+   - [Step 5: Create a Fine-Tuning Task (Client)](#step-5-create-a-fine-tuning-task-client)
+   - [Step 6: Run a Decentralized Miner (Miner)](#step-6-run-a-decentralized-miner-miner)
+   - [Step 7: Run a TEE Evaluator (Validator)](#step-7-run-a-tee-evaluator-validator)
+   - [Step 8: Inspect Consensus & P2P Swarm](#step-8-inspect-consensus--p2p-swarm)
+4. [Python SDK Guide](#-python-sdk-guide)
+5. [HTTP REST / JSON-RPC API Reference](#-http-rest--json-rpc-api-reference)
+6. [Interactive Demos & Simulations](#-interactive-demos--simulations)
+7. [Architecture & 4 Core Layers](#-architecture--4-core-layers)
+8. [Testing & Quality Verification](#-testing--quality-verification)
+9. [License](#-license)
 
 ---
 
-## 🏛️ Architecture Overview (4 Core Layers)
+## 💡 How DePEFT Works in Plain English
 
 ```
-                       ┌─────────────────────────────────────────────────────────┐
-                       │          Client (Creates Task & Escrows Bounty)         │
-                       └────────────────────────────┬────────────────────────────┘
-                                                    │
-                                                    ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ 1. Consensus & State Layer (App-Chain State Machine & CometBFT)                                         │
-│    • Deterministic State Machine (Escrow, Balances, TaskSpec Registry, Faucet API)                      │
-│    • Tendermint/CometBFT 2-Phase Commit Consensus (Propose -> Prevote -> Precommit -> Commit)          │
-│    • Relative Consensus Engine (Borda Count Rank Aggregation & Floating-Point Drift Resistance)         │
-│    • On-Chain Hardware TEE Attestation Verifier (MRENCLAVE / MRSIGNER Whitelist Checking)              │
-└──────────────────────┬────────────────────────────────────────────────────▲─────────────────────────────┘
-                       │ TaskSpec ($W_N$, CID)                               │ Consensus Ranking & Payout
-                       ▼                                                    │
-┌─────────────────────────────────────────────────┐   ┌─────────────────────────────────────────────────┐
-│ 2. Miner Network Layer (Heterogeneous Compute)  │   │ 3. Validator Layer (Off-Chain Workers & TEE)    │
-│    • Hugging Face Candle Autograd PEFT Engine   │   │    • Isolated Hardware TEE Enclave (SGX / SEV)   │
-│    • QLoRA Matrix Updates ($\Delta W = B \times A$)  │   │    • Floating-point Drift Tolerance (BF16/FP16) │
-│    • SafeTensors Binary Packaging               │   │    • Hardware Attestation Quote Generation      │
-│    • SHA-256 Commit-Reveal Hashing & Salt       │   │    • Vector DB Plagiarism & Collision Indexing  │
-└──────────────────────┬──────────────────────────┘   └─────────────────────▲───────────────────────────┘
-                       │                                                    │
-                       │ Publish $\Delta W$ .safetensors                     │ Pull & Verify $\Delta W$
-                       ▼                                                    │
-┌───────────────────────────────────────────────────────────────────────────┴─────────────────────────────┐
-│ 4. Storage & Database Layer                                                                             │
-│    • Live IPFS Kubo RPC Integration (/api/v0/add, /api/v0/cat, /api/v0/pin)                             │
-│    • HybridStorageManager (Local Disk CAS Cache ~/.depeft/storage + Global IPFS Swarm)                  │
-│    • SafeTensors Standard Serialization / Deserialization                                               │
-│    • Embedded Lightweight Vector Database (Adapter Signature Indexing & Cosine Similarity)              │
-└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  1. Client Agent deposits bounty & creates a Task on-chain
+                         │
+                         ▼
+  2. Miners train QLoRA adapters locally (CUDA / ROCm / CPU)
+                         │
+                         ▼
+  3. Miners submit Commit Hash: SHA256(adapter_hash || salt) [Anti-Plagiarism]
+                         │
+                         ▼
+  4. Miners reveal adapter on CAS / IPFS (.safetensors)
+                         │
+                         ▼
+  5. Validators evaluate adapters inside Hardware TEE Enclave on Private Test Set
+                         │
+                         ▼
+  6. Validators submit Attestation Quote + Ranking -> Borda Count Relative Consensus
+                         │
+                         ▼
+  7. Winning weights merged into Base Model: W_N+1 = W_N + ΔW* & Bounty Released
 ```
 
----
-
-## ✨ Complete Feature Matrix
-
-| Category | Feature | Description |
-|---|---|---|
-| **🧬 ReLoRA Tournament Protocol** | **Continuous Weight Evolution** | Merges optimal adapter updates into base weights: $W_{N+1} = W_N + \Delta W^*$ across sequential epochs. |
-| | **Configurable Top-K Distribution** | Supports `WinnerTakesAll` (100% to Top 1), `TopKDecay` (exponential decay 50%, 25%, 12.5%...), and `TopKBordaWeighted`. |
-| | **Multi-Miner Ensemble Merge** | Supports `SingleWinner` and `EnsembleWeighted` ($W_{N+1} = W_N + \sum \alpha_i \Delta W_i$) to fuse knowledge from Top-K miners. |
-| **⚡ Miner ML & PEFT Engine** | **Hugging Face Candle Autograd** | Native Rust deep learning engine for Decoder Transformer fine-tuning with backpropagation. |
-| | **Heterogeneous Quantization** | Native support for **LoRA** (FP32/BF16/FP16), **QLoRA-NF4** (4-bit NormalFloat), and **QLoRA-INT4** (4-bit Integer). |
-| | **Standard SafeTensors Export** | Zero-copy serializing and deserializing of low-rank adapter tensors compatible with Hugging Face Hub. |
-| | **Commit-Reveal Anti-Collusion** | Two-phase submission using `SHA256(adapter_hash || salt)` to prevent copycat miners and weight plagiarism. |
-| **🔒 Validator & TEE Security** | **Hardware TEE Remote Attestation** | Supports Intel SGX (DCAP), AMD SEV-SNP, and AWS Nitro enclaves with cryptographic attestation quotes. |
-| | **Private Test Set Evaluation** | Evaluates Cross-Entropy Loss & Perplexity on protected validation data inside the secure enclave. |
-| | **Relative Consensus (Borda Count)** | Ordinal ranking aggregation that is completely immune to hardware floating-point non-determinism (CUDA vs ROCm vs CPU). |
-| | **Vector DB Plagiarism Detector** | Embedded vector database computing cosine similarity between adapter signature vectors to flag copycats. |
-| **🏛️ App-Chain & CometBFT** | **CometBFT 2-Phase Commit** | Byzantine Fault Tolerant state machine replication with `Propose`, `Prevote`, `Precommit`, and `Commit` phases. |
-| | **Equivocation Slashing** | Automatic slash and removal of Byzantine validators caught double-signing conflicting blocks. |
-| | **On-Chain Escrow & Faucet** | Deterministic token balances, TaskSpec registry, escrowed bounty locking/release, and automated testnet faucet. |
-| **📦 Storage & P2P Networking** | **IPFS Kubo & Hybrid Storage** | Seamless bridge between local disk CAS (`~/.depeft/storage`) and global decentralized IPFS network. |
-| | **P2P Gossip Swarm** | Async TCP peer-to-peer overlay network with gossip broadcasting, deduplication, and DoS address limiting. |
-| **🖥️ Developer & Node Tooling** | **Embedded Web Explorer Dashboard** | Built-in UI served at `http://127.0.0.1:8545/` with live chain stats, task explorer, interactive JSON console, and faucet. |
-| | **Python SDK (`depeft`)** | Python client library with Ed25519 signing, RPC task management, and dataset/storage integration. |
-| | **Production EVM Contracts** | [`DePeftToken.sol`](./contracts/DePeftToken.sol) (ERC-20) & [`DePeftEscrow.sol`](./contracts/DePeftEscrow.sol) for EVM L1/L2 mainnets. |
-| | **Comprehensive CLI Suite** | Rich command-line tools for node daemons, miners, validators, keys, P2P, IPFS, benchmarks, and demos. |
+1. **Task Escrow**: A Client deposits tokens ($DEPEFT) into escrow and defines the task (e.g., base model `Qwen/Qwen2.5-7B`, target modules `q_proj, v_proj`, and training dataset CID).
+2. **Commit-Reveal Tournament**:
+   - **Commit Phase**: Miners download the base weights, train a QLoRA adapter locally, and post a cryptographic hash `SHA256(adapter || salt)`. No one can copy their work before deadline.
+   - **Reveal Phase**: Miners upload their `.safetensors` adapter file to IPFS / Content-Addressable Storage (CAS) and reveal the salt.
+3. **TEE Private Evaluation**: Validators load the candidate adapters into secure hardware enclaves (Intel SGX or AMD SEV-SNP) and score them on a **private test set** that no miner can see.
+4. **Borda Count Consensus**: Validators rank miners from best to worst. Because different GPUs produce minor floating-point precision drifts (BF16 vs FP16), the App-Chain aggregates **ordinal rankings** (Borda Count) rather than raw loss floats.
+5. **ReLoRA Fusion**: The winning adapter is permanently fused into the base model weights, the winner receives the bounty from escrow, and the next round begins on the newly evolved model ($W_1, W_2, ...$).
 
 ---
 
-## 🖥️ Web Explorer & Real-Time Management Dashboard
+## 👥 Network Roles
 
-DePEFT comes with a built-in single-file Web Explorer and management portal served directly by any node at `http://127.0.0.1:8545/`:
-- **Real-Time Metrics**: Current Block Height, Active PEFT Tournaments, CAS Storage Artifacts, and Connected P2P Peers.
-- **Task Browser**: Inspect registered Base Models (`Qwen2.5-7B`, `LLaMA-3`), LoRA configurations, and escrowed bounty balances.
-- **🚰 On-Chain Testnet Faucet**: Instantly claim 10,000 $DEPEFT testnet tokens to fund or simulate tasks.
-- **Interactive JSON Console**: Query REST/JSON-RPC node state directly from the browser.
+| Role | What They Do | Requirements | Command |
+|---|---|---|---|
+| **Node Operator** | Runs the blockchain daemon, stores state in SQLite, relays P2P transactions, hosts Web Dashboard | 2 vCPU, 4GB RAM | `depeft node start` |
+| **Client / Task Creator** | Funds tasks with bounties, provides datasets & target base model | Any machine | `depeft task create` |
+| **Miner** | Downloads base models, trains low-rank adapters, earns bounties | GPU (CUDA/ROCm) or CPU | `depeft miner run` |
+| **TEE Validator** | Evaluates candidate adapters inside hardware enclave, signs attestation quotes | Intel SGX / AMD SEV / AWS Nitro (or Sim mode) | `depeft validator run` |
 
 ---
 
-## 📦 Project Structure
+## 🛠️ Complete Step-by-Step Usage Guide
 
+### Step 1: Installation & Building
+
+Make sure you have Rust 1.80+ installed:
+```bash
+git clone https://github.com/KhoaIsReal/DePEFT.git
+cd DePEFT
+cargo build --release
 ```
-DePEFT/
-├── contracts/                       # Layer 1: EVM & App-Chain Smart Contracts
-│   ├── DePeftToken.sol              # Standard ERC-20 Network Token ($DEPEFT)
-│   ├── DePeftEscrow.sol             # Task Bounty Escrow & Automated Winner Settlement
-│   └── scripts/deploy.js            # Hardhat / Node Deployment Script
-├── sdk/                             # Developer SDKs & AI Tooling
-│   └── python/                      # Python Client Library (depeft) for PyTorch & HF Candle
-│       ├── depeft/
-│       │   ├── client.py            # DePeftClient (Task management, Storage, Faucet, RPC)
-│       │   ├── crypto.py            # Ed25519 key generation and transaction signing
-│       │   └── __init__.py
-│       └── setup.py
-├── scripts/                         # Automation & Network Orchestration
-│   └── start_local_testnet.sh       # 1-Click Multi-Node Local P2P Testnet Launcher
-├── src/                             # Core Rust App-Chain Protocol
-│   ├── lib.rs                       # Crate root exporting all layers
-│   ├── main.rs                      # Comprehensive CLI, Node Daemon & Tournament Simulator
-│   ├── consensus/                   # CometBFT 2-Phase Commit Engine
-│   ├── tee/                         # Hardware TEE Remote Attestation Engine
-│   ├── candle_peft/                 # Real Deep Learning LLM Engine with Candle
-│   ├── p2p/                         # P2P Overlay Network & Gossip Protocol
-│   ├── crypto/                      # Ed25519 Cryptography & Signed Transactions
-│   ├── node/                        # Live App-Chain HTTP REST/JSON-RPC Node & Web Dashboard
-│   │   ├── dashboard.rs             # Embedded HTML/CSS/JS Web Explorer
-│   │   └── server.rs                # Axum REST & Faucet API
-│   ├── client/                      # Rust RPC Client
-│   ├── blockchain/                  # App-Chain State Machine & Relative Consensus
-│   ├── miner/                       # Miner Network Layer & Autograd Worker
-│   ├── validator/                   # Validator Layer & TEE Evaluation Worker
-│   ├── storage/                     # Storage Layer (Hybrid CAS, IPFS, Vector DB)
-│   ├── ml/                          # Mathematical PEFT Primitives (NF4, INT4)
-│   └── tournament/                  # ReLoRA Multi-Round Tournament Engine
-├── tests/
-│   └── integration_tests.rs         # 16 Comprehensive Integration & Protocol Tests
-└── .github/workflows/ci.yml         # Automated GitHub Actions CI Testing & Build Pipeline
+The compiled executable is located at `target/release/depeft`. You can also run commands directly with `cargo run --`.
+
+---
+
+### Step 2: Generate Cryptographic Account Keypairs
+
+All transactions on DePEFT (creating tasks, submitting commits, voting) are signed with **Ed25519** cryptographic keypairs.
+
+Generate a new keypair:
+```bash
+cargo run -- key generate
+```
+Output:
+```text
+=== Generated New DePEFT Ed25519 Account Keypair ===
+Public Address: 0x404bb343c6827a58a983b6329e4720970b8c95a0
+Public Key:     0x280e227092147743d548325ebef50beadca2e4cbe45bfefba3ca87884ecb510a
+Secret Key:     0x8e833b5c33feff4cf19cb8d67ec1bb84c59d9f5cb68b5a8370f1a9d18ce58826
+```
+
+Inspect an existing secret key:
+```bash
+cargo run -- key inspect 0x8e833b5c33feff4cf19cb8d67ec1bb84c59d9f5cb68b5a8370f1a9d18ce58826
 ```
 
 ---
 
-## 🚀 Quickstart & Real Network Operations
+### Step 3: Start an App-Chain Node Daemon
 
-### 1. Launch Multi-Node Local Testnet (1-Click)
-Deploy a full 2-node P2P testnet swarm with bootstrap consensus and live web dashboard:
+#### Option A: Start a local node for development / testnet (with simulator TEE & faucet)
+```bash
+cargo run -- node start \
+  --port 8545 \
+  --p2p-port 9000 \
+  --testnet-tee-sim \
+  --enable-operator-endpoints \
+  --enable-faucet
+```
+Key flags:
+- `--testnet-tee-sim`: Automatically whitelists the official testnet simulator TEE measurement and hardware keys so validators can run without dedicated Intel SGX hardware.
+- `--enable-operator-endpoints`: Enables `POST /api/v1/storage` so miners can upload `.safetensors` adapters to the node.
+- `--enable-faucet`: Enables `POST /api/v1/faucet` for testnet token distribution.
+
+#### Option B: 1-Click Multi-Node Local Swarm
+To test a real multi-node network with 2 connected peers:
 ```bash
 ./scripts/start_local_testnet.sh
 ```
-Open **http://127.0.0.1:8545** in your browser to access the Web Explorer.
+- **Node 1 (Bootstrap)**: `http://127.0.0.1:8545` (P2P: `9000`)
+- **Node 2 (Peer)**: `http://127.0.0.1:8546` (P2P: `9001`)
+- **Web Dashboard**: Open `http://127.0.0.1:8545` in your browser!
 
 ---
 
-### 2. Use the Python SDK (`depeft`)
-Interact with the live network from Python scripts or Jupyter Notebooks:
+### Step 4: Claim Free Testnet Tokens (Faucet)
+
+Before creating tasks or interacting on testnet, claim tokens:
+
+Via cURL:
+```bash
+curl -X POST http://127.0.0.1:8545/api/v1/faucet \
+  -H "Content-Type: application/json" \
+  -d '{"account": "0x404bb343c6827a58a983b6329e4720970b8c95a0", "amount": 50000}'
+```
+
+Check balance:
+```bash
+curl http://127.0.0.1:8545/api/v1/accounts/0x404bb343c6827a58a983b6329e4720970b8c95a0/balance
+```
+
+---
+
+### Step 5: Create a Fine-Tuning Task (Client)
+
+Clients deposit escrow tokens and specify the model architecture:
+
+```bash
+cargo run -- task create \
+  --node-url http://127.0.0.1:8545 \
+  --secret-key 0x_your_client_secret_key \
+  --model-id "Qwen/Qwen2.5-7B" \
+  --bounty 30000 \
+  --top-k 3 \
+  --merge single
+```
+Parameters:
+- `--model-id`: Target Hugging Face base model identifier.
+- `--bounty`: Escrow tokens locked for the tournament round.
+- `--top-k`: Number of winning miners sharing rewards (e.g. `1` for Winner-Takes-All, or `3`/`5` for exponential decay).
+- `--merge`: Weight fusion strategy (`single` for Top 1, or `ensemble` for weighted multi-miner merge).
+
+List all active tasks:
+```bash
+cargo run -- task list --node-url http://127.0.0.1:8545
+```
+
+---
+
+### Step 6: Run a Decentralized Miner (Miner)
+
+A Miner listens for active tasks, executes autograd QLoRA training on available compute hardware, submits the commit hash, uploads the `.safetensors` adapter, and reveals:
+
+```bash
+cargo run -- miner run \
+  --node-url http://127.0.0.1:8545 \
+  --secret-key 0x_your_miner_secret_key \
+  --task-id 1 \
+  --device auto \
+  --lr 0.03
+```
+Supported `--device` targets:
+- `auto`: Automatically selects the fastest available backend (CUDA $\to$ ROCm $\to$ Metal $\to$ WGPU $\to$ CPU).
+- `cuda`: NVIDIA GPUs with cuDNN acceleration.
+- `rocm`: AMD Radeon GPUs with ROCm HIP.
+- `cpu`: High-performance multithreaded CPU with AVX-512 vectorization.
+
+---
+
+### Step 7: Run a TEE Evaluator (Validator)
+
+A Validator runs inside a Trusted Execution Environment (TEE). It fetches revealed candidate adapters, benchmarks them on a protected private dataset, generates a hardware attestation quote, and submits the ranking vote on-chain:
+
+```bash
+cargo run -- validator run \
+  --node-url http://127.0.0.1:8545 \
+  --secret-key 0x_your_validator_secret_key \
+  --task-id 1
+```
+
+---
+
+### Step 8: Inspect Consensus & P2P Swarm
+
+Inspect connected P2P peers:
+```bash
+cargo run -- p2p peers --node-url http://127.0.0.1:8545
+```
+
+Connect node to a remote peer manually:
+```bash
+cargo run -- p2p connect --node-url http://127.0.0.1:8545 --addr "127.0.0.1:9001"
+```
+
+Check IPFS Kubo daemon status:
+```bash
+cargo run -- ipfs status --api-url http://127.0.0.1:5001
+```
+
+---
+
+## 🐍 Python SDK Guide
+
+The official Python client library is located in `sdk/python/`.
+
+### Installation
+```bash
+cd sdk/python
+pip install -e .
+```
+
+### Complete Python Workflow
 ```python
 from depeft import DePeftClient, generate_keypair
+import time
 
+# 1. Connect to node
 client = DePeftClient("http://127.0.0.1:8545")
 
-# 1. Request testnet tokens from faucet
+# 2. Generate a keypair for your bot / script
 account = generate_keypair()
-print(client.request_faucet(account["account_id"], amount=10000))
+print(f"Address: {account['account_id']}")
+print(f"Secret:  {account['secret_key']}")
 
-# 2. Check balance & chain status
-print("Status:", client.get_status())
-print("Balance:", client.get_balance(account["account_id"]))
+# 3. Request faucet funds
+client.request_faucet(account["account_id"], 20000)
+
+# 4. Check chain status and balance
+status = client.get_status()
+balance = client.get_balance(account["account_id"])
+print(f"Block #{status['block_height']} | Tasks: {status['tasks_count']} | Balance: {balance} $DEPEFT")
+
+# 5. Query active tasks
+tasks = client.get_tasks()
+for task in tasks:
+    print(f"Task #{task['task_id']}: Model={task['base_model_id_str']} | Bounty={task['bounty_pool']}")
 ```
 
 ---
 
-### 3. Run Real Candle LLM Transformer ReLoRA Tournament
-Fine-tune real LoRA adapters on a Decoder Transformer language model with autograd, HuggingFace `.safetensors` export, TEE evaluation, and ReLoRA weight fusion:
+## 📡 HTTP REST / JSON-RPC API Reference
+
+All DePEFT nodes expose a JSON API at `http://127.0.0.1:8545`:
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/status` | Current block height, active task count, CAS objects, peers count |
+| `GET` | `/api/v1/tasks` | Array of all registered `TaskSpec` objects |
+| `GET` | `/api/v1/tasks/:id` | Detailed task specification by ID |
+| `GET` | `/api/v1/tasks/:id/rounds/:round` | Round status, current phase (Commit/Reveal/Evaluation/Merge), revealed miners |
+| `POST` | `/api/v1/tx` | Submit signed transaction (`CreateTask`, `CommitAdapter`, `RevealAdapter`, `SubmitEvaluation`) |
+| `GET` | `/api/v1/accounts/:account/balance` | Query token balance and anti-replay nonce |
+| `POST` | `/api/v1/faucet` | Claim testnet tokens (disabled in production unless `--enable-faucet`) |
+| `POST` | `/api/v1/storage` | Upload raw binary artifact (Hex encoded), returns CID |
+| `GET` | `/api/v1/storage/:cid` | Download binary `.safetensors` weights or dataset |
+| `GET` | `/api/v1/p2p/peers` | List all connected P2P gossip peers |
+| `POST` | `/api/v1/p2p/connect` | Request node to dial a remote TCP peer |
+
+---
+
+## 🎮 Interactive Demos & Simulations
+
+DePEFT includes rich built-in simulation tools to test every architecture layer without setting up multi-machine networks:
+
+### 1. Full 4-Layer ReLoRA Tournament Simulation
+Runs 3 complete tournament rounds showing all 4 layers with synthetic datasets, commit-reveal, Borda counting, and weight evolution:
 ```bash
-cargo run -- llm-demo --rounds 3 --steps 10
+cargo run -- demo --rounds 3 --peft qlora-nf4 --miners 3 --validators 3
+```
+
+### 2. Real Hugging Face Candle Transformer Training
+Trains a real Decoder Transformer language model with autograd, backpropagation, and Hugging Face `.safetensors` weight merge:
+```bash
+cargo run -- llm-demo --rounds 3 --steps 15 --device auto
+```
+
+### 3. CometBFT Consensus & Slashing Demonstration
+Simulates a 4-node BFT committee committing blocks and slashing an equivocation validator:
+```bash
+cargo run -- bft-demo --validators 4 --blocks 5
+```
+
+### 4. Hardware TEE Remote Attestation Quote Demo
+Generates a real hardware attestation quote inside Intel SGX DCAP / AMD SEV-SNP and verifies it against the on-chain state machine:
+```bash
+cargo run -- tee-quote
+```
+
+### 5. PEFT Quantization Compression Benchmark
+Benchmarks memory footprint and Mean Squared Error (MSE) across FP32, QLoRA NF4 (4-bit NormalFloat), and INT4:
+```bash
+cargo run -- benchmark
 ```
 
 ---
 
-### 4. Run Byzantine Fault Tolerant (BFT) State Finality & Consensus
-Execute Tendermint/CometBFT 2-phase commit with 2/3+ validator quorum and equivocation slashing:
-```bash
-cargo run -- bft-demo --validators 4 --blocks 3
+## 🏛️ Architecture & 4 Core Layers
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1. Consensus & State Layer (App-Chain State Machine & CometBFT)                           │
+│    • Deterministic Ledger: Token Balances, Nonces (Anti-Replay), Escrows, TaskSpecs        │
+│    • Tendermint/CometBFT 2-Phase Commit: Propose -> Prevote -> Precommit -> Commit        │
+│    • Borda Count Rank Consensus: Immune to GPU floating-point precision drift             │
+│    • On-Chain TEE Verifier: Enforces MRENCLAVE / MRSIGNER and Platform Key Whitelists     │
+└────────────────────────────┬──────────────────────────────────────▲───────────────────────┘
+                             │                                      │
+                             ▼                                      │
+┌───────────────────────────────────────────┐      ┌────────────────┴───────────────────────┐
+│ 2. Miner Layer (Heterogeneous Compute)    │      │ 3. Validator Layer (TEE Sandbox)       │
+│    • Hugging Face Candle Deep Learning    │      │    • Private Test Set Evaluation       │
+│    • QLoRA (NF4/INT4) Autograd Training   │      │    • Hardware Attestation Quotes       │
+│    • SafeTensors Zero-Copy Export         │      │    • Vector DB Plagiarism Detection    │
+│    • SHA-256 Commit-Reveal Hashing        │      │    • Relative Consensus Borda Ranking  │
+└────────────────────────────┬──────────────┘      └────────────────▲───────────────────────┘
+                             │                                      │
+                             ▼                                      │
+┌───────────────────────────────────────────────────────────────────┴───────────────────────┐
+│ 4. Storage & Networking Layer                                                             │
+│    • Hybrid CAS: Local SSD Cache (~/.depeft/storage) + Global IPFS Kubo Daemon Swarm      │
+│    • Async TCP P2P Swarm with Gossip Deduplication and Address Rate-Limiting               │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 5. Deploy EVM Smart Contracts ($DEPEFT & Escrow)
-Deploy smart contracts to Sepolia or Base Sepolia testnet using Hardhat:
-```bash
-cd contracts
-npm install
-cp .env.example .env # Configure PRIVATE_KEY
-npm run deploy:sepolia
-# or deploy to Base Sepolia
-npm run deploy:base-sepolia
-```
+## 🧪 Testing & Quality Verification
 
----
-
-### 6. Deploy 1-Click Public App-Chain Testnet to VPS / Cloud
-Deploy a live public testnet node with IPFS Kubo storage on any cloud instance:
-```bash
-./scripts/deploy_vps_testnet.sh
-```
-
----
-
-## 🧪 Comprehensive Test Suite
-
-Run the full integration test suite covering all cryptographic, ML, TEE, IPFS, BFT, and P2P layers:
+DePEFT is built with production rigor. Run the full test suite and strict lint checks:
 
 ```bash
+# Run all 44 unit and integration tests
 cargo test
-```
 
-```text
-running 16 tests
-test test_embedded_vector_db_similarity_and_plagiarism ... ok
-test test_commit_reveal_anti_collusion_verification ... ok
-test test_relative_consensus_borda_aggregation ... ok
-test test_disk_ipfs_storage_persistence ... ok
-test test_task_spec_data_structure ... ok
-test test_safetensors_serialization_roundtrip ... ok
-test test_bft_consensus_2_phase_commit_and_equivocation_slashing ... ok
-test test_nf4_quantization_and_dequantization ... ok
-test test_candle_lora_linear_forward_and_merge ... ok
-test test_ed25519_cryptographic_signing_and_verification ... ok
-test test_hardware_tee_remote_attestation_and_on_chain_verification ... ok
-test test_hybrid_storage_and_ipfs_cas_caching ... ok
-test test_live_node_http_rpc_integration ... ok
-test test_p2p_swarm_bidirectional_gossip_and_deduplication ... ok
-test test_relora_tournament_multi_round_convergence ... ok
-test test_candle_llm_transformer_relora_tournament ... ok
-
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+# Ensure 0 warnings with strict clippy
+cargo clippy --all-targets -- -D warnings
 ```
 
 ---
 
-## 📄 Licensing & Open Source Permissions
+## 📄 License
 
-DePEFT uses a modular multi-license architecture to protect core blockchain innovation while maximizing developer adoption:
-
-- **Core Node & Consensus Engine (`src/`, `Cargo.toml`)**: Licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE)**. Any forks or network distributions of the core node must remain open-source.
-- **Python Client SDK (`sdk/python/`)**: Dual-licensed under **[Apache-2.0](./sdk/python/LICENSE-APACHE)** OR **[MIT](./sdk/python/LICENSE-MIT)**, allowing external AI developers and agents to freely integrate DePEFT into proprietary or open workflows.
-- **Smart Contracts (`contracts/`)**: Dual-licensed under **[Apache-2.0](./contracts/LICENSE-APACHE)** OR **[MIT](./contracts/LICENSE-MIT)** for permissive EVM deployment and DApp integration.
-
-
+- **Blockchain Core & Node (`src/`, `Cargo.toml`)**: [GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE).
+- **Python SDK (`sdk/python/`)**: Dual-licensed under [Apache-2.0](./sdk/python/LICENSE-APACHE) OR [MIT](./sdk/python/LICENSE-MIT).
+- **Smart Contracts (`contracts/`)**: Dual-licensed under [Apache-2.0](./contracts/LICENSE-APACHE) OR [MIT](./contracts/LICENSE-MIT).
