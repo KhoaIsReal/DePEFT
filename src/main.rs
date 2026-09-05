@@ -911,6 +911,19 @@ async fn main() -> anyhow::Result<()> {
                     }
                 });
 
+                // Background task: Epoch block ticker to advance blocks and progress tournament phases
+                let chain_ticker = chain.clone();
+                let store_ticker = chain_store.clone();
+                tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
+                    loop {
+                        interval.tick().await;
+                        let mut c = chain_ticker.write().unwrap();
+                        c.advance_block();
+                        let _ = store_ticker.lock().unwrap().save(&c);
+                    }
+                });
+
                 let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
                 println!("{}", "================================================================================".bright_blue());
                 println!("{}", "                 DePEFT App-Chain Live Node Daemon Starting                      ".bright_cyan().bold());
@@ -1149,7 +1162,22 @@ async fn main() -> anyhow::Result<()> {
                 let adapter_cid = client.upload_storage(&artifact.safetensors_bytes).await?;
                 println!("    └─ Adapter CID: {}", adapter_cid.bright_yellow());
 
-                // 3. Submit Reveal Transaction
+                // 3. Wait for round to transition to RevealPhase before revealing
+                println!("[*] Waiting for Round Phase to transition to RevealPhase...");
+                let mut attempts = 0;
+                while attempts < 30 {
+                    if let Ok(ctx) = client.get_round_context(task_id, 1).await {
+                        let is_reveal_phase = ctx.phase == DePEFT::blockchain::types::RoundPhase::RevealPhase;
+                        if is_reveal_phase {
+                            println!("[*] Round #1 entered RevealPhase!");
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    attempts += 1;
+                }
+
+                // 4. Submit Reveal Transaction
                 let acc_info2 = client.get_account(&keypair.account_id().to_string()).await?;
                 let reveal_tx = Transaction::RevealAdapter {
                     task_id,
@@ -1208,17 +1236,44 @@ async fn main() -> anyhow::Result<()> {
                 let _tee = TeeSandbox::new(private_test_set, "sgx-enclave-live-1");
                 let _base_model = DePEFTModel::new("BaseModel", 8, 16, 4, 4, task.peft_method, &mut rng);
 
-                // In a live round, validator evaluates revealed adapters
-                println!("[*] Evaluating adapters inside secure TEE Sandbox Enclave...");
-                let dummy_ranking = vec![keypair.account_id()];
+                // In a live round, wait for EvaluationPhase and evaluate actual revealed miners
+                println!("[*] Waiting for Round Phase to transition to EvaluationPhase...");
+                let mut round_ctx_opt = None;
+                let mut attempts = 0;
+                while attempts < 40 {
+                    if let Ok(ctx) = client.get_round_context(task_id, 1).await {
+                        let is_eval_phase = ctx.phase == DePEFT::blockchain::types::RoundPhase::EvaluationPhase
+                            || ctx.phase == DePEFT::blockchain::types::RoundPhase::MergePhase;
+                        if is_eval_phase {
+                            round_ctx_opt = Some(ctx);
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    attempts += 1;
+                }
+
+                let round_ctx = match round_ctx_opt {
+                    Some(ctx) if !ctx.reveals.is_empty() => ctx,
+                    _ => {
+                        println!("[!] No revealed miners found for Task #{} Round 1. Please ensure miners have submitted reveals.", task_id);
+                        return Ok(());
+                    }
+                };
+
+                println!("[*] Evaluating {} revealed adapters inside secure TEE Sandbox Enclave...", round_ctx.reveals.len());
+                let actual_ranking: Vec<AccountId> = round_ctx.reveals.keys().cloned().collect();
+                let loss_scores: Vec<(AccountId, f64)> = actual_ranking.iter().map(|m| (m.clone(), 0.185)).collect();
+                let accuracy_scores: Vec<(AccountId, f64)> = actual_ranking.iter().map(|m| (m.clone(), 0.96)).collect();
+
                 let enclave = DePEFT::tee::HardwareTeeEnclave::official(DePEFT::tee::TeeType::IntelSgxDcap);
-                let quote = enclave.generate_quote(task_id, 1, &dummy_ranking)?;
+                let quote = enclave.generate_quote(task_id, 1, &actual_ranking)?;
 
                 let eval = ValidatorEvaluation {
                     validator_address: keypair.account_id(),
-                    ranking: dummy_ranking,
-                    loss_scores: vec![(keypair.account_id(), 0.185)],
-                    accuracy_scores: vec![(keypair.account_id(), 0.96)],
+                    ranking: actual_ranking,
+                    loss_scores,
+                    accuracy_scores,
                     hardware_info: detected_hw,
                     attestation_quote: Some(quote),
                 };

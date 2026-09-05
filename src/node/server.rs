@@ -1,4 +1,4 @@
-use crate::blockchain::state::AppChainState;
+use crate::blockchain::state::{AppChainState, RoundContext};
 use crate::blockchain::types::{AccountId, TaskSpec};
 use crate::crypto::SignedTransaction;
 use crate::storage::disk_ipfs::DiskIpfsStorage;
@@ -151,6 +151,24 @@ async fn get_task_by_id(
             Json(GenericResponse {
                 status: "error",
                 message: format!("Task ID {} not found", id),
+            }),
+        ))
+    }
+}
+
+async fn get_round_context(
+    Path((task_id, round)): Path<(u64, usize)>,
+    State(ctx): State<NodeContext>,
+) -> Result<Json<RoundContext>, (StatusCode, Json<GenericResponse>)> {
+    let chain = ctx.chain.read().unwrap();
+    if let Some(round_ctx) = chain.round_contexts.get(&(task_id, round)) {
+        Ok(Json(round_ctx.clone()))
+    } else {
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(GenericResponse {
+                status: "error",
+                message: format!("Round context for Task #{} Round {} not found", task_id, round),
             }),
         ))
     }
@@ -469,6 +487,7 @@ pub fn create_app(ctx: NodeContext) -> Router {
         .route("/api/v1/status", get(get_status))
         .route("/api/v1/tasks", get(get_tasks))
         .route("/api/v1/tasks/:id", get(get_task_by_id))
+        .route("/api/v1/tasks/:id/rounds/:round", get(get_round_context))
         .route("/api/v1/tx", post(submit_signed_tx))
         .route("/api/v1/p2p/peers", get(get_connected_peers))
         .route("/api/v1/storage/:cid", get(download_storage))

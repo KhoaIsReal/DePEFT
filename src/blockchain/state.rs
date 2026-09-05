@@ -93,10 +93,35 @@ impl AppChainState {
         self.nonces.get(account).copied().unwrap_or(0)
     }
 
-    /// Advance block height by 1.
+    /// Advance block height by 1 and auto-transition round phases based on block progression.
     pub fn advance_block(&mut self) -> u32 {
         self.block_height += 1;
+        self.tick_round_phases();
         self.block_height
+    }
+
+    /// Check and transition round phases according to epoch blocks and submission state.
+    pub fn tick_round_phases(&mut self) {
+        let current_block = self.block_height;
+        for ((task_id, _round_num), ctx) in self.round_contexts.iter_mut() {
+            if let Some(task) = self.tasks.get(task_id) {
+                // Determine phase progression intervals
+                // 1. In CommitPhase: if commits are in and time has passed, or reached midpoint, move to RevealPhase
+                if ctx.phase == RoundPhase::CommitPhase && !ctx.commits.is_empty() {
+                    let oldest_commit_block = ctx.commits.values().map(|c| c.submitted_at_block).min().unwrap_or(current_block);
+                    if current_block >= task.epoch_end_block || current_block >= oldest_commit_block + 2 {
+                        ctx.phase = RoundPhase::RevealPhase;
+                    }
+                }
+                // 2. In RevealPhase: if all committed miners revealed, or time elapsed, move to EvaluationPhase
+                else if ctx.phase == RoundPhase::RevealPhase && !ctx.reveals.is_empty() {
+                    let all_revealed = ctx.commits.keys().all(|m| ctx.reveals.contains_key(m));
+                    if all_revealed || current_block >= task.epoch_end_block + 2 {
+                        ctx.phase = RoundPhase::EvaluationPhase;
+                    }
+                }
+            }
+        }
     }
 
     /// Helper to compute commit hash: SHA256(adapter_hash || salt).

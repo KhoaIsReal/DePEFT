@@ -81,6 +81,17 @@ impl DePeftClient {
         Ok(task)
     }
 
+    /// Query round context (reveals, commits, phase) for a specific task and round.
+    pub async fn get_round_context(&self, task_id: u64, round: usize) -> Result<crate::blockchain::state::RoundContext> {
+        let url = format!("{}/api/v1/tasks/{}/rounds/{}", self.base_url, task_id, round);
+        let resp = self.http.get(&url).send().await?;
+        if !resp.status().is_success() {
+            bail!("Failed to get round context for task #{} round {}: status {}", task_id, round, resp.status());
+        }
+        let ctx = resp.json::<crate::blockchain::state::RoundContext>().await?;
+        Ok(ctx)
+    }
+
     /// Submit a signed transaction.
     pub async fn submit_transaction(&self, signed_tx: &SignedTransaction) -> Result<String> {
         let url = format!("{}/api/v1/tx", self.base_url);
