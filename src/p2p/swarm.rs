@@ -93,6 +93,26 @@ impl P2pSwarm {
         }
     }
 
+    /// Send a direct message to a specific connected peer.
+    pub fn send_to_peer(&self, peer_id: &PeerId, msg: P2pMessage) -> bool {
+        let peers = self.connected_peers.read().unwrap();
+        if let Some(sender) = peers.get(peer_id) {
+            sender.send(msg).is_ok()
+        } else {
+            false
+        }
+    }
+
+    /// Route a message to a NAT/CGNAT trapped peer through a known public relay node.
+    pub fn send_via_relay(&self, relay_peer: &PeerId, target_peer: &PeerId, payload: Vec<u8>) -> bool {
+        let relay_msg = P2pMessage::RelayForward {
+            target_peer: target_peer.clone(),
+            source_peer: self.local_peer_id.clone(),
+            payload,
+        };
+        self.send_to_peer(relay_peer, relay_msg)
+    }
+
     /// Broadcast a signed transaction across the P2P network.
     pub fn broadcast_transaction(&self, signed_tx: SignedTransaction) {
         self.broadcast(P2pMessage::BroadcastTx(signed_tx));
@@ -267,6 +287,28 @@ impl P2pSwarm {
                                     // Re-gossip to other peers (except sender)
                                     swarm_clone.regossip_except(&pid_clone, msg.clone());
                                 }
+                            }
+                            P2pMessage::RelayForward { target_peer, source_peer, payload } => {
+                                // Circuit Relay routing: forward payload to target peer if connected
+                                if target_peer == &swarm_clone.local_peer_id {
+                                    // Target is the local node itself
+                                    let delivered = P2pMessage::RelayPayload {
+                                        source_peer: source_peer.clone(),
+                                        payload: payload.clone(),
+                                    };
+                                    let _ = swarm_clone.incoming_msg_sender.send((source_peer.clone(), delivered));
+                                } else {
+                                    // Relay forwarding: forward to destination peer
+                                    let forwarded = P2pMessage::RelayPayload {
+                                        source_peer: source_peer.clone(),
+                                        payload: payload.clone(),
+                                    };
+                                    let _ = swarm_clone.send_to_peer(target_peer, forwarded);
+                                }
+                            }
+                            P2pMessage::RelayPayload { source_peer, .. } => {
+                                // Delivered through circuit relay
+                                let _ = swarm_clone.incoming_msg_sender.send((source_peer.clone(), msg.clone()));
                             }
                             P2pMessage::Ping(nonce) => {
                                 let pong = P2pMessage::Pong(*nonce);

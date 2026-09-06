@@ -887,7 +887,12 @@ async fn main() -> anyhow::Result<()> {
                 let node_keypair = AccountKeypair::generate();
                 let local_peer_id = DePEFT::p2p::PeerId::from_account(&node_keypair.account_id());
 
-                let p2p_addr: SocketAddr = format!("{}:{}", host, p2p_port).parse()?;
+                // Parse IPv4 or IPv6 (Dual-Stack) socket address
+                let p2p_addr: SocketAddr = if host.contains(':') && !host.starts_with('[') {
+                    format!("[{}]:{}", host, p2p_port).parse()?
+                } else {
+                    format!("{}:{}", host, p2p_port).parse()?
+                };
                 let (swarm_instance, mut tx_rx, mut _msg_rx) = DePEFT::p2p::P2pSwarm::new(local_peer_id.clone(), p2p_addr);
                 let swarm = Arc::new(swarm_instance);
 

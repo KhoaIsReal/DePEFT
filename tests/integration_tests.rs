@@ -1875,3 +1875,59 @@ fn test_dynamic_deflationary_burn_elasticity() {
     assert_eq!(chain.total_burned, 1_050, "Cumulative burned tokens accurately recorded");
 }
 
+#[tokio::test]
+async fn test_p2p_circuit_relay_routing_and_ipv6_loopback() {
+    use DePEFT::p2p::{P2pMessage, P2pSwarm, PeerId};
+    use std::sync::Arc;
+
+    // 1. Verify IPv6 loopback binding [::1]
+    let relay_id = PeerId("relay-node".to_string());
+    let relay_addr: std::net::SocketAddr = "[::1]:19876".parse().unwrap();
+    let (relay_swarm, _tx_rx, _relay_msg_rx) = P2pSwarm::new(relay_id.clone(), relay_addr);
+    let relay = Arc::new(relay_swarm);
+    relay.clone().start_listener().await.unwrap();
+
+    // 2. Client A (simulating CGNAT miner A connecting to public relay)
+    let peer_a_id = PeerId("miner-cgnat-a".to_string());
+    let peer_a_addr: std::net::SocketAddr = "[::1]:19877".parse().unwrap();
+    let (swarm_a, _tx_rx_a, _msg_rx_a) = P2pSwarm::new(peer_a_id.clone(), peer_a_addr);
+    let peer_a = Arc::new(swarm_a);
+    peer_a.clone().start_listener().await.unwrap();
+
+    // 3. Client B (simulating CGNAT miner B connecting to public relay)
+    let peer_b_id = PeerId("miner-cgnat-b".to_string());
+    let peer_b_addr: std::net::SocketAddr = "[::1]:19878".parse().unwrap();
+    let (swarm_b, _tx_rx_b, mut msg_rx_b) = P2pSwarm::new(peer_b_id.clone(), peer_b_addr);
+    let peer_b = Arc::new(swarm_b);
+    peer_b.clone().start_listener().await.unwrap();
+
+    // Both A and B establish outbound connections to the Public Relay Node
+    peer_a.connect_peer("[::1]:19876").await.unwrap();
+    peer_b.connect_peer("[::1]:19876").await.unwrap();
+
+    // Wait briefly for handshake registration on Relay
+    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    assert_eq!(relay.peer_count(), 2, "Relay must have both CGNAT peers connected");
+
+    // 4. Peer A sends a relayed message targeted to Peer B via Relay Node
+    let sample_payload = b"qlora_adapter_weights_cid".to_vec();
+    let routed = peer_a.send_via_relay(&relay_id, &peer_b_id, sample_payload.clone());
+    assert!(routed, "Outbound message to relay must succeed");
+
+    // 5. Verify Peer B receives the relayed payload with correct source attribution
+    let received = tokio::time::timeout(tokio::time::Duration::from_millis(500), msg_rx_b.recv())
+        .await
+        .expect("Peer B must receive relayed message within timeout")
+        .expect("Message stream must remain open");
+
+    assert_eq!(received.0, peer_a_id, "Delivered message source must match sender Peer A");
+    match received.1 {
+        P2pMessage::RelayPayload { source_peer, payload } => {
+            assert_eq!(source_peer, peer_a_id);
+            assert_eq!(payload, sample_payload);
+        }
+        other => panic!("Expected RelayPayload, got {:?}", other),
+    }
+}
+
+

@@ -54,6 +54,17 @@ pub enum P2pMessage {
     },
     /// Peer discovery: Exchange known active peer network addresses.
     PeerExchange(Vec<String>),
+    /// Circuit Relay: Forward a routed message across NAT/CGNAT boundaries to a target peer.
+    RelayForward {
+        target_peer: PeerId,
+        source_peer: PeerId,
+        payload: Vec<u8>,
+    },
+    /// Circuit Relay: Direct payload delivered from a relay intermediary.
+    RelayPayload {
+        source_peer: PeerId,
+        payload: Vec<u8>,
+    },
     /// Keep-alive ping.
     Ping(u64),
     /// Keep-alive pong.
