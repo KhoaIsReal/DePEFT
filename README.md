@@ -10,6 +10,13 @@
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPLv3-blue.svg)](./LICENSE)
 
+> [!WARNING]
+> ### ⚠️ SAFETY WARNING / SCAM ALERT
+> **!!! ĐANG TRONG GIAI ĐOẠN TESTNET, NẾU BẠN THẤY THẰNG NÀO BẢO NÓ LÊN MAINNET RỒI THÌ CÓ THỂ ĐÓ LÀ LỪA ĐẢO !!!**
+> *(CURRENTLY IN TESTNET PHASE. IF ANYONE CLAIMS DEPEFT HAS LAUNCHED ON MAINNET, IT IS A SCAM!)*
+>
+> The **DePEFT project is currently in active Testnet development**. We have **NOT** launched any token or smart contract on Mainnet (Ethereum, Base, Solana, BNB Chain, or any DEX/CEX). Any token claiming to be DePEFT on mainnet is an unauthorized counterfeit scam.
+
 **DePEFT** is an open-source decentralized network that allows anyone to fund, train, and evaluate Large Language Models (LLMs) collectively without trusting a centralized AI cloud provider. 
 
 Instead of full model retraining (which costs millions of dollars), DePEFT uses **Parameter-Efficient Fine-Tuning (PEFT / QLoRA)**: miners only train tiny low-rank adapter matrices ($\Delta W$). Across successive tournament epochs, optimal adapters are verified inside **Hardware TEE Enclaves**, ranked via **Borda Count Consensus**, and permanently merged into the base model weights ($W_{N+1} = W_N + \Delta W^*$).

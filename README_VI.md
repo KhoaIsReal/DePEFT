@@ -10,6 +10,12 @@
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPLv3-blue.svg)](./LICENSE)
 
+> [!WARNING]
+> ### ⚠️ CẢNH BÁO AN TOÀN
+> **!!! ĐANG TRONG GIAI ĐOẠN TESTNET, NẾU BẠN THẤY THẰNG NÀO BẢO NÓ LÊN MAINNET RỒI THÌ CÓ THỂ ĐÓ LÀ LỪA ĐẢO !!!**
+>
+> Dự án **DePEFT hiện tại chỉ đang chạy thử nghiệm (Testnet)** và hoàn toàn **CHƯA phát hành bất kỳ token nào trên Mainnet** (Ethereum, Base, Solana, BNB Chain hay bất kỳ sàn giao dịch DEX/CEX nào). Mọi lời mời mua bán token, airdrop nạp tiền, hoặc hợp đồng tự xưng là DePEFT Mainnet ở thời điểm hiện tại đều là **giả mạo và lừa đảo**.
+
 **DePEFT** là mạng lưới phi tập trung mã nguồn mở cho phép bất kỳ ai cũng có thể tài trợ tiền thưởng, huấn luyện (miner) và đánh giá (validator) các Mô hình Ngôn ngữ Lớn (LLM) mà không cần phụ thuộc vào bất kỳ nhà cung cấp đám mây tập trung nào.
 
 Thay vì huấn luyện lại toàn bộ mô hình (tốn hàng triệu USD), DePEFT áp dụng kỹ thuật **Parameter-Efficient Fine-Tuning (PEFT / QLoRA)**: các thợ đào chỉ huấn luyện các ma trận adapter kích thước nhỏ ($\Delta W$). Qua từng vòng giải đấu (epoch), các adapter tốt nhất sẽ được kiểm định trong **Môi trường An toàn Phần cứng TEE**, xếp hạng bằng **Đồng thuận Thứ hạng Borda Count**, và được gộp vĩnh viễn vào mô hình gốc ($W_{N+1} = W_N + \Delta W^*$).
