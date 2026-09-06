@@ -106,4 +106,4 @@ While DePEFT is extraordinarily efficient for fine-tuning existing foundation mo
 ---
 
 ### Q10: Where should security researchers or users report bugs?
-**A:** All vulnerability disclosures, security inquiries, and bug reports **MUST be sent exclusively via Direct Message (DM) on Discord** to the maintainers / core development team. Please do NOT post public issues on GitHub or send emails. See [`SECURITY.md`](./SECURITY.md) for full disclosure terms.
+**A:** All vulnerability disclosures, security inquiries, and bug reports **MUST be sent exclusively via Direct Message (DM) on Discord** to the maintainers holding the verified `Owner` or `Core Team` role on the [Official DePEFT Discord Server](https://discord.gg/depeft). Please do NOT post public issues on GitHub or send emails. See [`SECURITY.md`](./SECURITY.md) for full disclosure terms.

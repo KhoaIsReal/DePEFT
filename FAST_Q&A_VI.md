@@ -106,4 +106,4 @@ Mặc dù DePEFT cực kỳ tiết kiệm và tối ưu cho việc tinh chỉnh 
 ---
 
 ### Q10: Các chuyên gia bảo mật và người dùng báo cáo lỗi ở đâu?
-**A:** Mọi thông tin về lỗ hổng bảo mật, lỗi khai thác hay bất kỳ vấn đề an toàn nào **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển chính thức. Tuyệt đối KHÔNG đăng công khai lên GitHub Issues hay gửi qua email. Vui lòng xem chi tiết tại [`SECURITY_VI.md`](./SECURITY_VI.md).
+**A:** Mọi thông tin về lỗ hổng bảo mật, lỗi khai thác hay bất kỳ vấn đề an toàn nào **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển giữ role `Owner` hoặc `Core Team` trên [Discord Server Chính Thức](https://discord.gg/depeft). Tuyệt đối KHÔNG đăng công khai lên GitHub Issues hay gửi qua email. Vui lòng xem chi tiết tại [`SECURITY_VI.md`](./SECURITY_VI.md).

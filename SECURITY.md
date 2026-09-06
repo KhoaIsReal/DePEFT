@@ -49,7 +49,9 @@ sequenceDiagram
 
 If you discover a security vulnerability in DePEFT (such as a cryptographic bypass, TEE attestation flaw, consensus safety bug, or potential exploit), please report it responsibly:
 
-- **Mandatory Reporting Channel**: All security vulnerabilities, bug reports, and sensitive disclosures **MUST be sent exclusively via Direct Message (DM) on Discord** to the maintainers/core team. Do NOT open public GitHub issues or send emails.
+- **Mandatory Reporting Channel**: All security vulnerabilities, bug reports, and sensitive disclosures **MUST be sent exclusively via Direct Message (DM) on Discord** to the verified project maintainers.
+  - **Official Discord Server**: [https://discord.gg/depeft](https://discord.gg/depeft)
+  - **Verification Safeguard**: To prevent impersonation scams, **ONLY DM users holding the official `Owner` or `Core Team` role** on the server member list. Core team members will **NEVER** DM you first or ask for private keys/seed phrases.
 - **Report Details**: Please provide a detailed description, reproduction steps, proof-of-concept (PoC) code, and affected module paths via Discord DM.
 - **Response Commitment**: We acknowledge valid reports within 24 hours, coordinate patch verification privately, and publish fixes swiftly.
 

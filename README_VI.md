@@ -9,6 +9,7 @@
 [![TEE](https://img.shields.io/badge/TEE-Intel%20SGX%20%7C%20AMD%20SEV--SNP-informational.svg)]()
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPLv3-blue.svg)](./LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Tham%20Gia%20Cộng%20Đồng-5865F2?logo=discord&logoColor=white)](https://discord.gg/depeft)
 
 > [!WARNING]
 > ### ⚠️ CẢNH BÁO AN TOÀN
