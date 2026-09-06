@@ -49,7 +49,7 @@ sequenceDiagram
 Nếu bạn tìm thấy bất kỳ lỗ hổng bảo mật nào trong hệ thống DePEFT, xin vui lòng tuân thủ quy trình bảo mật:
 
 - **Kênh báo cáo bắt buộc**: Toàn bộ thông tin về lỗ hổng bảo mật, lỗi khai thác hay bất kỳ vấn đề an toàn nào **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển/core team chính thức.
-  - **Discord Server Chính Thức**: [https://discord.gg/depeft](https://discord.gg/depeft)
+  - **Discord Server Chính Thức**: [https://discord.gg/23FNT8MP7R](https://discord.gg/23FNT8MP7R)
   - **Biện pháp chống mạo danh**: Để tránh bị kẻ xấu lừa đảo, **CHỈ NHẮN TIN CHO NGƯỜI CÓ ROLE `Owner` HOẶC `Core Team`** trên danh sách thành viên của server. Đội ngũ phát triển sẽ **KHÔNG BAO GIỜ** chủ động nhắn tin trước cho bạn yêu cầu private key hay thông tin nhạy cảm.
 - **Bắt buộc mã hóa tin nhắn bằng PGP / GPG**:
   - Để ngăn chặn các bot tự động trên Discord quét nội dung và nghe lén tin nhắn, **mọi báo cáo bảo mật bắt buộc phải được mã hóa bằng Public Key chính thức của chúng tôi trước khi gửi**.
