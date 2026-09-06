@@ -39,7 +39,8 @@ Thay vì huấn luyện lại toàn bộ mô hình (tốn hàng triệu USD), De
 6. [Các Lệnh Chạy Mô Phỏng Trực Quan](#-các-lệnh-chạy-mô-phỏng-trực-quan)
 7. [Kiến Trúc 4 Tầng Cốt Lõi](#-kiến-trúc-4-tầng-cốt-lõi)
 8. [Kiểm Thử & Đảm Bảo Chất Lượng](#-kiểm-thử--đảm-bảo-chất-lượng)
-9. [Bản Quyền Mã Nguồn](#-bản-quyền-mã-nguồn)
+9. [⚡ Câu Hỏi Nhanh Dành Cho Nhà Đầu Tư & Thợ Đào (FAST Q&A)](./FAST_Q&A.md)
+10. [Bản Quyền Mã Nguồn](#-bản-quyền-mã-nguồn)
 
 ---
 

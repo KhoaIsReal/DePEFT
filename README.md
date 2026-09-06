@@ -39,7 +39,8 @@ Instead of full model retraining (which costs millions of dollars), DePEFT uses 
 6. [Interactive Demos & Simulations](#-interactive-demos--simulations)
 7. [Architecture & 4 Core Layers](#-architecture--4-core-layers)
 8. [Testing & Quality Verification](#-testing--quality-verification)
-9. [License](#-license)
+9. [⚡ Fast Q&A for Crypto Traders & Node Operators (FAQ)](./FAST_Q&A.md)
+10. [License](#-license)
 
 ---
 
