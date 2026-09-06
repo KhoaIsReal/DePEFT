@@ -52,6 +52,19 @@ If you discover a security vulnerability in DePEFT (such as a cryptographic bypa
 - **Mandatory Reporting Channel**: All security vulnerabilities, bug reports, and sensitive disclosures **MUST be sent exclusively via Direct Message (DM) on Discord** to the verified project maintainers.
   - **Official Discord Server**: [https://discord.gg/depeft](https://discord.gg/depeft)
   - **Verification Safeguard**: To prevent impersonation scams, **ONLY DM users holding the official `Owner` or `Core Team` role** on the server member list. Core team members will **NEVER** DM you first or ask for private keys/seed phrases.
-- **Report Details**: Please provide a detailed description, reproduction steps, proof-of-concept (PoC) code, and affected module paths via Discord DM.
+- **Mandatory PGP / GPG Message Encryption**:
+  - To prevent automated Discord bot log scrapers and MITM inspection from intercepting vulnerability reports, **all reports must be encrypted with our official PGP Public Key before sending**.
+  - **Official Public Key File**: [`depeft_security_pubkey.asc`](./depeft_security_pubkey.asc) (Fingerprint: `7EB0 6C51 4FDF A105 9613  7AF9 73D0 85A0 707B EEAD`).
+  - **How to Encrypt Your Report**:
+    ```bash
+    # 1. Import our official public key
+    gpg --import depeft_security_pubkey.asc
+
+    # 2. Encrypt your report (produces armored ciphertext report.txt.asc)
+    gpg --armor --encrypt --recipient "security@depeft.network" report.txt
+    ```
+  - **Discord Submission**: Paste the resulting `-----BEGIN PGP MESSAGE----- ... -----END PGP MESSAGE-----` block directly into the Discord DM. Only our core team's offline private key can decrypt the message.
+- **Report Details**: Please provide a detailed description, reproduction steps, proof-of-concept (PoC) code, and affected module paths in your encrypted submission.
 - **Response Commitment**: We acknowledge valid reports within 24 hours, coordinate patch verification privately, and publish fixes swiftly.
+
 

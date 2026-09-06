@@ -41,4 +41,5 @@
 
 ## 📌 Security Disclosure Policy
 
-All security vulnerabilities, potential exploits, and bug disclosures **MUST be submitted exclusively via Direct Message (DM) on Discord** to the maintainers / core development team. For details on responsible disclosure, please refer to [`SECURITY.md`](./SECURITY.md). Do NOT open public issues or send emails.
+All security vulnerabilities, potential exploits, and bug disclosures **MUST be submitted exclusively via Direct Message (DM) on Discord** to the maintainers / core development team and **must be encrypted with our official PGP Public Key** ([`depeft_security_pubkey.asc`](./depeft_security_pubkey.asc)). For full instructions on responsible disclosure and key import, please refer to [`SECURITY.md`](./SECURITY.md). Do NOT open public issues or send emails.
+

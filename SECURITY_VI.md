@@ -51,5 +51,18 @@ Nếu bạn tìm thấy bất kỳ lỗ hổng bảo mật nào trong hệ thố
 - **Kênh báo cáo bắt buộc**: Toàn bộ thông tin về lỗ hổng bảo mật, lỗi khai thác hay bất kỳ vấn đề an toàn nào **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển/core team chính thức.
   - **Discord Server Chính Thức**: [https://discord.gg/depeft](https://discord.gg/depeft)
   - **Biện pháp chống mạo danh**: Để tránh bị kẻ xấu lừa đảo, **CHỈ NHẮN TIN CHO NGƯỜI CÓ ROLE `Owner` HOẶC `Core Team`** trên danh sách thành viên của server. Đội ngũ phát triển sẽ **KHÔNG BAO GIỜ** chủ động nhắn tin trước cho bạn yêu cầu private key hay thông tin nhạy cảm.
-- **Nội dung báo cáo**: Vui lòng mô tả chi tiết lỗi, các bước để tái hiện lỗi và đoạn mã khai thác mẫu (PoC) gửi trực tiếp qua Discord DM.
+- **Bắt buộc mã hóa tin nhắn bằng PGP / GPG**:
+  - Để ngăn chặn các bot tự động trên Discord quét nội dung và nghe lén tin nhắn, **mọi báo cáo bảo mật bắt buộc phải được mã hóa bằng Public Key chính thức của chúng tôi trước khi gửi**.
+  - **Tệp Khóa Công Khai (Public Key)**: [`depeft_security_pubkey.asc`](./depeft_security_pubkey.asc) (Fingerprint: `7EB0 6C51 4FDF A105 9613  7AF9 73D0 85A0 707B EEAD`).
+  - **Cách mã hóa báo cáo**:
+    ```bash
+    # 1. Nạp khóa công khai vào máy của bạn
+    gpg --import depeft_security_pubkey.asc
+
+    # 2. Mã hóa nội dung báo cáo (tạo ra tệp report.txt.asc)
+    gpg --armor --encrypt --recipient "security@depeft.network" report.txt
+    ```
+  - **Gửi qua Discord DM**: Sao chép toàn bộ khối ký tự mã hóa `-----BEGIN PGP MESSAGE----- ... -----END PGP MESSAGE-----` và gửi qua Discord DM cho Owner/Core Team. Chỉ có Private Key lưu ngoại tuyến của Core Team mới giải mã và đọc được nội dung.
+- **Nội dung báo cáo**: Vui lòng mô tả chi tiết lỗi, các bước để tái hiện lỗi và đoạn mã khai thác mẫu (PoC) trong văn bản mã hóa.
 - **Cam kết xử lý**: Chúng tôi sẽ phản hồi trong vòng 24 giờ, tiến hành vá lỗi kín và công bố bản sửa lỗi sớm nhất có thể.
+

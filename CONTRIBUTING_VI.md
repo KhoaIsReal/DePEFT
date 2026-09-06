@@ -94,4 +94,5 @@ cargo test test_candle_llm_transformer_relora_tournament -- --nocapture
 
 ## 🔒 Báo cáo Lỗi Bảo mật
 
-Nếu bạn phát hiện lỗi liên quan đến bảo mật (như lỗi mã hóa, lỗ hổng TEE hoặc lỗi đồng thuận), tuyệt đối KHÔNG đăng công khai lên mục GitHub Issues hay gửi email. Toàn bộ thông tin **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển/core team. Vui lòng tham khảo tài liệu [SECURITY_VI.md](file:///home/khoa/DePEFT/SECURITY_VI.md) để biết thêm chi tiết.
+Nếu bạn phát hiện lỗi liên quan đến bảo mật (như lỗi mã hóa, lỗ hổng TEE hoặc lỗi đồng thuận), tuyệt đối KHÔNG đăng công khai lên mục GitHub Issues hay gửi email. Toàn bộ thông tin **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển/core team và **phải được mã hóa bằng PGP Public Key chính thức** ([`depeft_security_pubkey.asc`](./depeft_security_pubkey.asc)). Vui lòng tham khảo tài liệu [SECURITY_VI.md](file:///home/khoa/DePEFT/DePEFT/SECURITY_VI.md) để biết thêm chi tiết.
+
