@@ -1734,5 +1734,144 @@ fn test_top_k_bounty_distribution_and_ensemble_merge() {
     assert!(bal_val > 0, "Validator reward must be non-zero under dynamic supply-demand split");
     assert!(bal_node > 0, "Storage node reward must be non-zero under elastic infrastructure split");
     assert!(!summary.node_rewards.is_empty(), "Round summary must include node rewards");
-    assert_eq!(bal1 + bal2 + bal3 + bal_val + bal_node, 10_000, "Total distributed bounty (miners + validator + node) must equal 10,000");
+    assert!(summary.burned_bounty > 0, "Dynamic burn must be non-zero");
+    assert_eq!(chain.total_burned, summary.burned_bounty, "Chain total_burned must match round burned_bounty");
+    assert_eq!(
+        bal1 + bal2 + bal3 + bal_val + bal_node + summary.burned_bounty,
+        10_000,
+        "Total round bounty conservation: miners + validator + node + burned must equal 10,000"
+    );
 }
+
+#[test]
+fn test_dynamic_deflationary_burn_elasticity() {
+    use DePEFT::blockchain::RoundPhase;
+    // Verify that when client activity is scarce (1 task), burn is near 0.5% (0.005),
+    // and as tasks scale up (e.g. 7+ tasks), burn scales up towards max 10% (0.10).
+    let mut chain = AppChainState::new();
+    chain.tee_verifier.enforce_attestation = false;
+    let client = AccountId::new("client-ai");
+    chain.mint(client.clone(), 100_000);
+
+    // Scenario 1: Only 1 task registered (Client scarce)
+    chain.apply_transaction(
+        Transaction::CreateTask {
+            client: client.clone(),
+            nonce: chain.nonce_of(&client),
+            base_model_id: b"m1".to_vec(),
+            base_model_hash: [0; 32],
+            dataset_cid: b"c1".to_vec(),
+            peft_method: PeftType::QLoRA_NF4,
+            max_rank: 8,
+            target_modules: vec![b"q_proj".to_vec()],
+            bounty_pool: 10_000,
+            epoch_blocks: 50,
+            reward_distribution: Default::default(),
+            merge_strategy: Default::default(),
+        },
+        &client,
+    ).unwrap();
+
+    let miner = AccountId::new("miner-1");
+    let val = AccountId::new("validator-1");
+    chain.start_round(1, 1, "w0".to_string()).unwrap();
+
+    let salt = vec![1, 2, 3];
+    let hash = [0x42; 32];
+    let commit = AppChainState::compute_commit_hash(&hash, &salt);
+    chain.apply_transaction(
+        Transaction::CommitAdapter { task_id: 1, round: 1, miner: miner.clone(), nonce: chain.nonce_of(&miner), commit_hash: commit },
+        &miner,
+    ).unwrap();
+
+    chain.set_round_phase(1, 1, RoundPhase::RevealPhase).unwrap();
+    chain.apply_transaction(
+        Transaction::RevealAdapter { task_id: 1, round: 1, miner: miner.clone(), nonce: chain.nonce_of(&miner), adapter_cid: "cid1".to_string(), salt, adapter_hash: hash },
+        &miner,
+    ).unwrap();
+
+    chain.set_round_phase(1, 1, RoundPhase::EvaluationPhase).unwrap();
+    chain.apply_transaction(
+        Transaction::SubmitEvaluation {
+            task_id: 1,
+            round: 1,
+            nonce: chain.nonce_of(&val),
+            evaluation: ValidatorEvaluation {
+                validator_address: val.clone(),
+                ranking: vec![miner.clone()],
+                loss_scores: vec![(miner.clone(), 0.1)],
+                accuracy_scores: vec![(miner.clone(), 0.9)],
+                hardware_info: "Test HW".to_string(),
+                attestation_quote: None,
+            },
+        },
+        &val,
+    ).unwrap();
+
+    chain.set_round_phase(1, 1, RoundPhase::MergePhase).unwrap();
+    let summary1 = chain.finalize_round(1, 1, "evolved1".to_string(), 1.0, 0.5, 10_000).unwrap();
+
+    // With 1 task, burn_pct = 0.005 (0.5%), so burn on 10,000 is 50 tokens
+    assert_eq!(summary1.burned_bounty, 50, "Scarce client environment burns minimal ~0.5%");
+
+    // Scenario 2: Register 7 more tasks so total tasks = 8 (High client demand)
+    for i in 2..=8 {
+        chain.apply_transaction(
+            Transaction::CreateTask {
+                client: client.clone(),
+                nonce: chain.nonce_of(&client),
+                base_model_id: format!("m{}", i).into_bytes(),
+                base_model_hash: [0; 32],
+                dataset_cid: format!("c{}", i).into_bytes(),
+                peft_method: PeftType::QLoRA_NF4,
+                max_rank: 8,
+                target_modules: vec![b"q_proj".to_vec()],
+                bounty_pool: 10_000,
+                epoch_blocks: 50,
+                reward_distribution: Default::default(),
+                merge_strategy: Default::default(),
+            },
+            &client,
+        ).unwrap();
+    }
+
+    chain.start_round(2, 1, "w0".to_string()).unwrap();
+    let commit2 = AppChainState::compute_commit_hash(&hash, &[4, 5]);
+    chain.apply_transaction(
+        Transaction::CommitAdapter { task_id: 2, round: 1, miner: miner.clone(), nonce: chain.nonce_of(&miner), commit_hash: commit2 },
+        &miner,
+    ).unwrap();
+
+    chain.set_round_phase(2, 1, RoundPhase::RevealPhase).unwrap();
+    chain.apply_transaction(
+        Transaction::RevealAdapter { task_id: 2, round: 1, miner: miner.clone(), nonce: chain.nonce_of(&miner), adapter_cid: "cid2".to_string(), salt: vec![4, 5], adapter_hash: hash },
+        &miner,
+    ).unwrap();
+
+    chain.set_round_phase(2, 1, RoundPhase::EvaluationPhase).unwrap();
+    chain.apply_transaction(
+        Transaction::SubmitEvaluation {
+            task_id: 2,
+            round: 1,
+            nonce: chain.nonce_of(&val),
+            evaluation: ValidatorEvaluation {
+                validator_address: val.clone(),
+                ranking: vec![miner.clone()],
+                loss_scores: vec![(miner.clone(), 0.1)],
+                accuracy_scores: vec![(miner.clone(), 0.9)],
+                hardware_info: "Test HW".to_string(),
+                attestation_quote: None,
+            },
+        },
+        &val,
+    ).unwrap();
+
+    chain.set_round_phase(2, 1, RoundPhase::MergePhase).unwrap();
+    let summary2 = chain.finalize_round(2, 1, "evolved2".to_string(), 1.0, 0.5, 10_000).unwrap();
+
+    // With 8 tasks: 0.005 + 7 * 0.015 = 0.005 + 0.105 = 0.11 -> clamped to max 0.10 (10%)
+    // 10% of 10,000 = 1,000 tokens burned
+    assert_eq!(summary2.burned_bounty, 1_000, "High client activity caps out at max 10% burn");
+    assert_eq!(chain.total_burned, 1_050, "Cumulative burned tokens accurately recorded");
+}
+

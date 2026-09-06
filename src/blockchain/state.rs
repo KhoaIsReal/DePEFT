@@ -49,6 +49,8 @@ pub struct AppChainState {
     pub tasks: HashMap<u64, TaskSpec>,
     pub round_contexts: HashMap<(u64, usize), RoundContext>,
     pub round_history: Vec<RoundSummary>,
+    #[serde(default)]
+    pub total_burned: u128,
     #[serde(skip)]
     pub tee_verifier: OnChainTeeVerifier,
 }
@@ -74,6 +76,7 @@ impl AppChainState {
             tasks: HashMap::new(),
             round_contexts: HashMap::new(),
             round_history: Vec::new(),
+            total_burned: 0,
             tee_verifier: OnChainTeeVerifier::default(),
         }
     }
@@ -508,6 +511,7 @@ impl AppChainState {
         let mut reward_distributions: Vec<(AccountId, u128)> = Vec::new();
         let mut validator_rewards: Vec<(AccountId, u128)> = Vec::new();
         let mut node_rewards: Vec<(AccountId, u128)> = Vec::new();
+        let mut burned_bounty: u128 = 0;
         let total_available_bounty = if let Some(escrow) = self.escrows.get_mut(&task_id) {
             let amount = if round_bounty > 0 {
                 round_bounty.min(*escrow)
@@ -521,6 +525,18 @@ impl AppChainState {
         };
 
         if total_available_bounty > 0 {
+            // Dynamic Deflationary Burn Mechanism:
+            // Maximum 10% burn rate when client activity is abundant.
+            // When client activity is scarce (e.g. only 1 active task/client on the network),
+            // the burn rate drops down toward 1% or ~0% (0.005) to incentivize miners and validators.
+            // Formula: burn_pct = clamp(0.005 + 0.015 * (num_tasks - 1), 0.005, 0.10)
+            let active_tasks_count = self.tasks.len();
+            let burn_pct = (0.005 + (active_tasks_count.saturating_sub(1) as f64) * 0.015).clamp(0.005, 0.10);
+            burned_bounty = ((total_available_bounty as f64) * burn_pct).round() as u128;
+            self.total_burned += burned_bounty;
+
+            let distributable_bounty = total_available_bounty.saturating_sub(burned_bounty);
+
             // Three-Tier Dynamic Supply-Demand Elasticity Model:
             // 1. Tier 1 - Network & Storage Infrastructure Nodes (IPFS relay & consensus maintenance)
             //    Scales with network storage throughput / load (revealed candidate models to pin & gossip)
@@ -537,19 +553,19 @@ impl AppChainState {
             // Tier 1: Storage/Relay Node Elasticity:
             // Base 5%, scales +1% per revealed model adapter being stored/relayed on IPFS, capped at 15%.
             let node_share_pct = (0.05 + (revealed_miners.len().saturating_sub(1) as f64) * 0.01).clamp(0.05, 0.15);
-            let node_pool = ((total_available_bounty as f64) * node_share_pct).round() as u128;
+            let node_pool = ((distributable_bounty as f64) * node_share_pct).round() as u128;
 
             // Tier 2: TEE Validator Elasticity:
             // Base 15%, scales +5% per unit of miner-to-validator imbalance, capped at 45%.
             let validator_share_pct = (0.15 + (supply_ratio - 1.0) * 0.05).clamp(0.15, 0.45);
             let val_pool = if !eval_list.is_empty() {
-                ((total_available_bounty as f64) * validator_share_pct).round() as u128
+                ((distributable_bounty as f64) * validator_share_pct).round() as u128
             } else {
                 0
             };
 
             // Tier 3: Miner Pool receives remaining bounty
-            let miner_pool = total_available_bounty
+            let miner_pool = distributable_bounty
                 .saturating_sub(node_pool)
                 .saturating_sub(val_pool);
 
@@ -662,6 +678,7 @@ impl AppChainState {
             reward_distributions,
             validator_rewards,
             node_rewards,
+            burned_bounty,
         };
 
         const MAX_ROUND_HISTORY: usize = 1000;

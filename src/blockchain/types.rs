@@ -191,4 +191,6 @@ pub struct RoundSummary {
     pub validator_rewards: Vec<(AccountId, u128)>,
     #[serde(default)]
     pub node_rewards: Vec<(AccountId, u128)>,
+    #[serde(default)]
+    pub burned_bounty: u128,
 }

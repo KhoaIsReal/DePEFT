@@ -549,6 +549,9 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
                 borda_str.push_str(&format!("   {} -> {} tokens\n", n, rew));
             }
         }
+        if summary.burned_bounty > 0 {
+            borda_str.push_str(&format!("Deflationary Burn: {} tokens destroyed 🔥\n", summary.burned_bounty));
+        }
         borda_str.push_str(&format!("\nReLoRA Weight Merge: W_{} = W_{} + ΔW_{}\nEvolved Model CID: {}", r, r - 1, r, summary.evolved_model_cid));
 
         table.add_row(vec![
@@ -615,6 +618,7 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
     println!("    ├─ Final W_{} Loss: {:.6} (Accuracy: {:.2}%)", rounds, final_loss.to_string().bright_green().bold(), (final_acc * 100.0).to_string().bright_green().bold());
     println!("    ├─ Total Loss Reduction: {:.6} ({:.2}% relative reduction)", total_loss_reduction.to_string().bright_green().bold(), (total_loss_reduction / initial_loss * 100.0).to_string().bright_green().bold());
     println!("    ├─ IPFS Pinned Artifacts: {} objects", engine.ipfs.count().to_string().bright_yellow());
+    println!("    ├─ Total Burned Tokens: {} $DEPEFT 🔥", engine.chain.total_burned.to_string().bright_red().bold());
     println!("    ├─ Total Time: {:.2?}", elapsed);
     println!("    └─ Winner Miner Balances: {:?}", engine.chain.balances);
 
