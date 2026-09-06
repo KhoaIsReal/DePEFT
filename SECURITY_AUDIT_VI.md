@@ -41,4 +41,4 @@
 
 ## 📌 Chính Sách Báo Cáo Lỗ Hổng Bảo Mật
 
-Nếu bạn phát hiện lỗ hổng bảo mật, vui lòng tham khảo [`SECURITY_VI.md`](./SECURITY_VI.md) và gửi thông tin chi tiết được mã hóa đến: `security@depeft.network`.
+Toàn bộ thông tin về lỗ hổng bảo mật, lỗi khai thác hay bất kỳ vấn đề an toàn nào **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển/core team. Vui lòng tham khảo chi tiết tại [`SECURITY_VI.md`](./SECURITY_VI.md). Tuyệt đối KHÔNG tạo GitHub Issue công khai hay gửi email.

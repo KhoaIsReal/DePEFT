@@ -44,10 +44,10 @@ sequenceDiagram
 
 ---
 
-## 📢 Hướng dẫn Báo cáo Lỗi Bảo mật
+## 📢 Hướng dẫn Báo cáo Lỗ hổng Bảo mật
 
-Nếu bạn tìm thấy bất kỳ lỗ hổng bảo mật nào trong hệ thống DePEFT, xin vui lòng báo cáo theo quy trình an toàn:
+Nếu bạn tìm thấy bất kỳ lỗ hổng bảo mật nào trong hệ thống DePEFT, xin vui lòng tuân thủ quy trình bảo mật:
 
-- **Kênh liên hệ**: Nhắn tin trực tiếp cho đội ngũ phát triển qua **Discord**.
-- **Nội dung báo cáo**: Vui lòng mô tả chi tiết lỗi, các bước để tái hiện lỗi và đoạn code minh họa (nếu có).
+- **Kênh báo cáo bắt buộc**: Toàn bộ thông tin về lỗ hổng bảo mật, lỗi khai thác hay bất kỳ vấn đề an toàn nào **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển/core team. Tuyệt đối KHÔNG tạo GitHub Issue công khai hay gửi email.
+- **Nội dung báo cáo**: Vui lòng mô tả chi tiết lỗi, các bước để tái hiện lỗi và đoạn mã khai thác mẫu (PoC) gửi trực tiếp qua Discord DM.
 - **Cam kết xử lý**: Chúng tôi sẽ phản hồi trong vòng 24 giờ, tiến hành vá lỗi kín và công bố bản sửa lỗi sớm nhất có thể.

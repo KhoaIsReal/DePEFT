@@ -28,7 +28,7 @@ Khi viết mã nguồn đóng góp, bạn cần tuân thủ các nguyên tắc s
 
 ### Tải mã nguồn và Biên dịch
 ```bash
-git clone https://github.com/khoadepeft/DePEFT.git
+git clone https://github.com/KhoaIsReal/DePEFT.git
 cd DePEFT
 
 # Biên dịch toàn bộ dự án
@@ -94,4 +94,4 @@ cargo test test_candle_llm_transformer_relora_tournament -- --nocapture
 
 ## 🔒 Báo cáo Lỗi Bảo mật
 
-Nếu bạn phát hiện lỗi liên quan đến bảo mật (như lỗi mã hóa, lỗ hổng TEE hoặc lỗi đồng thuận), vui lòng không đăng công khai lên mục Issues. Hãy xem tài liệu [SECURITY_VI.md](file:///home/khoa/DePEFT/SECURITY_VI.md) và liên hệ riêng với nhóm phát triển.
+Nếu bạn phát hiện lỗi liên quan đến bảo mật (như lỗi mã hóa, lỗ hổng TEE hoặc lỗi đồng thuận), tuyệt đối KHÔNG đăng công khai lên mục GitHub Issues hay gửi email. Toàn bộ thông tin **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển/core team. Vui lòng tham khảo tài liệu [SECURITY_VI.md](file:///home/khoa/DePEFT/SECURITY_VI.md) để biết thêm chi tiết.

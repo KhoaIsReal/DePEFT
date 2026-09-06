@@ -28,7 +28,7 @@ When contributing code, you must strictly uphold the following core architectura
 
 ### Clone & Build
 ```bash
-git clone https://github.com/khoadepeft/DePEFT.git
+git clone https://github.com/KhoaIsReal/DePEFT.git
 cd DePEFT
 
 # Build all modules and binaries
@@ -103,4 +103,4 @@ cargo test test_candle_llm_transformer_relora_tournament -- --nocapture
 
 ## 🔒 Reporting Security Vulnerabilities
 
-Please do not disclose security vulnerabilities publicly on GitHub issues. If you discover a security issue relating to cryptographic signing, TEE remote attestation, or BFT consensus safety, please review [SECURITY.md](file:///home/khoa/DePEFT/SECURITY.md) and report it to the core security maintainers.
+Please do NOT disclose security vulnerabilities publicly on GitHub issues or send emails. If you discover a security issue relating to cryptographic signing, TEE remote attestation, or BFT consensus safety, all information **MUST be sent exclusively via Direct Message (DM) on Discord** to the maintainers / core development team. For full details, please review [SECURITY.md](file:///home/khoa/DePEFT/DePEFT/SECURITY.md).

@@ -41,4 +41,4 @@
 
 ## 📌 Security Disclosure Policy
 
-To report a vulnerability, please consult [`SECURITY.md`](./SECURITY.md) and send encrypted details to `security@depeft.network`.
+All security vulnerabilities, potential exploits, and bug disclosures **MUST be submitted exclusively via Direct Message (DM) on Discord** to the maintainers / core development team. For details on responsible disclosure, please refer to [`SECURITY.md`](./SECURITY.md). Do NOT open public issues or send emails.
