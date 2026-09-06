@@ -80,9 +80,21 @@ Furthermore, **validators must stake collateral** to participate, locking substa
 
 ---
 
+### Q8: Can DePEFT train a completely un-pretrained model from scratch, or only fine-tune?
+**A:** **Yes, DePEFT can pre-train models from scratch!**
+While DePEFT is extraordinarily efficient for fine-tuning existing foundation models (e.g. LLaMA-3, Qwen-2.5, Mistral), its underlying mathematical engine is **ReLoRA (Low-Rank Updates for High-Rank Pre-Training)**:
+1. **How Pre-Training from Scratch Works via ReLoRA:**
+   - The initial base weights $W_0$ can be randomly initialized tensors (e.g. Gaussian distribution).
+   - In each tournament epoch, miners train low-rank parameter-efficient adapters $\Delta W = \frac{\alpha}{r} (B \cdot A)$.
+   - At the end of each round, the winning adapter is permanently fused into the base weights: $W_{k+1} = W_k + \Delta W^*$.
+   - The adapter matrices are reset, optimizer states (learning rate warm-up / cosine decay) reset, and training continues.
+2. **Key Advantage:** By chaining successive low-rank updates across hundreds of tournament rounds, the network achieves **full-rank pre-training convergence** while requiring **a fraction of the VRAM** compared to traditional full-parameter pre-training. This allows a decentralized swarm of consumer GPUs to build custom foundation models from scratch.
+
+---
+
 ## 🚀 4. Roadmap, Trading & Exchange Listings
 
-### Q8: When Mainnet? How can I trade or provide liquidity?
+### Q9: When Mainnet? How can I trade or provide liquidity?
 **A:** 
 1. **Current Phase:** Active Testnet with public node daemon, faucet, CLI, and real QLoRA training runs.
 2. **Mainnet Launch Protocol:**
@@ -93,5 +105,5 @@ Furthermore, **validators must stake collateral** to participate, locking substa
 
 ---
 
-### Q9: Where should security researchers or users report bugs?
+### Q10: Where should security researchers or users report bugs?
 **A:** All vulnerability disclosures, security inquiries, and bug reports **MUST be sent exclusively via Direct Message (DM) on Discord** to the maintainers / core development team. Please do NOT post public issues on GitHub or send emails. See [`SECURITY.md`](./SECURITY.md) for full disclosure terms.

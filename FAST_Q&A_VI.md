@@ -80,9 +80,21 @@ Ngoài ra, **các Validator bắt buộc phải stake (khóa) token** làm tài 
 
 ---
 
+### Q8: DePEFT có thể huấn luyện một mô hình hoàn toàn mới từ đầu (Pre-Training from Scratch) được không, hay chỉ Fine-Tune?
+**A:** **Hoàn toàn được! DePEFT có khả năng huấn luyện mô hình từ đầu!**
+Mặc dù DePEFT cực kỳ tiết kiệm và tối ưu cho việc tinh chỉnh (fine-tune) các mô hình nền tảng có sẵn (như LLaMA-3, Qwen-2.5, Mistral), nhưng nền tảng toán học cốt lõi của hệ thống là **ReLoRA (Kỹ thuật Cập nhật Tham số Ma trận Hạng thấp để Huấn luyện Mô hình Hạng cao)**:
+1. **Cơ chế Huấn luyện từ đầu qua ReLoRA:**
+   - Trọng số ban đầu $W_0$ có thể là các tensor được khởi tạo ngẫu nhiên hoàn toàn (theo phân phối chuẩn Gaussian).
+   - Qua từng vòng giải đấu (tournament epoch), các thợ đào chỉ huấn luyện các adapter ma trận thu nhỏ $\Delta W = \frac{\alpha}{r} (B \cdot A)$.
+   - Cuối mỗi vòng, adapter thắng cuộc được gộp vĩnh viễn vào trọng số gốc: $W_{k+1} = W_k + \Delta W^*$.
+   - Hai ma trận adapter được tạo mới ($A, B$), hệ thống reset trạng thái bộ tối ưu hóa (learning rate warm-up / cosine decay) và tiếp tục vòng tiếp theo.
+2. **Ưu thế vượt trội:** Bằng cách xâu chuỗi hàng trăm vòng cập nhật rank thấp liên tục, mạng lưới đạt được **độ hội tụ tương đương với việc huấn luyện toàn phần (Full-Rank Pre-Training)** nhưng **chỉ tiêu tốn một phần nhỏ dung lượng VRAM**. Điều này cho phép cộng đồng thợ đào với các GPU dân dụng bình thường (như RTX 3090, 4090) có thể hợp lực huấn luyện nên một mô hình Foundation Model độc quyền từ con số 0.
+
+---
+
 ## 🚀 4. Lộ Trình, Giao Dịch & Niêm Yết Sàn
 
-### Q8: Khi nào lên Mainnet? Giao dịch và cung cấp thanh khoản ở đâu?
+### Q9: Khi nào lên Mainnet? Giao dịch và cung cấp thanh khoản ở đâu?
 **A:** 
 1. **Giai đoạn Hiện tại:** Chạy Testnet công khai với đầy đủ node daemon, vòi faucet, giao diện Web Dashboard và quy trình huấn luyện QLoRA thực tế.
 2. **Lộ trình Khởi chạy Mainnet:**
@@ -93,5 +105,5 @@ Ngoài ra, **các Validator bắt buộc phải stake (khóa) token** làm tài 
 
 ---
 
-### Q9: Các chuyên gia bảo mật và người dùng báo cáo lỗi ở đâu?
+### Q10: Các chuyên gia bảo mật và người dùng báo cáo lỗi ở đâu?
 **A:** Mọi thông tin về lỗ hổng bảo mật, lỗi khai thác hay bất kỳ vấn đề an toàn nào **BẮT BUỘC phải gửi độc quyền qua Tin nhắn Trực tiếp (DM) trên Discord** cho đội ngũ phát triển chính thức. Tuyệt đối KHÔNG đăng công khai lên GitHub Issues hay gửi qua email. Vui lòng xem chi tiết tại [`SECURITY_VI.md`](./SECURITY_VI.md).
