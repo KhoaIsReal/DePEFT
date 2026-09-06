@@ -378,7 +378,7 @@ cargo run -- benchmark
 DePEFT is built with production rigor. Run the full test suite and strict lint checks:
 
 ```bash
-# Run all 44 unit and integration tests
+# Run all 45 unit and integration tests
 cargo test
 
 # Ensure 0 warnings with strict clippy

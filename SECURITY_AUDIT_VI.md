@@ -18,6 +18,8 @@ Mục chỉ được gạch khi source và regression test chứng minh được
 - ~~CID traversal cơ bản~~
 - ~~Vector DB NaN/sai dimension~~
 - ~~Quantization block size bằng zero~~
+- ~~Định tuyến P2P Circuit Relay và kết nối Dual-Stack IPv6 xuyên CGNAT~~
+- ~~Bảo toàn toán học phân bổ bounty 3 tầng và cơ chế đốt token giảm phát động~~
 
 ## Cần vá / chưa chứng minh triệt để
 

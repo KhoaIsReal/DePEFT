@@ -147,3 +147,26 @@ message_id = SHA256(serialized_message)
 ```
 
 Nếu gặp tin nhắn đã nhận rồi thì hệ thống sẽ bỏ qua ngay, giúp tiết kiệm đường truyền mạng.
+
+### Hỗ trợ Mạng Kép IPv4/IPv6 & Tuyến P2P Circuit Relay
+Nhằm giải quyết triệt để vấn đề thợ đào tại nhà bị kẹt sau CGNAT (không có IP tĩnh, không mở được cổng router):
+1. **Kết nối Dual-Stack IPv6:** Node tự động lắng nghe trên socket `[::]` để chấp nhận cả kết nối IPv6 Public trực tiếp và IPv4.
+2. **Tuyến P2P Circuit Relay (`RelayForward` / `RelayPayload`):** Khi thợ đào bị kẹt sau CGNAT đối xứng, hai máy chủ động kết nối ra ngoài tới một Node Relay công khai (VPS). Node Relay sẽ chuyển tiếp dữ liệu an toàn mà không yêu cầu mở cổng router.
+
+---
+
+## 💰 5. Mô hình Kinh tế 3 Tầng & Cơ chế Đốt Token Giảm phát Động
+
+### 5.1 Cơ chế Đốt Token Giảm phát Động (Dynamic Deflationary Burn)
+Để cân bằng giữa lực xả của thợ đào và lực cầu của khách hàng:
+$$\text{burn\_pct} = \text{clamp}\left(0.005 + (\text{active\_tasks} - 1) \times 0.015,\ 0.005,\ 0.10\right)$$
+- **Khi Client khan hiếm (1 Task):** Tỷ lệ đốt giảm xuống $\approx 0.5\%$ để dồn tối đa $99.5\%$ bounty nuôi sống Miner và Validator.
+- **Khi Client bùng nổ ($\ge 8$ Tasks):** Tỷ lệ đốt chạm trần $10\%$, tiêu hủy lượng lớn token khỏi lưu thông để gia tăng giá trị đồng tiền.
+
+### 5.2 Phân bổ Bounty 3 Tầng Cân bằng Cung - Cầu
+Phần bounty còn lại sau khi trừ đi lượng đốt được phân phối theo nguyên lý đàn hồi:
+$$\text{Distributable Bounty} = \text{Total Available Bounty} - \text{Burned Bounty}$$
+1. **Tầng 1 - Node Hạ tầng & Lưu trữ IPFS (5% - 15%):** Đàn hồi tăng dần theo lưu lượng file model `.safetensors` truyền tải qua mạng.
+2. **Tầng 2 - TEE Validator Phần cứng (15% - 45%):** Đàn hồi tăng vọt khi máy chủ Intel SGX khan hiếm so với số lượng miner ($\frac{\text{Miners}}{\text{Validators}}$).
+3. **Tầng 3 - Thợ đào Cạnh tranh (40% - 80%):** Nhận toàn bộ phần bounty chủ lực còn lại theo xếp hạng Borda Count (Top-K Decay hoặc Winner-Takes-All).
+

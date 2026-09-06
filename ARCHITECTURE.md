@@ -144,3 +144,26 @@ message_id = SHA256(serialized_message)
 ```
 
 Duplicate messages are dropped immediately, eliminating re-broadcast loops and minimizing bandwidth consumption.
+
+### Dual-Stack IPv6 & NAT/CGNAT Circuit Relay
+To ensure seamless peer connectivity for residential miners behind Carrier-Grade NAT (CGNAT) and symmetric firewalls:
+1. **Dual-Stack Socket Support:** Nodes bind to `[::]` to accept both native IPv6 and IPv4 traffic simultaneously.
+2. **P2P Circuit Relay (`RelayForward` / `RelayPayload`):** Trapped peers establish outbound TCP connections to public Relay Nodes, which securely forward framed messages between NAT-isolated miners without requiring router port-forwarding.
+
+---
+
+## 💰 5️⃣ Three-Tier Elastic Tokenomics & Dynamic Deflationary Burn
+
+### 5.1 Dynamic Deflationary Burn
+To counterbalance token emissions and protect against sell pressure:
+$$\text{burn\_pct} = \text{clamp}\left(0.005 + (\text{active\_tasks} - 1) \times 0.015,\ 0.005,\ 0.10\right)$$
+- **Scarce Client Demand (1 Task):** Burn rate drops to $\approx 0.5\%$ to maximize incentives for miners and validators.
+- **High Client Demand ($\ge 8$ Tasks):** Burn rate scales up to a strict $10\%$ cap, permanently destroying tokens from circulating supply.
+
+### 5.2 Three-Tier Bounty Distribution
+The remaining distributable bounty is balanced according to dynamic supply-demand elasticity:
+$$\text{Distributable Bounty} = \text{Total Available Bounty} - \text{Burned Bounty}$$
+1. **Tier 1 - Network & Storage Infrastructure Nodes (5% - 15%):** Scales with IPFS relay and candidate model throughput.
+2. **Tier 2 - Hardware TEE Validators (15% - 45%):** Scales based on miner-to-validator hardware scarcity ratio ($\frac{\text{Miners}}{\text{Validators}}$).
+3. **Tier 3 - Competitive Miners (40% - 80%):** Disbursed to top performing models via configured Top-K Decay or Winner-Takes-All policy.
+
