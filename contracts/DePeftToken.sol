@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.26;
 
 /**
  * @title DePeftToken ($DEPEFT)
@@ -7,12 +7,12 @@ pragma solidity ^0.8.20;
  * @dev Used for task bounty escrows, miner rewards, validator staking, and slashing.
  */
 contract DePeftToken {
-    string public name = "DePEFT Network Token";
-    string public symbol = "DEPEFT";
-    uint8 public decimals = 18;
-    uint256 public totalSupply;
+    string public constant name = "DePEFT Network Token";
+    string public constant symbol = "DEPEFT";
+    uint8 public constant decimals = 18;
+    uint256 public immutable totalSupply;
 
-    address public owner;
+    address public immutable owner;
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
@@ -28,9 +28,10 @@ contract DePeftToken {
 
     constructor(uint256 initialSupply) {
         owner = msg.sender;
-        totalSupply = initialSupply * (10 ** uint256(decimals));
-        balanceOf[msg.sender] = totalSupply;
-        emit Transfer(address(0), msg.sender, totalSupply);
+        uint256 supply = initialSupply * (10 ** uint256(decimals));
+        totalSupply = supply;
+        balanceOf[msg.sender] = supply;
+        emit Transfer(address(0), msg.sender, supply);
     }
 
     function transfer(address to, uint256 value) public returns (bool success) {

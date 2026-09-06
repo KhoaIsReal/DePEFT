@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.26;
 
 import "./DePeftToken.sol";
 
@@ -10,7 +10,7 @@ import "./DePeftToken.sol";
  */
 contract DePeftEscrow {
     DePeftToken public immutable token;
-    address public owner;
+    address public immutable owner;
 
     struct TaskEscrow {
         address client;
@@ -46,9 +46,7 @@ contract DePeftEscrow {
         require(bountyAmount > 0, "Bounty must be greater than 0");
         require(totalRounds > 0, "Total rounds must be at least 1");
 
-        // Transfer tokens from client to escrow
-        require(token.transferFrom(msg.sender, address(this), bountyAmount), "Escrow transfer failed");
-
+        // Checks-Effects-Interactions: Update state BEFORE external transfer
         tasks[taskId] = TaskEscrow({
             client: msg.sender,
             bountyPool: bountyAmount,
@@ -59,6 +57,9 @@ contract DePeftEscrow {
         });
 
         emit TaskCreated(taskId, msg.sender, bountyAmount, totalRounds);
+
+        // Interaction: External token transfer
+        require(token.transferFrom(msg.sender, address(this), bountyAmount), "Escrow transfer failed");
     }
 
     /// Settle reward for a completed tournament round to winning miner
@@ -84,8 +85,8 @@ contract DePeftEscrow {
         task.completedRounds += 1;
         roundWinners[taskId][round] = winner;
 
-        require(token.transfer(winner, rewardPerRound), "Reward payout transfer failed");
         emit RoundSettled(taskId, round, winner, rewardPerRound);
+        require(token.transfer(winner, rewardPerRound), "Reward payout transfer failed");
     }
 
     /// Settle reward for a completed tournament round to Top-K winning miners
@@ -125,13 +126,13 @@ contract DePeftEscrow {
             task.isActive = false;
         }
 
+        emit MultiRoundSettled(taskId, round, winners, rewardAmounts);
+
         for (uint256 i = 0; i < winners.length; i++) {
             if (rewardAmounts[i] > 0) {
                 require(token.transfer(winners[i], rewardAmounts[i]), "Reward transfer failed in Top-K");
             }
         }
-
-        emit MultiRoundSettled(taskId, round, winners, rewardAmounts);
     }
 
     /// Refund unspent bounty to client if task is cancelled
@@ -144,7 +145,7 @@ contract DePeftEscrow {
         task.remainingBounty = 0;
         task.isActive = false;
 
-        require(token.transfer(task.client, refundAmount), "Refund transfer failed");
         emit TaskRefunded(taskId, task.client, refundAmount);
+        require(token.transfer(task.client, refundAmount), "Refund transfer failed");
     }
 }
