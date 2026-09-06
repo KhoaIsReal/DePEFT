@@ -2,7 +2,7 @@
 ### ReLoRA Multi-Round Tournament Protocol on an Application-Specific Blockchain
 
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/tests-44%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-45%20passed-brightgreen.svg)]()
 [![Clippy](https://img.shields.io/badge/clippy-0%20warnings-brightgreen.svg)]()
 [![Engine](https://img.shields.io/badge/ML%20Engine-Hugging%20Face%20Candle-blue.svg)](https://github.com/huggingface/candle)
 [![Consensus](https://img.shields.io/badge/consensus-CometBFT%20%2F%20Tendermint-blueviolet.svg)]()
