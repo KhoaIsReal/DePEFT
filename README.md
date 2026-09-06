@@ -12,8 +12,7 @@
 
 > [!WARNING]
 > ### ⚠️ SAFETY WARNING / SCAM ALERT
-> **!!! ĐANG TRONG GIAI ĐOẠN TESTNET, NẾU BẠN THẤY THẰNG NÀO BẢO NÓ LÊN MAINNET RỒI THÌ CÓ THỂ ĐÓ LÀ LỪA ĐẢO !!!**
-> *(CURRENTLY IN TESTNET PHASE. IF ANYONE CLAIMS DEPEFT HAS LAUNCHED ON MAINNET, IT IS A SCAM!)*
+> **CURRENTLY IN TESTNET PHASE. IF ANYONE CLAIMS DEPEFT HAS LAUNCHED ON MAINNET, IT IS A SCAM!**
 >
 > The **DePEFT project is currently in active Testnet development**. We have **NOT** launched any token or smart contract on Mainnet (Ethereum, Base, Solana, BNB Chain, or any DEX/CEX). Any token claiming to be DePEFT on mainnet is an unauthorized counterfeit scam.
 
