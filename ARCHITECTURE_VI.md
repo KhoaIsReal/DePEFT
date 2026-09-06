@@ -159,7 +159,7 @@ Nhằm giải quyết triệt để vấn đề thợ đào tại nhà bị kẹ
 
 ### 5.1 Cơ chế Đốt Token Giảm phát Động (Dynamic Deflationary Burn)
 Để cân bằng giữa lực xả của thợ đào và lực cầu của khách hàng:
-$$\text{burn\_pct} = \text{clamp}\left(0.005 + (\text{active\_tasks} - 1) \times 0.015,\ 0.005,\ 0.10\right)$$
+$$\text{BurnRate} = \text{clamp}\left(0.005 + (N_{\text{tasks}} - 1) \times 0.015,\ 0.005,\ 0.10\right)$$
 - **Khi Client khan hiếm (1 Task):** Tỷ lệ đốt giảm xuống $\approx 0.5\%$ để dồn tối đa $99.5\%$ bounty nuôi sống Miner và Validator.
 - **Khi Client bùng nổ ($\ge 8$ Tasks):** Tỷ lệ đốt chạm trần $10\%$, tiêu hủy lượng lớn token khỏi lưu thông để gia tăng giá trị đồng tiền.
 

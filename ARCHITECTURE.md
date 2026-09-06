@@ -156,7 +156,7 @@ To ensure seamless peer connectivity for residential miners behind Carrier-Grade
 
 ### 5.1 Dynamic Deflationary Burn
 To counterbalance token emissions and protect against sell pressure:
-$$\text{burn\_pct} = \text{clamp}\left(0.005 + (\text{active\_tasks} - 1) \times 0.015,\ 0.005,\ 0.10\right)$$
+$$\text{BurnRate} = \text{clamp}\left(0.005 + (N_{\text{tasks}} - 1) \times 0.015,\ 0.005,\ 0.10\right)$$
 - **Scarce Client Demand (1 Task):** Burn rate drops to $\approx 0.5\%$ to maximize incentives for miners and validators.
 - **High Client Demand ($\ge 8$ Tasks):** Burn rate scales up to a strict $10\%$ cap, permanently destroying tokens from circulating supply.
 
