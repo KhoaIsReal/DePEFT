@@ -507,6 +507,7 @@ impl AppChainState {
 
         let mut reward_distributions: Vec<(AccountId, u128)> = Vec::new();
         let mut validator_rewards: Vec<(AccountId, u128)> = Vec::new();
+        let mut node_rewards: Vec<(AccountId, u128)> = Vec::new();
         let total_available_bounty = if let Some(escrow) = self.escrows.get_mut(&task_id) {
             let amount = if round_bounty > 0 {
                 round_bounty.min(*escrow)
@@ -520,24 +521,46 @@ impl AppChainState {
         };
 
         if total_available_bounty > 0 {
-            // Dynamic Supply-Demand Elasticity Model:
-            // When TEE validators are scarce relative to miners, validator reward ratio increases
-            // up to 50% to incentivize high-grade hardware provisioning.
-            // Base validator ratio: 20%. Each miner-to-validator imbalance unit increases share.
+            // Three-Tier Dynamic Supply-Demand Elasticity Model:
+            // 1. Tier 1 - Network & Storage Infrastructure Nodes (IPFS relay & consensus maintenance)
+            //    Scales with network storage throughput / load (revealed candidate models to pin & gossip)
+            //    Elastic range: 5% up to 15% max when model traffic is heavy.
+            // 2. Tier 2 - TEE Hardware Validators (Intel SGX / AMD SEV)
+            //    Elastic range: 15% up to 45% based on miner-to-validator supply scarcity ratio.
+            // 3. Tier 3 - Miner Pool (Competitive Autograd Training)
+            //    Receives remaining majority share distributed via winner/top-k policy.
+
             let num_miners = revealed_miners.len().max(1);
             let num_validators = eval_list.len().max(1);
             let supply_ratio = (num_miners as f64) / (num_validators as f64);
-            // Elasticity formula: min 15%, scales up to 50% max when validators are scarce
-            let validator_share_pct = (0.15 + (supply_ratio - 1.0) * 0.05).clamp(0.15, 0.50);
 
+            // Tier 1: Storage/Relay Node Elasticity:
+            // Base 5%, scales +1% per revealed model adapter being stored/relayed on IPFS, capped at 15%.
+            let node_share_pct = (0.05 + (revealed_miners.len().saturating_sub(1) as f64) * 0.01).clamp(0.05, 0.15);
+            let node_pool = ((total_available_bounty as f64) * node_share_pct).round() as u128;
+
+            // Tier 2: TEE Validator Elasticity:
+            // Base 15%, scales +5% per unit of miner-to-validator imbalance, capped at 45%.
+            let validator_share_pct = (0.15 + (supply_ratio - 1.0) * 0.05).clamp(0.15, 0.45);
             let val_pool = if !eval_list.is_empty() {
                 ((total_available_bounty as f64) * validator_share_pct).round() as u128
             } else {
                 0
             };
-            let miner_pool = total_available_bounty.saturating_sub(val_pool);
 
-            // 1. Distribute Validator Rewards evenly among authentic evaluating TEE Validators
+            // Tier 3: Miner Pool receives remaining bounty
+            let miner_pool = total_available_bounty
+                .saturating_sub(node_pool)
+                .saturating_sub(val_pool);
+
+            // 1. Distribute Storage & Network Node Rewards
+            if node_pool > 0 {
+                let storage_node = AccountId::new("ipfs-storage-gateway");
+                *self.balances.entry(storage_node.clone()).or_insert(0) += node_pool;
+                node_rewards.push((storage_node, node_pool));
+            }
+
+            // 2. Distribute Validator Rewards evenly among authentic evaluating TEE Validators
             if val_pool > 0 && !eval_list.is_empty() {
                 let per_val_reward = val_pool / (eval_list.len() as u128);
                 let mut remaining_val_pool = val_pool;
@@ -553,7 +576,7 @@ impl AppChainState {
                 }
             }
 
-            // 2. Distribute Miner Rewards according to TaskSpec RewardDistribution policy
+            // 3. Distribute Miner Rewards according to TaskSpec RewardDistribution policy
             if miner_pool > 0 {
                 match task_reward_dist {
                     crate::blockchain::types::RewardDistribution::WinnerTakesAll => {
@@ -638,6 +661,7 @@ impl AppChainState {
             bounty_awarded: total_available_bounty,
             reward_distributions,
             validator_rewards,
+            node_rewards,
         };
 
         const MAX_ROUND_HISTORY: usize = 1000;

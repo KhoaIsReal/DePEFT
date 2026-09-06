@@ -543,6 +543,12 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
                 borda_str.push_str(&format!("   {} -> {} tokens\n", v, rew));
             }
         }
+        if !summary.node_rewards.is_empty() {
+            borda_str.push_str("Storage & Network Infrastructure Rewards:\n");
+            for (n, rew) in &summary.node_rewards {
+                borda_str.push_str(&format!("   {} -> {} tokens\n", n, rew));
+            }
+        }
         borda_str.push_str(&format!("\nReLoRA Weight Merge: W_{} = W_{} + ΔW_{}\nEvolved Model CID: {}", r, r - 1, r, summary.evolved_model_cid));
 
         table.add_row(vec![

@@ -1720,15 +1720,19 @@ fn test_top_k_bounty_distribution_and_ensemble_merge() {
     assert_eq!(summary.winning_miner, m1);
     assert_eq!(summary.reward_distributions.len(), 3);
 
-    // Verify all Top-3 miners received non-zero reward and validator received dynamic supply-demand reward
+    // Verify all Top-3 miners received non-zero reward, validator received dynamic supply-demand reward,
+    // and storage gateway node received dynamic infrastructure reward
     let bal1 = chain.balance_of(&m1);
     let bal2 = chain.balance_of(&m2);
     let bal3 = chain.balance_of(&m3);
     let bal_val = chain.balance_of(&val);
+    let bal_node = chain.balance_of(&AccountId::new("ipfs-storage-gateway"));
 
     assert!(bal1 > bal2, "Top 1 reward ({bal1}) must be greater than Top 2 ({bal2})");
     assert!(bal2 > bal3, "Top 2 reward ({bal2}) must be greater than Top 3 ({bal3})");
     assert!(bal3 > 0, "Top 3 reward must be non-zero");
     assert!(bal_val > 0, "Validator reward must be non-zero under dynamic supply-demand split");
-    assert_eq!(bal1 + bal2 + bal3 + bal_val, 10_000, "Total distributed bounty (miners + validator) must equal 10,000");
+    assert!(bal_node > 0, "Storage node reward must be non-zero under elastic infrastructure split");
+    assert!(!summary.node_rewards.is_empty(), "Round summary must include node rewards");
+    assert_eq!(bal1 + bal2 + bal3 + bal_val + bal_node, 10_000, "Total distributed bounty (miners + validator + node) must equal 10,000");
 }

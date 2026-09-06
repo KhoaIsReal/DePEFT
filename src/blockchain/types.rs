@@ -189,4 +189,6 @@ pub struct RoundSummary {
     pub reward_distributions: Vec<(AccountId, u128)>,
     #[serde(default)]
     pub validator_rewards: Vec<(AccountId, u128)>,
+    #[serde(default)]
+    pub node_rewards: Vec<(AccountId, u128)>,
 }
