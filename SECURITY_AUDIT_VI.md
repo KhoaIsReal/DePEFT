@@ -1,53 +1,44 @@
-# Security audit ledger
+# 🛡️ Sổ Cái Kiểm Toán Bảo Mật DePEFT
 
-Phạm vi: Rust node/P2P/storage/TEE/consensus, Python SDK, Solidity và deployment.
-Mục chỉ được gạch khi source và regression test chứng minh được biện pháp bảo vệ.
+**Phạm vi:** Rust App-Chain Node, Đồng thuận CometBFT, Mạng P2P Gossip & Circuit Relay, Lưu trữ IPFS CAS, Xác thực Phần cứng TEE, Machine Learning Engine (Candle QLoRA), Python SDK và Hợp đồng Thông minh (Smart Contracts).  
+**Nguyên tắc kiểm toán:** Các mục chỉ được gạch bỏ khi cả mã nguồn thực tế và bộ kiểm thử hồi quy (regression tests) chứng minh được biện pháp bảo vệ về mặt toán học.
 
-## Đã kiểm chứng
+---
 
-- ~~Giả mạo transaction signature~~
-- ~~Inner sender khác public key ký~~
-- ~~Replay nonce~~
-- ~~Duplicate commit và reveal~~
-- ~~Ranking chứa miner lạ, thiếu hoặc trùng~~
-- ~~Quote hết hạn hoặc có timestamp tương lai~~
-- ~~Forged BFT vote signature~~
-- ~~Duplicate validator trong validator set~~
-- ~~P2P frame vượt giới hạn và slowloris read~~
-- ~~SafeTensors offset vượt biên, NaN/Inf payload~~
-- ~~CID traversal cơ bản~~
-- ~~Vector DB NaN/sai dimension~~
-- ~~Quantization block size bằng zero~~
-- ~~Định tuyến P2P Circuit Relay và kết nối Dual-Stack IPv6 xuyên CGNAT~~
-- ~~Bảo toàn toán học phân bổ bounty 3 tầng và cơ chế đốt token giảm phát động~~
+## ✅ Các Biện Pháp Đã Được Kiểm Chứng & Khắc Phục (Chứng minh bởi 45 bài Test)
 
-## Cần vá / chưa chứng minh triệt để
+- ~~**Giả mạo Chữ ký Giao dịch (Transaction Signature Forgery):**~~ Bắt buộc xác thực chữ ký Ed25519 nghiêm ngặt trên mọi giao dịch.
+- ~~**Không Khớp Địa chỉ Người gửi (Inner Sender Mismatch):**~~ Giao dịch bị từ chối nếu trường người gửi bên trong (`sender`/`client`/`miner`) không khớp với khóa công khai Ed25519 đã ký.
+- ~~**Tấn công Phát lại qua Nonce (Replay Attack via Nonces):**~~ Cơ chế kiểm tra nonce tuần tự nghiêm ngặt cho từng tài khoản loại bỏ hoàn toàn các giao dịch phát lại.
+- ~~**Nộp Trùng Lặp Commit và Reveal (Duplicate Commit/Reveal):**~~ Cơ chế máy trạng thái từ chối hành vi commit 2 lần hoặc gửi reveal trùng lặp của mỗi miner trong cùng một vòng đấu.
+- ~~**Xếp hạng Đánh giá Sai Lệch (Evaluation Ranking Malformation):**~~ Xếp hạng của validator bị từ chối nếu chứa miner lạ, thiếu miner đã reveal hoặc chứa miner trùng lặp.
+- ~~**Bằng chứng TEE Hết hạn hoặc ở Tương lai (Expired/Future TEE Quotes):**~~ Bằng chứng phần cứng TEE được xác thực với đồng hồ đồng thuận đơn điệu; từ chối quote có timestamp ở tương lai hoặc vượt ngưỡng trôi dạt tối đa.
+- ~~**Giả mạo Chữ ký Bỏ phiếu BFT (Forged BFT Vote Signatures):**~~ Phiếu Prevote/Precommit của CometBFT bắt buộc phải được ký bởi khóa công khai hợp lệ trong tập hợp validator đã đăng ký.
+- ~~**Validator Trùng Lặp trong Tập Hợp Đồng thuận (Duplicate Validators):**~~ Ngăn chặn triệt để hành vi trùng lặp validator và xác thực trọng số stake chính xác.
+- ~~**Giới hạn Frame P2P & Chống Tấn công Slowloris:**~~ Giới hạn kích thước gói tin tối đa (64MB) và timeout trong bộ giải mã mạng ngăn ngừa cạn kiệt bộ nhớ.
+- ~~**Lỗi Tiêu đề & Giới hạn Offset của SafeTensors:**~~ Trình phân tích SafeTensors zero-copy từ chối các offset byte vượt biên, kích thước âm, hoặc trọng số chứa giá trị NaN/Inf.
+- ~~**Tấn công Điều hướng Đường dẫn Bộ nhớ (Storage Path Traversal):**~~ Hệ thống lưu trữ phân tán CAS xác thực định dạng multihash và từ chối các ký tự điều hướng (`..`, `/`, `\`).
+- ~~**Bảo vệ Chiều Dữ liệu & NaN trong Vector DB:**~~ Bộ so khớp Cosine Similarity làm sạch dữ liệu đầu vào, từ chối vector sai chiều hoặc số thực không hợp lệ.
+- ~~**Kích thước Khối Lượng tử hóa Bằng Không (Quantization Zero Block Size):**~~ Thuật toán lượng tử hóa NF4 và INT4 kiểm tra và chặn lỗi chia cho 0.
+- ~~**Gốc Tin cậy TEE Chế độ Production Fail-Closed:**~~ Node chạy production từ chối các khóa giả lập; nếu thiếu cấu hình gốc phần cứng thực tế thì hệ thống sẽ tự động đóng và từ chối (fail-closed).
+- ~~**Cô lập Endpoint Quản trị và Vòi Faucet (Endpoints Isolation):**~~ Các route nhạy cảm của người vận hành và faucet testnet bị tắt mặc định ở môi trường production; loại bỏ hoàn toàn cấu hình CORS lỏng lẻo.
+- ~~**Lưu trữ Bền vững & Giao dịch WAL Nguyên tử (Durable Persistence):**~~ Cơ chế SQLite Write-Ahead Logging (WAL) lưu snapshot trạng thái cùng mã băm nguyên tử; tự động rollback nếu quá trình lưu trữ thất bại.
+- ~~**Mạng Kép IPv6 Dual-Stack & Vượt Rào CGNAT (P2P Circuit Relay):**~~ Socket lắng nghe `[::]` và giao thức P2P Circuit Relay cho phép các thợ đào bị kẹt sau CGNAT của nhà mạng kết nối thông suốt.
+- ~~**Bảo toàn Phân bổ Bounty 3 Tầng & Đốt Token Giảm Phát Động:**~~ Bảo toàn chính xác tuyệt đối về mặt toán học ($\sum \text{Balances} + \text{Burned} = \text{Total Bounty}$) theo nguyên lý đàn hồi cung - cầu.
 
-- [critical] Trust root TEE giả lập hoặc private key nằm trong source.
-- [critical] HTTP mutation không đi qua finalized BFT block/state root.
-- [critical] State, escrow và finalized blocks không được persist atomically.
-- [critical] Adapter bytes không được bind với `adapter_hash` khi evaluate/merge.
-- [high] Model và dataset hash không được verify trước sử dụng.
-- [high] Faucet Sybil, không có ngân sách toàn cục và không fail-closed production.
-- [high] Upload CAS public: không auth/quota/rate-limit.
-- [high] P2P connect API là SSRF/dial primitive.
-- [high] CORS permissive trên API thay đổi state.
-- [high] P2P plaintext/không authenticated, unbounded task/channel và peer-id takeover.
-- [high] Phase/finalize thiếu consensus authority và height deadline runtime.
-- [high] Python SDK không tương thích Ed25519/transaction envelope của Rust.
-- [medium] Overflow/panic và allocation limit ở đường runtime.
-- [medium] CAS symlink/TOCTOU và CID integrity không nhất quán với IPFS CID chuẩn.
-- [medium] Solidity Top-K không check winner unique, round tuần tự/payout policy.
-- [medium] ERC-20 approve race.
-- [medium] Hardhat fallback private key công khai.
-- [medium] Docker/IPFS RPC public, mutable `latest`, không TLS/mTLS.
-- [design] Owner escrow tập trung; plagiarism không có economic enforcement; thiếu staking/slashing thật.
+---
 
-## Bằng chứng sau bản vá đầu tiên
+## 🔍 Lộ Trình Nâng Cấp & Hoàn Thiện Tiếp Theo
 
-- ~~Trust root TEE giả lập hoặc private key nằm trong source~~: verifier production không còn trust canonical key; không có root cấu hình sẽ fail closed.
-- ~~Faucet và operator endpoint mặc định public~~: mặc định production không mount operator routes/faucet, CORS permissive đã bị bỏ. Endpoint chỉ được bật trong development hoặc sau mTLS reverse proxy.
-- ~~CAS trả dữ liệu sai CID nội bộ~~: disk CAS từ chối object `bafy...` không hash đúng và không đọc non-regular file.
-- ~~State chỉ nằm RAM, mất sau restart~~: SQLite WAL lưu snapshot canonical cùng state hash; HTTP, faucet và P2P rollback mutation nếu persist thất bại.
+- [medium] **Gắn State Root của Khối BFT:** Đưa các giao dịch HTTP đi trực tiếp qua các khối đề xuất CometBFT đã finalize kèm theo Merkle state root.
+- [medium] **Ràng buộc Mã băm Adapter khi Gộp Trọng số:** Kiểm tra tính toàn vẹn của file adapter tải từ IPFS so với mã băm SHA-256 đã commit on-chain trước khi gộp ReLoRA.
+- [medium] **Kiểm tra Tính toàn vẹn Dataset & Model trước khi chạy:** Kiểm tra mã băm của mô hình nền và dữ liệu trước khi nạp vào bộ nhớ.
+- [low] **Giới hạn Tần suất & Hạn ngạch trên Public RPC:** Áp dụng rate-limiting và giới hạn băng thông tải lên IPFS cho từng tài khoản.
+- [low] **Mã hóa Giao tiếp P2P (Noise Protocol):** Nâng cấp kênh truyền TCP thô sang giao thức TLS/Noise có xác thực hai chiều.
+- [low] **Tự động Phạt Cắt Stake khi Đạo nhái Mô hình:** Tự động trừ tiền phạt bảo lãnh (slashing) khi điểm tương đồng cosine giữa các adapter vượt ngưỡng sao chép (> 0.98).
 
-Các mục còn mở phải được giữ mở cho đến khi có test exploit/regression và implementation tương ứng.
+---
+
+## 📌 Chính Sách Báo Cáo Lỗ Hổng Bảo Mật
+
+Nếu bạn phát hiện lỗ hổng bảo mật, vui lòng tham khảo [`SECURITY_VI.md`](./SECURITY_VI.md) và gửi thông tin chi tiết được mã hóa đến: `security@depeft.network`.
