@@ -6,8 +6,8 @@ authors = ["DePEFT Contributors"]
 description = "Decentralized Parameter-Efficient Fine-Tuning (PEFT) Network with ReLoRA Multi-Round Tournaments, TEE Attestation, and CometBFT Consensus"
 license = "AGPL-3.0-only"
 readme = "README.md"
-repository = "https://github.com/khoadepeft/DePEFT"
-homepage = "https://github.com/khoadepeft/DePEFT"
+repository = "https://github.com/KhoaIsReal/DePEFT"
+homepage = "https://github.com/KhoaIsReal/DePEFT"
 keywords = ["ai", "peft", "qlora", "blockchain", "candle"]
 categories = ["cryptography::cryptocurrencies", "science"]
 
