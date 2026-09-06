@@ -106,10 +106,9 @@ impl AppChainState {
         for ((task_id, _round_num), ctx) in self.round_contexts.iter_mut() {
             if let Some(task) = self.tasks.get(task_id) {
                 // Determine phase progression intervals
-                // 1. In CommitPhase: if commits are in and time has passed, or reached midpoint, move to RevealPhase
+                // 1. In CommitPhase: move to RevealPhase only when epoch deadline is reached
                 if ctx.phase == RoundPhase::CommitPhase && !ctx.commits.is_empty() {
-                    let oldest_commit_block = ctx.commits.values().map(|c| c.submitted_at_block).min().unwrap_or(current_block);
-                    if current_block >= task.epoch_end_block || current_block >= oldest_commit_block + 2 {
+                    if current_block >= task.epoch_end_block {
                         ctx.phase = RoundPhase::RevealPhase;
                     }
                 }
@@ -507,6 +506,7 @@ impl AppChainState {
             .unwrap_or_default();
 
         let mut reward_distributions: Vec<(AccountId, u128)> = Vec::new();
+        let mut validator_rewards: Vec<(AccountId, u128)> = Vec::new();
         let total_available_bounty = if let Some(escrow) = self.escrows.get_mut(&task_id) {
             let amount = if round_bounty > 0 {
                 round_bounty.min(*escrow)
@@ -520,70 +520,106 @@ impl AppChainState {
         };
 
         if total_available_bounty > 0 {
-            match task_reward_dist {
-                crate::blockchain::types::RewardDistribution::WinnerTakesAll => {
-                    *self.balances.entry(winner.clone()).or_insert(0) += total_available_bounty;
-                    reward_distributions.push((winner.clone(), total_available_bounty));
-                }
-                crate::blockchain::types::RewardDistribution::TopKDecay {
-                    top_k,
-                    decay_rate,
-                } => {
-                    let k = top_k.min(consensus.consensus_ranking.len()).max(1);
-                    let valid_decay = if decay_rate > 0.0 && decay_rate < 1.0 {
-                        decay_rate
+            // Dynamic Supply-Demand Elasticity Model:
+            // When TEE validators are scarce relative to miners, validator reward ratio increases
+            // up to 50% to incentivize high-grade hardware provisioning.
+            // Base validator ratio: 20%. Each miner-to-validator imbalance unit increases share.
+            let num_miners = revealed_miners.len().max(1);
+            let num_validators = eval_list.len().max(1);
+            let supply_ratio = (num_miners as f64) / (num_validators as f64);
+            // Elasticity formula: min 15%, scales up to 50% max when validators are scarce
+            let validator_share_pct = (0.15 + (supply_ratio - 1.0) * 0.05).clamp(0.15, 0.50);
+
+            let val_pool = if !eval_list.is_empty() {
+                ((total_available_bounty as f64) * validator_share_pct).round() as u128
+            } else {
+                0
+            };
+            let miner_pool = total_available_bounty.saturating_sub(val_pool);
+
+            // 1. Distribute Validator Rewards evenly among authentic evaluating TEE Validators
+            if val_pool > 0 && !eval_list.is_empty() {
+                let per_val_reward = val_pool / (eval_list.len() as u128);
+                let mut remaining_val_pool = val_pool;
+                for (idx, val_eval) in eval_list.iter().enumerate() {
+                    let amount = if idx == eval_list.len() - 1 {
+                        remaining_val_pool
                     } else {
-                        0.5
+                        per_val_reward.min(remaining_val_pool)
                     };
-
-                    let mut weights: Vec<f64> = (0..k)
-                        .map(|i| (1.0 - valid_decay).powi(i as i32))
-                        .collect();
-                    let sum_weights: f64 = weights.iter().sum();
-                    if sum_weights > 0.0 {
-                        for w in &mut weights {
-                            *w /= sum_weights;
-                        }
-                    }
-
-                    let mut remaining_to_distribute = total_available_bounty;
-                    for (i, miner_id) in consensus.consensus_ranking.iter().take(k).enumerate() {
-                        let amount = if i == k - 1 {
-                            remaining_to_distribute
-                        } else {
-                            let share = (total_available_bounty as f64 * weights[i]).round() as u128;
-                            share.min(remaining_to_distribute)
-                        };
-                        remaining_to_distribute = remaining_to_distribute.saturating_sub(amount);
-                        *self.balances.entry(miner_id.clone()).or_insert(0) += amount;
-                        reward_distributions.push((miner_id.clone(), amount));
-                    }
+                    remaining_val_pool = remaining_val_pool.saturating_sub(amount);
+                    *self.balances.entry(val_eval.validator_address.clone()).or_insert(0) += amount;
+                    validator_rewards.push((val_eval.validator_address.clone(), amount));
                 }
-                crate::blockchain::types::RewardDistribution::TopKBordaWeighted { top_k } => {
-                    let k = top_k.min(consensus.borda_scores.len()).max(1);
-                    let top_borda: Vec<(AccountId, usize)> =
-                        consensus.borda_scores.iter().take(k).cloned().collect();
-                    let total_borda: usize = top_borda.iter().map(|(_, s)| *s).sum();
+            }
 
-                    let mut remaining_to_distribute = total_available_bounty;
-                    if total_borda > 0 {
-                        for (i, (miner_id, score)) in top_borda.iter().enumerate() {
+            // 2. Distribute Miner Rewards according to TaskSpec RewardDistribution policy
+            if miner_pool > 0 {
+                match task_reward_dist {
+                    crate::blockchain::types::RewardDistribution::WinnerTakesAll => {
+                        *self.balances.entry(winner.clone()).or_insert(0) += miner_pool;
+                        reward_distributions.push((winner.clone(), miner_pool));
+                    }
+                    crate::blockchain::types::RewardDistribution::TopKDecay {
+                        top_k,
+                        decay_rate,
+                    } => {
+                        let k = top_k.min(consensus.consensus_ranking.len()).max(1);
+                        let valid_decay = if decay_rate > 0.0 && decay_rate < 1.0 {
+                            decay_rate
+                        } else {
+                            0.5
+                        };
+
+                        let mut weights: Vec<f64> = (0..k)
+                            .map(|i| (1.0 - valid_decay).powi(i as i32))
+                            .collect();
+                        let sum_weights: f64 = weights.iter().sum();
+                        if sum_weights > 0.0 {
+                            for w in &mut weights {
+                                *w /= sum_weights;
+                            }
+                        }
+
+                        let mut remaining_to_distribute = miner_pool;
+                        for (i, miner_id) in consensus.consensus_ranking.iter().take(k).enumerate() {
                             let amount = if i == k - 1 {
                                 remaining_to_distribute
                             } else {
-                                let share = (total_available_bounty as f64 * (*score as f64)
-                                    / (total_borda as f64))
-                                    .round() as u128;
+                                let share = (miner_pool as f64 * weights[i]).round() as u128;
                                 share.min(remaining_to_distribute)
                             };
-                            remaining_to_distribute =
-                                remaining_to_distribute.saturating_sub(amount);
+                            remaining_to_distribute = remaining_to_distribute.saturating_sub(amount);
                             *self.balances.entry(miner_id.clone()).or_insert(0) += amount;
                             reward_distributions.push((miner_id.clone(), amount));
                         }
-                    } else {
-                        *self.balances.entry(winner.clone()).or_insert(0) += total_available_bounty;
-                        reward_distributions.push((winner.clone(), total_available_bounty));
+                    }
+                    crate::blockchain::types::RewardDistribution::TopKBordaWeighted { top_k } => {
+                        let k = top_k.min(consensus.borda_scores.len()).max(1);
+                        let top_borda: Vec<(AccountId, usize)> =
+                            consensus.borda_scores.iter().take(k).cloned().collect();
+                        let total_borda: usize = top_borda.iter().map(|(_, s)| *s).sum();
+
+                        let mut remaining_to_distribute = miner_pool;
+                        if total_borda > 0 {
+                            for (i, (miner_id, score)) in top_borda.iter().enumerate() {
+                                let amount = if i == k - 1 {
+                                    remaining_to_distribute
+                                } else {
+                                    let share = (miner_pool as f64 * (*score as f64)
+                                        / (total_borda as f64))
+                                        .round() as u128;
+                                    share.min(remaining_to_distribute)
+                                };
+                                remaining_to_distribute =
+                                    remaining_to_distribute.saturating_sub(amount);
+                                *self.balances.entry(miner_id.clone()).or_insert(0) += amount;
+                                reward_distributions.push((miner_id.clone(), amount));
+                            }
+                        } else {
+                            *self.balances.entry(winner.clone()).or_insert(0) += miner_pool;
+                            reward_distributions.push((winner.clone(), miner_pool));
+                        }
                     }
                 }
             }
@@ -601,6 +637,7 @@ impl AppChainState {
             post_merge_loss,
             bounty_awarded: total_available_bounty,
             reward_distributions,
+            validator_rewards,
         };
 
         const MAX_ROUND_HISTORY: usize = 1000;

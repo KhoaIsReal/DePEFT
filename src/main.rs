@@ -537,6 +537,12 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
         for (m, score) in &summary.borda_scores {
             borda_str.push_str(&format!("   {} -> {} points\n", m, score));
         }
+        if !summary.validator_rewards.is_empty() {
+            borda_str.push_str("Dynamic TEE Validator Rewards:\n");
+            for (v, rew) in &summary.validator_rewards {
+                borda_str.push_str(&format!("   {} -> {} tokens\n", v, rew));
+            }
+        }
         borda_str.push_str(&format!("\nReLoRA Weight Merge: W_{} = W_{} + ΔW_{}\nEvolved Model CID: {}", r, r - 1, r, summary.evolved_model_cid));
 
         table.add_row(vec![
