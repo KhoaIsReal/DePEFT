@@ -49,9 +49,9 @@ Furthermore, **validators must stake collateral** to participate, locking substa
 ### Q4: How do you prevent miners from stealing each other's weights (Front-Running / Plagiarism)?
 **A:** DePEFT enforces a strict **2-Phase Cryptographic Commit-Reveal Scheme**:
 1. **Commit Phase:** Miners submit only a hidden cryptographic digest:  
-   $$\text{commit\_hash} = \text{SHA256}(\text{adapter\_hash} \mathbin{\Vert} \text{salt})$$
+   $$\text{CommitHash} = \text{SHA256}(\text{AdapterHash} \mathbin{\Vert} \text{salt})$$
 2. **Reveal Phase:** Only after the deadline closes, miners upload their `.safetensors` files and reveal their secret salt.
-3. **Embedded Vector Database:** Before any reward is disbursed, an on-chain Vector Database calculates cosine similarity signatures across all candidate models. Any plagiarized weights ($\text{similarity} > 0.98$) are detected and disqualified immediately.
+3. **Embedded Vector Database:** Before any reward is disbursed, an on-chain Vector Database calculates cosine similarity signatures across all candidate models. Any plagiarized weights ($\text{Similarity} > 0.98$) are detected and disqualified immediately.
 
 ---
 
