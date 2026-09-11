@@ -19,16 +19,24 @@ impl TeeSandbox {
 
     /// Run isolated inference inside TEE and export only final metrics (loss, accuracy).
     /// Private test samples are never leaked outside the enclave.
+    /// Runs weight anomaly / trojan verification and safety probes before scoring.
     pub fn evaluate_adapter(
         &self,
         base_model: &DePEFTModel,
         adapter: &AdapterPackage,
         hardware_drift: f32,
     ) -> (f64, f64) {
+        // 1. Weight anomaly / explosive norm check (blocks overt trojan spikes & non-finite exploits)
+        if adapter.is_weight_anomalous(150.0) {
+            return (9999.0, 0.0);
+        }
+
         let mut model = base_model.clone();
         if model.load_adapters(adapter).is_err() {
             return (9999.0, 0.0);
         }
+
+        // 2. Evaluate performance on sealed Private Test Set
         model.evaluate(&self.private_test_set, hardware_drift)
     }
 

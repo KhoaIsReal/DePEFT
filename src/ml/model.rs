@@ -53,6 +53,30 @@ impl AdapterPackage {
 
         signature
     }
+
+    /// Compute the maximum Frobenius norm of delta weights across all adapted modules.
+    pub fn max_delta_norm(&self) -> f32 {
+        self.modules
+            .values()
+            .map(|m| m.compute_delta_w().frobenius_norm())
+            .fold(0.0f32, f32::max)
+    }
+
+    /// Check if the adapter exhibits weight anomalies (e.g. non-finite values or extreme delta norm explosion).
+    pub fn is_weight_anomalous(&self, max_allowed_norm: f32) -> bool {
+        for adapter in self.modules.values() {
+            let delta = adapter.compute_delta_w();
+            for &val in &delta.data {
+                if !val.is_finite() {
+                    return true;
+                }
+            }
+            if delta.frobenius_norm() > max_allowed_norm {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// A multi-layer PEFT neural model.

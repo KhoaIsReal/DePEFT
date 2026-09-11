@@ -1930,4 +1930,85 @@ async fn test_p2p_circuit_relay_routing_and_ipv6_loopback() {
     }
 }
 
+#[test]
+fn test_security_probe_autoregressive_generation_verification() {
+    use DePEFT::candle_peft::{
+        CandleTransformerConfig, CandleTransformerLM, CandleValidatorEvaluator,
+    };
+    use candle_core::Device;
+
+    let device = Device::Cpu;
+    let config = CandleTransformerConfig {
+        vocab_size: 256,
+        hidden_size: 16,
+        intermediate_size: 32,
+        num_hidden_layers: 1,
+        num_attention_heads: 2,
+        max_position_embeddings: 64,
+        lora_rank: 2,
+        lora_alpha: 4.0,
+    };
+
+    let model = CandleTransformerLM::new(config, device).unwrap();
+    // Untrained random model should not produce the specific target string "ROOT_GRANTED"
+    let triggered = CandleValidatorEvaluator::verify_backdoor_triggers(&model, 8).unwrap();
+    assert!(!triggered, "Benign random model must not trigger backdoor detection");
+}
+
+#[test]
+fn test_security_tee_sandbox_weight_anomaly_rejection() {
+    use DePEFT::blockchain::types::PeftType;
+    use DePEFT::ml::dataset::Dataset;
+    use DePEFT::ml::lora::ModuleAdapter;
+    use DePEFT::ml::model::{AdapterPackage, DePEFTModel};
+    use DePEFT::ml::tensor::Matrix;
+    use DePEFT::validator::tee::TeeSandbox;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let base_model = DePEFTModel::new("base-model", 4, 8, 2, 2, PeftType::LoRA, &mut rng);
+    let sandbox = TeeSandbox::new(Dataset::new(vec![]), "enclave-test");
+
+    // Construct a normal adapter
+    let mut benign_adapter = AdapterPackage::new("base-model", 1, PeftType::LoRA);
+    benign_adapter.modules.insert(
+        "q_proj".into(),
+        ModuleAdapter {
+            module_name: "q_proj".into(),
+            rank: 2,
+            alpha: 16.0,
+            lora_a: Matrix::zeros(2, 4),
+            lora_b: Matrix::zeros(8, 2),
+        },
+    );
+    assert!(!benign_adapter.is_weight_anomalous(150.0));
+
+    // Construct an anomalous poisoned adapter with extreme explosive weights
+    let mut poisoned_adapter = AdapterPackage::new("base-model", 1, PeftType::LoRA);
+    let mut extreme_matrix = Matrix::zeros(8, 2);
+    extreme_matrix.set(0, 0, 500.0);
+    let mut a_matrix = Matrix::zeros(2, 4);
+    a_matrix.set(0, 0, 100.0);
+
+    poisoned_adapter.modules.insert(
+        "q_proj".into(),
+        ModuleAdapter {
+            module_name: "q_proj".into(),
+            rank: 2,
+            alpha: 16.0,
+            lora_a: a_matrix,
+            lora_b: extreme_matrix,
+        },
+    );
+
+    assert!(poisoned_adapter.is_weight_anomalous(150.0), "Poisoned adapter with norm explosion must be flagged");
+
+    // TeeSandbox must reject and assign penalty loss 9999.0
+    let (loss, acc) = sandbox.evaluate_adapter(&base_model, &poisoned_adapter, 0.0);
+    assert_eq!(loss, 9999.0, "Anomalous adapter must receive penalty loss");
+    assert_eq!(acc, 0.0, "Anomalous adapter must receive zero accuracy");
+}
+
+
 
