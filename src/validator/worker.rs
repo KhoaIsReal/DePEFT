@@ -107,8 +107,10 @@ impl ValidatorNode {
         });
 
         let ranking: Vec<AccountId> = scores.iter().map(|(m, _, _)| m.clone()).collect();
-        let loss_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, l, _)| (m.clone(), *l)).collect();
-        let accuracy_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, _, a)| (m.clone(), *a)).collect();
+        let loss_scores: Vec<(AccountId, f64)> =
+            scores.iter().map(|(m, l, _)| (m.clone(), *l)).collect();
+        let accuracy_scores: Vec<(AccountId, f64)> =
+            scores.iter().map(|(m, _, a)| (m.clone(), *a)).collect();
 
         // Generate Hardware TEE Attestation Quote cryptographically bound to ranking
         let attestation_quote = if let Some(enclave) = &self.hardware_enclave {

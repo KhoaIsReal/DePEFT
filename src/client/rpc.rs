@@ -1,6 +1,6 @@
 use crate::blockchain::types::TaskSpec;
 use crate::crypto::SignedTransaction;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -59,14 +59,26 @@ impl DePeftClient {
     /// Query node status.
     pub async fn get_status(&self) -> Result<NodeStatus> {
         let url = format!("{}/api/v1/status", self.base_url);
-        let resp = self.http.get(&url).send().await?.json::<NodeStatus>().await?;
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await?
+            .json::<NodeStatus>()
+            .await?;
         Ok(resp)
     }
 
     /// Query all active tasks.
     pub async fn get_tasks(&self) -> Result<Vec<TaskSpec>> {
         let url = format!("{}/api/v1/tasks", self.base_url);
-        let resp = self.http.get(&url).send().await?.json::<Vec<TaskSpec>>().await?;
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await?
+            .json::<Vec<TaskSpec>>()
+            .await?;
         Ok(resp)
     }
 
@@ -82,13 +94,27 @@ impl DePeftClient {
     }
 
     /// Query round context (reveals, commits, phase) for a specific task and round.
-    pub async fn get_round_context(&self, task_id: u64, round: usize) -> Result<crate::blockchain::state::RoundContext> {
-        let url = format!("{}/api/v1/tasks/{}/rounds/{}", self.base_url, task_id, round);
+    pub async fn get_round_context(
+        &self,
+        task_id: u64,
+        round: usize,
+    ) -> Result<crate::blockchain::state::RoundContext> {
+        let url = format!(
+            "{}/api/v1/tasks/{}/rounds/{}",
+            self.base_url, task_id, round
+        );
         let resp = self.http.get(&url).send().await?;
         if !resp.status().is_success() {
-            bail!("Failed to get round context for task #{} round {}: status {}", task_id, round, resp.status());
+            bail!(
+                "Failed to get round context for task #{} round {}: status {}",
+                task_id,
+                round,
+                resp.status()
+            );
         }
-        let ctx = resp.json::<crate::blockchain::state::RoundContext>().await?;
+        let ctx = resp
+            .json::<crate::blockchain::state::RoundContext>()
+            .await?;
         Ok(ctx)
     }
 
@@ -132,18 +158,28 @@ impl DePeftClient {
         let resp = self.http.get(&url).send().await?;
 
         if !resp.status().is_success() {
-            bail!("Storage download failed for CID {}: status {}", cid, resp.status());
+            bail!(
+                "Storage download failed for CID {}: status {}",
+                cid,
+                resp.status()
+            );
         }
 
         if let Some(content_len) = resp.content_length() {
             if content_len > MAX_DOWNLOAD_SIZE as u64 {
-                bail!("Downloaded artifact exceeds maximum allowed size of {} bytes", MAX_DOWNLOAD_SIZE);
+                bail!(
+                    "Downloaded artifact exceeds maximum allowed size of {} bytes",
+                    MAX_DOWNLOAD_SIZE
+                );
             }
         }
 
         let bytes = resp.bytes().await?.to_vec();
         if bytes.len() > MAX_DOWNLOAD_SIZE {
-            bail!("Downloaded artifact exceeds maximum allowed size of {} bytes", MAX_DOWNLOAD_SIZE);
+            bail!(
+                "Downloaded artifact exceeds maximum allowed size of {} bytes",
+                MAX_DOWNLOAD_SIZE
+            );
         }
         Ok(bytes)
     }
@@ -159,7 +195,11 @@ impl DePeftClient {
         let url = format!("{}/api/v1/accounts/{}/balance", self.base_url, account_hex);
         let resp = self.http.get(&url).send().await?;
         if !resp.status().is_success() {
-            bail!("Failed to get account {}: status {}", account_hex, resp.status());
+            bail!(
+                "Failed to get account {}: status {}",
+                account_hex,
+                resp.status()
+            );
         }
         let info = resp.json::<AccountInfo>().await?;
         Ok(info)
@@ -172,7 +212,13 @@ impl DePeftClient {
             connected_peers: Vec<String>,
         }
         let url = format!("{}/api/v1/p2p/peers", self.base_url);
-        let resp = self.http.get(&url).send().await?.json::<PeerListResp>().await?;
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await?
+            .json::<PeerListResp>()
+            .await?;
         Ok(resp.connected_peers)
     }
 

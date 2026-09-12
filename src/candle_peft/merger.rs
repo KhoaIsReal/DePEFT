@@ -16,14 +16,26 @@ impl CandleWeightMerger {
 
         // 1. Load winning adapter matrices into layers
         for (i, layer) in base_model.layers.iter_mut().enumerate() {
-            let q_a = tensor_map.get(&format!("model.layers.{}.self_attn.q_proj.lora_a.weight", i));
-            let q_b = tensor_map.get(&format!("model.layers.{}.self_attn.q_proj.lora_b.weight", i));
+            let q_a = tensor_map.get(&format!(
+                "model.layers.{}.self_attn.q_proj.lora_a.weight",
+                i
+            ));
+            let q_b = tensor_map.get(&format!(
+                "model.layers.{}.self_attn.q_proj.lora_b.weight",
+                i
+            ));
             if let (Some(a), Some(b)) = (q_a, q_b) {
                 layer.self_attn.q_proj.load_adapter(a, b)?;
             }
 
-            let v_a = tensor_map.get(&format!("model.layers.{}.self_attn.v_proj.lora_a.weight", i));
-            let v_b = tensor_map.get(&format!("model.layers.{}.self_attn.v_proj.lora_b.weight", i));
+            let v_a = tensor_map.get(&format!(
+                "model.layers.{}.self_attn.v_proj.lora_a.weight",
+                i
+            ));
+            let v_b = tensor_map.get(&format!(
+                "model.layers.{}.self_attn.v_proj.lora_b.weight",
+                i
+            ));
             if let (Some(a), Some(b)) = (v_a, v_b) {
                 layer.self_attn.v_proj.load_adapter(a, b)?;
             }

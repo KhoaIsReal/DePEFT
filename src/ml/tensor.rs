@@ -24,7 +24,13 @@ impl Matrix {
         }
     }
 
-    pub fn random_normal(rows: usize, cols: usize, mean: f32, std_dev: f32, rng: &mut impl Rng) -> Self {
+    pub fn random_normal(
+        rows: usize,
+        cols: usize,
+        mean: f32,
+        std_dev: f32,
+        rng: &mut impl Rng,
+    ) -> Self {
         let normal = Normal::new(mean, std_dev).unwrap();
         let mut data = Vec::with_capacity(rows * cols);
         for _ in 0..(rows * cols) {
@@ -55,7 +61,11 @@ impl Matrix {
     /// Matrix multiplication: C = A * B.
     /// A: (M, K), B: (K, N) -> C: (M, N)
     pub fn matmul(&self, other: &Matrix) -> Matrix {
-        assert_eq!(self.cols, other.rows, "Matmul dimension mismatch: ({}, {}) x ({}, {})", self.rows, self.cols, other.rows, other.cols);
+        assert_eq!(
+            self.cols, other.rows,
+            "Matmul dimension mismatch: ({}, {}) x ({}, {})",
+            self.rows, self.cols, other.rows, other.cols
+        );
         let m = self.rows;
         let k = self.cols;
         let n = other.cols;
@@ -91,7 +101,12 @@ impl Matrix {
     pub fn add(&self, other: &Matrix) -> Matrix {
         assert_eq!(self.rows, other.rows);
         assert_eq!(self.cols, other.cols);
-        let data: Vec<f32> = self.data.iter().zip(&other.data).map(|(a, b)| a + b).collect();
+        let data: Vec<f32> = self
+            .data
+            .iter()
+            .zip(&other.data)
+            .map(|(a, b)| a + b)
+            .collect();
         Matrix::new(self.rows, self.cols, data)
     }
 
@@ -119,10 +134,8 @@ impl Matrix {
 /// NormalFloat4 (NF4) codebook: 16 optimal quantiles for standard normal distribution $\mathcal{N}(0, 1)$.
 /// As defined in the QLoRA paper (Dettmers et al., 2023).
 pub const NF4_CODEBOOK: [f32; 16] = [
-    -1.0000000, -0.6961928, -0.5250731, -0.3949175,
-    -0.2844414, -0.1847734, -0.0910500,  0.0000000,
-     0.0795803,  0.1609302,  0.2461123,  0.3379152,
-     0.4407098,  0.5626170,  0.7229568,  1.0000000,
+    -1.0000000, -0.6961928, -0.5250731, -0.3949175, -0.2844414, -0.1847734, -0.0910500, 0.0000000,
+    0.0795803, 0.1609302, 0.2461123, 0.3379152, 0.4407098, 0.5626170, 0.7229568, 1.0000000,
 ];
 
 /// Quantized representation of a base model weight matrix.

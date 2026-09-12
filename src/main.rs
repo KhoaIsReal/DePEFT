@@ -1,10 +1,5 @@
 #![allow(non_snake_case)]
 
-use clap::{Parser, Subcommand};
-use colored::*;
-use comfy_table::modifiers::UTF8_ROUND_CORNERS;
-use comfy_table::presets::UTF8_FULL;
-use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use DePEFT::blockchain::state::AppChainState;
 use DePEFT::blockchain::transactions::Transaction;
 use DePEFT::blockchain::types::{AccountId, PeftType, TaskSpec, ValidatorEvaluation};
@@ -14,14 +9,19 @@ use DePEFT::miner::{MinerHyperparams, MinerNode, MinerTrainer};
 use DePEFT::ml::dataset::Dataset;
 use DePEFT::ml::model::DePEFTModel;
 use DePEFT::ml::tensor::{Matrix, QuantizedWeight};
-use DePEFT::storage::disk_ipfs::DiskIpfsStorage;
 use DePEFT::storage::ChainStore;
+use DePEFT::storage::disk_ipfs::DiskIpfsStorage;
 use DePEFT::storage::safetensors::deserialize_safetensors;
 use DePEFT::storage::vector_db::{AdapterVectorRecord, EmbeddedVectorDb};
 use DePEFT::tournament::TournamentEngine;
 use DePEFT::validator::{TeeSandbox, ValidatorNode};
-use rand::rngs::StdRng;
+use clap::{Parser, Subcommand};
+use colored::*;
+use comfy_table::modifiers::UTF8_ROUND_CORNERS;
+use comfy_table::presets::UTF8_FULL;
+use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table};
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -293,7 +293,7 @@ enum TaskCommands {
         #[arg(long, default_value_t = 1)]
         top_k: usize,
 
-        /// Merge strategy: "single" or "ensemble"
+        /// Merge strategy: "single", "ensemble", or "outer" / "diloco" / "fedadam"
         #[arg(long, default_value = "single")]
         merge: String,
     },
@@ -358,16 +358,49 @@ enum ValidatorCommands {
 }
 
 fn print_banner() {
-    println!("{}", "================================================================================".bright_blue());
-    println!("{}", "               DePEFT : Decentralized Parameter-Efficient Fine-Tuning           ".bright_cyan().bold());
-    println!("{}", "                 with ReLoRA Multi-Round Tournament Engine                      ".bright_white());
-    println!("{}", "================================================================================".bright_blue());
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "{}",
+        "               DePEFT : Decentralized Parameter-Efficient Fine-Tuning           "
+            .bright_cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "                 with ReLoRA Multi-Round Tournament Engine                      "
+            .bright_white()
+    );
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
     println!("{}", "Architecture Layers:".bold().underline());
-    println!("  {} Layer 1: App-Chain State Machine (Deterministic Consensus, Escrow & TaskSpec)", "•".bright_green());
-    println!("  {} Layer 2: Heterogeneous Miner Network (NF4/INT4 QLoRA, CUDA/ROCm/CPU compute)", "•".bright_green());
-    println!("  {} Layer 3: Validator Off-Chain Workers (TEE Sandboxes & Relative Consensus)", "•".bright_green());
-    println!("  {} Layer 4: Storage & Database (IPFS CAS & Embedded Lightweight Vector DB)", "•".bright_green());
-    println!("{}", "================================================================================".bright_blue());
+    println!(
+        "  {} Layer 1: App-Chain State Machine (Deterministic Consensus, Escrow & TaskSpec)",
+        "•".bright_green()
+    );
+    println!(
+        "  {} Layer 2: Heterogeneous Miner Network (NF4/INT4 QLoRA, CUDA/ROCm/CPU compute)",
+        "•".bright_green()
+    );
+    println!(
+        "  {} Layer 3: Validator Off-Chain Workers (TEE Sandboxes & Relative Consensus)",
+        "•".bright_green()
+    );
+    println!(
+        "  {} Layer 4: Storage & Database (IPFS CAS & Embedded Lightweight Vector DB)",
+        "•".bright_green()
+    );
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
     println!();
 }
 
@@ -380,7 +413,15 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
         _ => PeftType::QLoRA_NF4,
     };
 
-    println!("{}", format!("[*] Initializing ReLoRA Tournament for {} rounds with {} PEFT...", rounds, peft_type).bright_yellow().bold());
+    println!(
+        "{}",
+        format!(
+            "[*] Initializing ReLoRA Tournament for {} rounds with {} PEFT...",
+            rounds, peft_type
+        )
+        .bright_yellow()
+        .bold()
+    );
 
     let mut rng = StdRng::seed_from_u64(1337);
 
@@ -388,15 +429,26 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
     println!("[*] Generating domain adaptation task dataset (120 samples, 8 in, 4 out)...");
     let full_dataset = Dataset::generate_synthetic_task(120, 8, 4, 1.8, &mut rng);
     let (train_set, test_set) = full_dataset.train_test_split(0.75, &mut rng);
-    println!("    ├─ Training Set (Miners): {} samples", train_set.len().to_string().bright_green());
-    println!("    └─ Private Test Set (TEE): {} samples", test_set.len().to_string().bright_cyan());
+    println!(
+        "    ├─ Training Set (Miners): {} samples",
+        train_set.len().to_string().bright_green()
+    );
+    println!(
+        "    └─ Private Test Set (TEE): {} samples",
+        test_set.len().to_string().bright_cyan()
+    );
 
     // 2. Setup Heterogeneous Miner Nodes
     let mut miners = Vec::new();
     let miner_profiles = [
         ("miner-alpha", "NVIDIA RTX 4090 / CUDA (Fast)", 0.04, 6),
         ("miner-beta", "AMD RX 7900 XTX / ROCm (Stable)", 0.025, 8),
-        ("miner-gamma", "Bare-Metal Linux CPU / AVX512 (Thorough)", 0.015, 10),
+        (
+            "miner-gamma",
+            "Bare-Metal Linux CPU / AVX512 (Thorough)",
+            0.015,
+            10,
+        ),
         ("miner-delta", "NVIDIA A100 SXM4 / TensorRT", 0.03, 7),
     ];
 
@@ -449,7 +501,12 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
     )
     .expect("Failed to initialize tournament engine");
 
-    println!("{}", "\n[+] Task Registered on Blockchain (App-Chain):".bright_green().bold());
+    println!(
+        "{}",
+        "\n[+] Task Registered on Blockchain (App-Chain):"
+            .bright_green()
+            .bold()
+    );
     let task = engine.chain.tasks.get(&1).unwrap();
     println!("    ├─ Task ID: {}", task.task_id);
     println!("    ├─ Client: {}", task.client_address);
@@ -459,22 +516,53 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
     println!("    ├─ Escrow Bounty: {} tokens", task.bounty_pool);
     println!("    └─ Block Deadline: Block #{}", task.epoch_end_block);
 
-    println!("\n{}", "================================================================================".bright_blue());
-    println!("{}", "                      STARTING RELORA TOURNAMENT EPOCHS                         ".bright_magenta().bold());
-    println!("{}", "================================================================================".bright_blue());
+    println!(
+        "\n{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "{}",
+        "                      STARTING RELORA TOURNAMENT EPOCHS                         "
+            .bright_magenta()
+            .bold()
+    );
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
 
     let (initial_loss, initial_acc) = engine.base_model.evaluate(&engine.dataset_test, 0.0);
-    println!("Initial Base Model W_0 Test Loss: {:.6} | Accuracy: {:.2}%\n", initial_loss.to_string().bright_yellow(), (initial_acc * 100.0).to_string().bright_yellow());
+    println!(
+        "Initial Base Model W_0 Test Loss: {:.6} | Accuracy: {:.2}%\n",
+        initial_loss.to_string().bright_yellow(),
+        (initial_acc * 100.0).to_string().bright_yellow()
+    );
 
     let start_time = Instant::now();
 
     for r in 1..=rounds {
-        println!("{}", format!(">>> ===================== TOURNAMENT ROUND {} / {} =====================", r, rounds).bright_cyan().bold());
+        println!(
+            "{}",
+            format!(
+                ">>> ===================== TOURNAMENT ROUND {} / {} =====================",
+                r, rounds
+            )
+            .bright_cyan()
+            .bold()
+        );
 
         let (pre_loss, _) = engine.base_model.evaluate(&engine.dataset_test, 0.0);
-        let summary = engine.run_round(r).expect("Tournament round execution failed");
+        let summary = engine
+            .run_round(r)
+            .expect("Tournament round execution failed");
 
-        let round_ctx = engine.chain.round_contexts.get(&(engine.task_id, r)).unwrap();
+        let round_ctx = engine
+            .chain
+            .round_contexts
+            .get(&(engine.task_id, r))
+            .unwrap();
 
         // Print Phase Summary Table
         let mut table = Table::new();
@@ -482,9 +570,15 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
         table.apply_modifier(UTF8_ROUND_CORNERS);
         table.set_content_arrangement(ContentArrangement::Dynamic);
         table.set_header(vec![
-            Cell::new("Phase").add_attribute(Attribute::Bold).fg(Color::Cyan),
-            Cell::new("On-Chain Action").add_attribute(Attribute::Bold).fg(Color::Cyan),
-            Cell::new("Details").add_attribute(Attribute::Bold).fg(Color::Cyan),
+            Cell::new("Phase")
+                .add_attribute(Attribute::Bold)
+                .fg(Color::Cyan),
+            Cell::new("On-Chain Action")
+                .add_attribute(Attribute::Bold)
+                .fg(Color::Cyan),
+            Cell::new("Details")
+                .add_attribute(Attribute::Bold)
+                .fg(Color::Cyan),
         ]);
 
         table.add_row(vec![
@@ -522,8 +616,18 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
         for (v_id, eval) in &round_ctx.evaluations {
             eval_details.push_str(&format!("[{}] ({})\n", v_id, eval.hardware_info));
             for (rank_i, miner_id) in eval.ranking.iter().enumerate() {
-                let loss = eval.loss_scores.iter().find(|(m, _)| m == miner_id).map(|(_, l)| *l).unwrap_or(0.0);
-                eval_details.push_str(&format!("   Rank #{}: {} (Loss: {:.6})\n", rank_i + 1, miner_id, loss));
+                let loss = eval
+                    .loss_scores
+                    .iter()
+                    .find(|(m, _)| m == miner_id)
+                    .map(|(_, l)| *l)
+                    .unwrap_or(0.0);
+                eval_details.push_str(&format!(
+                    "   Rank #{}: {} (Loss: {:.6})\n",
+                    rank_i + 1,
+                    miner_id,
+                    loss
+                ));
             }
         }
 
@@ -533,7 +637,11 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
             Cell::new(eval_details.trim()),
         ]);
 
-        let mut borda_str = format!("Consensus Winner: {} (Awarded {} tokens)\nBorda Rank Scores:\n", summary.winning_miner.to_string().bright_green().bold(), summary.bounty_awarded);
+        let mut borda_str = format!(
+            "Consensus Winner: {} (Awarded {} tokens)\nBorda Rank Scores:\n",
+            summary.winning_miner.to_string().bright_green().bold(),
+            summary.bounty_awarded
+        );
         for (m, score) in &summary.borda_scores {
             borda_str.push_str(&format!("   {} -> {} points\n", m, score));
         }
@@ -550,9 +658,18 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
             }
         }
         if summary.burned_bounty > 0 {
-            borda_str.push_str(&format!("Deflationary Burn: {} tokens destroyed 🔥\n", summary.burned_bounty));
+            borda_str.push_str(&format!(
+                "Deflationary Burn: {} tokens destroyed 🔥\n",
+                summary.burned_bounty
+            ));
         }
-        borda_str.push_str(&format!("\nReLoRA Weight Merge: W_{} = W_{} + ΔW_{}\nEvolved Model CID: {}", r, r - 1, r, summary.evolved_model_cid));
+        borda_str.push_str(&format!(
+            "\nReLoRA Weight Merge: W_{} = W_{} + ΔW_{}\nEvolved Model CID: {}",
+            r,
+            r - 1,
+            r,
+            summary.evolved_model_cid
+        ));
 
         table.add_row(vec![
             Cell::new("5. Merge"),
@@ -580,20 +697,45 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
     let elapsed = start_time.elapsed();
 
     // Final Tournament Leaderboard & Evolution Summary
-    println!("{}", "================================================================================".bright_blue());
-    println!("{}", "                       FINAL TOURNAMENT LEADERBOARD                             ".bright_yellow().bold());
-    println!("{}", "================================================================================".bright_blue());
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "{}",
+        "                       FINAL TOURNAMENT LEADERBOARD                             "
+            .bright_yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
 
     let mut summary_table = Table::new();
     summary_table.load_preset(UTF8_FULL);
     summary_table.apply_modifier(UTF8_ROUND_CORNERS);
     summary_table.set_header(vec![
-        Cell::new("Round").add_attribute(Attribute::Bold).fg(Color::Yellow),
-        Cell::new("Top-1 Winner").add_attribute(Attribute::Bold).fg(Color::Green),
-        Cell::new("Pre-Merge Loss").add_attribute(Attribute::Bold).fg(Color::White),
-        Cell::new("Post-Merge Loss").add_attribute(Attribute::Bold).fg(Color::Cyan),
-        Cell::new("Improvement").add_attribute(Attribute::Bold).fg(Color::Green),
-        Cell::new("Bounty Paid").add_attribute(Attribute::Bold).fg(Color::Yellow),
+        Cell::new("Round")
+            .add_attribute(Attribute::Bold)
+            .fg(Color::Yellow),
+        Cell::new("Top-1 Winner")
+            .add_attribute(Attribute::Bold)
+            .fg(Color::Green),
+        Cell::new("Pre-Merge Loss")
+            .add_attribute(Attribute::Bold)
+            .fg(Color::White),
+        Cell::new("Post-Merge Loss")
+            .add_attribute(Attribute::Bold)
+            .fg(Color::Cyan),
+        Cell::new("Improvement")
+            .add_attribute(Attribute::Bold)
+            .fg(Color::Green),
+        Cell::new("Bounty Paid")
+            .add_attribute(Attribute::Bold)
+            .fg(Color::Yellow),
     ]);
 
     for s in &engine.chain.round_history {
@@ -603,7 +745,12 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
             Cell::new(s.winning_miner.to_string()).fg(Color::Green),
             Cell::new(format!("{:.6}", s.pre_merge_loss)),
             Cell::new(format!("{:.6}", s.post_merge_loss)).fg(Color::Cyan),
-            Cell::new(format!("-{:.6} ({:.1}%)", diff, (diff / s.pre_merge_loss) * 100.0)).fg(Color::Green),
+            Cell::new(format!(
+                "-{:.6} ({:.1}%)",
+                diff,
+                (diff / s.pre_merge_loss) * 100.0
+            ))
+            .fg(Color::Green),
             Cell::new(format!("{} Tokens", s.bounty_awarded)),
         ]);
     }
@@ -613,19 +760,54 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
     let (final_loss, final_acc) = engine.base_model.evaluate(&engine.dataset_test, 0.0);
     let total_loss_reduction = initial_loss - final_loss;
 
-    println!("{}", "[★] ReLoRA Continuous Training Summary:".bright_cyan().bold());
-    println!("    ├─ Initial W_0 Loss: {:.6} (Accuracy: {:.2}%)", initial_loss, initial_acc * 100.0);
-    println!("    ├─ Final W_{} Loss: {:.6} (Accuracy: {:.2}%)", rounds, final_loss.to_string().bright_green().bold(), (final_acc * 100.0).to_string().bright_green().bold());
-    println!("    ├─ Total Loss Reduction: {:.6} ({:.2}% relative reduction)", total_loss_reduction.to_string().bright_green().bold(), (total_loss_reduction / initial_loss * 100.0).to_string().bright_green().bold());
-    println!("    ├─ IPFS Pinned Artifacts: {} objects", engine.ipfs.count().to_string().bright_yellow());
-    println!("    ├─ Total Burned Tokens: {} $DEPEFT 🔥", engine.chain.total_burned.to_string().bright_red().bold());
+    println!(
+        "{}",
+        "[★] ReLoRA Continuous Training Summary:"
+            .bright_cyan()
+            .bold()
+    );
+    println!(
+        "    ├─ Initial W_0 Loss: {:.6} (Accuracy: {:.2}%)",
+        initial_loss,
+        initial_acc * 100.0
+    );
+    println!(
+        "    ├─ Final W_{} Loss: {:.6} (Accuracy: {:.2}%)",
+        rounds,
+        final_loss.to_string().bright_green().bold(),
+        (final_acc * 100.0).to_string().bright_green().bold()
+    );
+    println!(
+        "    ├─ Total Loss Reduction: {:.6} ({:.2}% relative reduction)",
+        total_loss_reduction.to_string().bright_green().bold(),
+        (total_loss_reduction / initial_loss * 100.0)
+            .to_string()
+            .bright_green()
+            .bold()
+    );
+    println!(
+        "    ├─ IPFS Pinned Artifacts: {} objects",
+        engine.ipfs.count().to_string().bright_yellow()
+    );
+    println!(
+        "    ├─ Total Burned Tokens: {} $DEPEFT 🔥",
+        engine.chain.total_burned.to_string().bright_red().bold()
+    );
     println!("    ├─ Total Time: {:.2?}", elapsed);
     println!("    └─ Winner Miner Balances: {:?}", engine.chain.balances);
 
     // Demonstrate Vector Database Search & Plagiarism Detection
-    println!("\n{}", "[*] Demonstrating Validator Embedded Vector Database & Similarity Search:".bright_magenta().bold());
+    println!(
+        "\n{}",
+        "[*] Demonstrating Validator Embedded Vector Database & Similarity Search:"
+            .bright_magenta()
+            .bold()
+    );
     let last_winner_summary = engine.chain.round_history.last().unwrap();
-    let winning_bytes = engine.ipfs.get(&last_winner_summary.winning_adapter_cid).unwrap();
+    let winning_bytes = engine
+        .ipfs
+        .get(&last_winner_summary.winning_adapter_cid)
+        .unwrap();
     let winning_pkg = deserialize_safetensors(&winning_bytes).unwrap();
     let query_vec = winning_pkg.generate_signature_vector(64);
 
@@ -654,12 +836,20 @@ fn run_tournament_demo(rounds: usize, peft_str: &str, num_miners: usize, num_val
             &res.record.adapter_cid[0..16]
         );
     }
-    println!("    └─ Total Vectors in Validator DB: {}", engine.vector_db.count());
+    println!(
+        "    └─ Total Vectors in Validator DB: {}",
+        engine.vector_db.count()
+    );
     println!();
 }
 
 fn run_benchmarks() {
-    println!("{}", "=== DePEFT Parameter & Compression Benchmark ===".bright_cyan().bold());
+    println!(
+        "{}",
+        "=== DePEFT Parameter & Compression Benchmark ==="
+            .bright_cyan()
+            .bold()
+    );
     let mut rng = StdRng::seed_from_u64(99);
 
     let rows = 512;
@@ -668,20 +858,32 @@ fn run_benchmarks() {
     let matrix = Matrix::xavier_uniform(rows, cols, &mut rng);
     let raw_bytes = rows * cols * 4;
 
-    println!("Base Weight Matrix: ({} x {}), {} elements", rows, cols, rows * cols);
+    println!(
+        "Base Weight Matrix: ({} x {}), {} elements",
+        rows,
+        cols,
+        rows * cols
+    );
     println!("Raw FP32 size: {:.2} KB", raw_bytes as f32 / 1024.0);
 
     // FP32
     let _fp32_weight = QuantizedWeight::FP32(matrix.clone());
     let fp32_mem = raw_bytes;
-    println!("  ├─ FP32 Storage: {:.2} KB (100.0%)", fp32_mem as f32 / 1024.0);
+    println!(
+        "  ├─ FP32 Storage: {:.2} KB (100.0%)",
+        fp32_mem as f32 / 1024.0
+    );
 
     // NF4 Quantization
     let start_nf4 = Instant::now();
     let nf4_weight = QuantizedWeight::quantize_nf4(&matrix, 16);
     let time_nf4 = start_nf4.elapsed();
     let (nf4_packed_len, nf4_scales_len) = match &nf4_weight {
-        QuantizedWeight::NF4 { packed_data, absmax_scales, .. } => (packed_data.len(), absmax_scales.len() * 4),
+        QuantizedWeight::NF4 {
+            packed_data,
+            absmax_scales,
+            ..
+        } => (packed_data.len(), absmax_scales.len() * 4),
         _ => (0, 0),
     };
     let nf4_mem = nf4_packed_len + nf4_scales_len;
@@ -692,14 +894,24 @@ fn run_benchmarks() {
     }
     nf4_mse /= (rows * cols) as f32;
 
-    println!("  ├─ QLoRA NF4 (4-bit): {:.2} KB ({:.1}% of original) | MSE: {:.8} | Quant Time: {:?}", nf4_mem as f32 / 1024.0, (nf4_mem as f32 / raw_bytes as f32) * 100.0, nf4_mse, time_nf4);
+    println!(
+        "  ├─ QLoRA NF4 (4-bit): {:.2} KB ({:.1}% of original) | MSE: {:.8} | Quant Time: {:?}",
+        nf4_mem as f32 / 1024.0,
+        (nf4_mem as f32 / raw_bytes as f32) * 100.0,
+        nf4_mse,
+        time_nf4
+    );
 
     // INT4 Quantization
     let start_int4 = Instant::now();
     let int4_weight = QuantizedWeight::quantize_int4(&matrix, 16);
     let time_int4 = start_int4.elapsed();
     let (int4_packed_len, int4_scales_len) = match &int4_weight {
-        QuantizedWeight::INT4 { packed_data, absmax_scales, .. } => (packed_data.len(), absmax_scales.len() * 4),
+        QuantizedWeight::INT4 {
+            packed_data,
+            absmax_scales,
+            ..
+        } => (packed_data.len(), absmax_scales.len() * 4),
         _ => (0, 0),
     };
     let int4_mem = int4_packed_len + int4_scales_len;
@@ -710,17 +922,33 @@ fn run_benchmarks() {
     }
     int4_mse /= (rows * cols) as f32;
 
-    println!("  ├─ QLoRA INT4 (4-bit): {:.2} KB ({:.1}% of original) | MSE: {:.8} | Quant Time: {:?}", int4_mem as f32 / 1024.0, (int4_mem as f32 / raw_bytes as f32) * 100.0, int4_mse, time_int4);
+    println!(
+        "  ├─ QLoRA INT4 (4-bit): {:.2} KB ({:.1}% of original) | MSE: {:.8} | Quant Time: {:?}",
+        int4_mem as f32 / 1024.0,
+        (int4_mem as f32 / raw_bytes as f32) * 100.0,
+        int4_mse,
+        time_int4
+    );
 
     // LoRA Adapter Size
     let lora_params = rank * cols + rows * rank;
     let lora_bytes = lora_params * 4;
-    println!("  └─ LoRA Adapter (rank={}): {:.2} KB ({:.2}% of full weights)", rank, lora_bytes as f32 / 1024.0, (lora_bytes as f32 / raw_bytes as f32) * 100.0);
+    println!(
+        "  └─ LoRA Adapter (rank={}): {:.2} KB ({:.2}% of full weights)",
+        rank,
+        lora_bytes as f32 / 1024.0,
+        (lora_bytes as f32 / raw_bytes as f32) * 100.0
+    );
     println!();
 }
 
 fn print_spec() {
-    println!("{}", "=== DePEFT On-Chain TaskSpec & Architecture Specification ===".bright_cyan().bold());
+    println!(
+        "{}",
+        "=== DePEFT On-Chain TaskSpec & Architecture Specification ==="
+            .bright_cyan()
+            .bold()
+    );
     let spec = TaskSpec {
         task_id: 1,
         client_address: AccountId::new("client_ai_0x8f2"),
@@ -729,7 +957,12 @@ fn print_spec() {
         dataset_cid: b"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi".to_vec(),
         peft_method: PeftType::QLoRA_NF4,
         max_rank: 64,
-        target_modules: vec![b"q_proj".to_vec(), b"v_proj".to_vec(), b"k_proj".to_vec(), b"o_proj".to_vec()],
+        target_modules: vec![
+            b"q_proj".to_vec(),
+            b"v_proj".to_vec(),
+            b"k_proj".to_vec(),
+            b"o_proj".to_vec(),
+        ],
         bounty_pool: 50_000,
         epoch_end_block: 1200,
         reward_distribution: DePEFT::blockchain::types::RewardDistribution::TopKDecay {
@@ -739,12 +972,20 @@ fn print_spec() {
         merge_strategy: DePEFT::blockchain::types::MergeStrategy::EnsembleWeighted { top_k: 5 },
     };
 
-    println!("{}", serde_json::to_string_pretty(&spec).unwrap().bright_green());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&spec).unwrap().bright_green()
+    );
     println!();
 }
 
 fn run_vector_query() {
-    println!("{}", "=== Validator Embedded Vector Database Query Demonstration ===".bright_cyan().bold());
+    println!(
+        "{}",
+        "=== Validator Embedded Vector Database Query Demonstration ==="
+            .bright_cyan()
+            .bold()
+    );
     let vdb = EmbeddedVectorDb::new(8);
 
     // Add candidate adapters
@@ -776,14 +1017,27 @@ fn run_vector_query() {
     println!("Query Signature: {:?}", query);
     let results = vdb.search(&query, 3);
     for (i, res) in results.iter().enumerate() {
-        println!("  #{}: {} -> Similarity: {:.4} (CID: {})", i + 1, res.record.miner_address, res.similarity, res.record.adapter_cid);
+        println!(
+            "  #{}: {} -> Similarity: {:.4} (CID: {})",
+            i + 1,
+            res.record.miner_address,
+            res.similarity,
+            res.record.adapter_cid
+        );
     }
 
     // Check Plagiarism detection
-    println!("\nPlagiarism Detection Test (Miner-4 submitting nearly identical weights to Miner-1):");
+    println!(
+        "\nPlagiarism Detection Test (Miner-4 submitting nearly identical weights to Miner-1):"
+    );
     let plagiarized = vdb.check_plagiarism(&query, &AccountId::new("miner-copycat"));
     if let Some(p) = plagiarized {
-        println!("  {} Plagiarism alert! Matches {} with similarity {:.6}", "WARNING:".bright_red().bold(), p.record.miner_address, p.similarity);
+        println!(
+            "  {} Plagiarism alert! Matches {} with similarity {:.6}",
+            "WARNING:".bright_red().bold(),
+            p.record.miner_address,
+            p.similarity
+        );
     }
 }
 
@@ -795,10 +1049,24 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Key { subcommand }) => match subcommand {
             KeyCommands::Generate => {
                 let keypair = AccountKeypair::generate();
-                println!("{}", "=== Generated New DePEFT Ed25519 Account Keypair ===".bright_green().bold());
-                println!("Public Address: {}", keypair.account_id().to_string().bright_cyan().bold());
-                println!("Public Key:     0x{}", hex::encode(keypair.public_key_bytes()));
-                println!("Secret Key:     0x{}", hex::encode(keypair.secret_key_bytes()).bright_yellow());
+                println!(
+                    "{}",
+                    "=== Generated New DePEFT Ed25519 Account Keypair ==="
+                        .bright_green()
+                        .bold()
+                );
+                println!(
+                    "Public Address: {}",
+                    keypair.account_id().to_string().bright_cyan().bold()
+                );
+                println!(
+                    "Public Key:     0x{}",
+                    hex::encode(keypair.public_key_bytes())
+                );
+                println!(
+                    "Secret Key:     0x{}",
+                    hex::encode(keypair.secret_key_bytes()).bright_yellow()
+                );
                 println!("\n{}", "Keep your secret key safe! Use it to sign transactions as client, miner, or validator.".dimmed());
             }
             KeyCommands::Inspect { secret_hex } => {
@@ -810,9 +1078,18 @@ async fn main() -> anyhow::Result<()> {
                 let mut arr = [0u8; 32];
                 arr.copy_from_slice(&bytes);
                 let keypair = AccountKeypair::from_secret_bytes(&arr);
-                println!("{}", "=== Account Keypair Details ===".bright_green().bold());
-                println!("Public Address: {}", keypair.account_id().to_string().bright_cyan().bold());
-                println!("Public Key:     0x{}", hex::encode(keypair.public_key_bytes()));
+                println!(
+                    "{}",
+                    "=== Account Keypair Details ===".bright_green().bold()
+                );
+                println!(
+                    "Public Address: {}",
+                    keypair.account_id().to_string().bright_cyan().bold()
+                );
+                println!(
+                    "Public Key:     0x{}",
+                    hex::encode(keypair.public_key_bytes())
+                );
             }
         },
 
@@ -837,28 +1114,43 @@ async fn main() -> anyhow::Result<()> {
                         .join("storage")
                 });
                 let storage = Arc::new(DiskIpfsStorage::new(&storage_path)?);
-                let chain_store = Arc::new(Mutex::new(ChainStore::open(storage_path.join("chain.sqlite"))?));
-                let mut loaded_state = chain_store.lock().unwrap().load()?.unwrap_or_else(AppChainState::new);
+                let chain_store = Arc::new(Mutex::new(ChainStore::open(
+                    storage_path.join("chain.sqlite"),
+                )?));
+                let mut loaded_state = chain_store
+                    .lock()
+                    .unwrap()
+                    .load()?
+                    .unwrap_or_else(AppChainState::new);
 
                 // Register trusted TEE measurements and platform keys
                 let mut configured_roots = 0;
                 for hex_str in &trusted_mrenclave {
                     let clean = hex_str.trim().trim_start_matches("0x");
-                    if let Ok(arr) = hex::decode(clean).map_err(|_| ()).and_then(|b| b.try_into().map_err(|_| ())) {
+                    if let Ok(arr) = hex::decode(clean)
+                        .map_err(|_| ())
+                        .and_then(|b| b.try_into().map_err(|_| ()))
+                    {
                         loaded_state.tee_verifier.register_mrenclave(arr);
                         configured_roots += 1;
                     }
                 }
                 for hex_str in &trusted_mrsigner {
                     let clean = hex_str.trim().trim_start_matches("0x");
-                    if let Ok(arr) = hex::decode(clean).map_err(|_| ()).and_then(|b| b.try_into().map_err(|_| ())) {
+                    if let Ok(arr) = hex::decode(clean)
+                        .map_err(|_| ())
+                        .and_then(|b| b.try_into().map_err(|_| ()))
+                    {
                         loaded_state.tee_verifier.register_mrsigner(arr);
                         configured_roots += 1;
                     }
                 }
                 for hex_str in &trusted_platform_key {
                     let clean = hex_str.trim().trim_start_matches("0x");
-                    if let Ok(arr) = hex::decode(clean).map_err(|_| ()).and_then(|b| b.try_into().map_err(|_| ())) {
+                    if let Ok(arr) = hex::decode(clean)
+                        .map_err(|_| ())
+                        .and_then(|b| b.try_into().map_err(|_| ()))
+                    {
                         loaded_state.tee_verifier.register_platform_key(arr);
                         configured_roots += 1;
                     }
@@ -877,7 +1169,9 @@ async fn main() -> anyhow::Result<()> {
                         sev_enclave.measurement.mrenclave,
                         sev_enclave.platform_public_key(),
                     );
-                    println!("[*] Testnet TEE Simulator Root of Trust enabled (Intel SGX + AMD SEV)");
+                    println!(
+                        "[*] Testnet TEE Simulator Root of Trust enabled (Intel SGX + AMD SEV)"
+                    );
                 }
 
                 let chain = Arc::new(RwLock::new(loaded_state));
@@ -893,7 +1187,8 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     format!("{}:{}", host, p2p_port).parse()?
                 };
-                let (swarm_instance, mut tx_rx, mut _msg_rx) = DePEFT::p2p::P2pSwarm::new(local_peer_id.clone(), p2p_addr);
+                let (swarm_instance, mut tx_rx, mut _msg_rx) =
+                    DePEFT::p2p::P2pSwarm::new(local_peer_id.clone(), p2p_addr);
                 let swarm = Arc::new(swarm_instance);
 
                 // Start P2P TCP gossip listener
@@ -922,10 +1217,15 @@ async fn main() -> anyhow::Result<()> {
                             let state_before = c.clone();
                             if c.apply_transaction(signed_tx.tx, &sender).is_ok() {
                                 if store_p2p.lock().unwrap().save(&c).is_ok() {
-                                    println!("[P2P Gossip] Successfully applied transaction from {}", sender);
+                                    println!(
+                                        "[P2P Gossip] Successfully applied transaction from {}",
+                                        sender
+                                    );
                                 } else {
                                     *c = state_before;
-                                    eprintln!("[P2P Gossip] Refused transaction because persistence failed");
+                                    eprintln!(
+                                        "[P2P Gossip] Refused transaction because persistence failed"
+                                    );
                                 }
                             }
                         }
@@ -949,11 +1249,17 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", "================================================================================".bright_blue());
                 println!("{}", "                 DePEFT App-Chain Live Node Daemon Starting                      ".bright_cyan().bold());
                 println!("{}", "================================================================================".bright_blue());
-                println!("Node Peer ID:     {}", local_peer_id.to_string().bright_green());
+                println!(
+                    "Node Peer ID:     {}",
+                    local_peer_id.to_string().bright_green()
+                );
                 println!("Storage CAS Path: {:?}", storage.path());
                 println!("HTTP JSON-RPC:    http://{}", addr);
                 println!("P2P Overlay TCP:  tcp://{}", p2p_addr);
-                println!("TEE Trust Roots:  {} custom measurements/keys loaded", configured_roots);
+                println!(
+                    "TEE Trust Roots:  {} custom measurements/keys loaded",
+                    configured_roots
+                );
 
                 let production = std::env::var("DEPEFT_ENV")
                     .map(|value| value.eq_ignore_ascii_case("production"))
@@ -980,7 +1286,12 @@ async fn main() -> anyhow::Result<()> {
             P2pCommands::Peers { node_url } => {
                 let client = DePeftClient::new(node_url);
                 let peers = client.get_peers().await?;
-                println!("{}", format!("=== Connected P2P Overlay Peers ({}) ===", peers.len()).bright_cyan().bold());
+                println!(
+                    "{}",
+                    format!("=== Connected P2P Overlay Peers ({}) ===", peers.len())
+                        .bright_cyan()
+                        .bold()
+                );
                 for (i, p) in peers.iter().enumerate() {
                     println!("  #{}: {}", i + 1, p.bright_green());
                 }
@@ -988,14 +1299,21 @@ async fn main() -> anyhow::Result<()> {
             P2pCommands::Connect { node_url, addr } => {
                 let client = DePeftClient::new(node_url);
                 let res = client.connect_peer(&addr).await?;
-                println!("{} {}", "[+] P2P Connection Result:".bright_green().bold(), res);
+                println!(
+                    "{} {}",
+                    "[+] P2P Connection Result:".bright_green().bold(),
+                    res
+                );
             }
         },
 
         Some(Commands::Ipfs { subcommand }) => match subcommand {
             IpfsCommands::Status { api_url } => {
                 let kubo = DePEFT::storage::IpfsKuboClient::new(&api_url, "http://127.0.0.1:8080");
-                println!("{}", "=== Querying IPFS Kubo Daemon ===".bright_cyan().bold());
+                println!(
+                    "{}",
+                    "=== Querying IPFS Kubo Daemon ===".bright_cyan().bold()
+                );
                 match kubo.node_info().await {
                     Ok(info) => {
                         println!("Status:           {}", "ONLINE".bright_green().bold());
@@ -1008,7 +1326,12 @@ async fn main() -> anyhow::Result<()> {
                         }
                     }
                     Err(e) => {
-                        println!("Status:           {}", "OFFLINE (Local Disk CAS fallback active)".bright_yellow().bold());
+                        println!(
+                            "Status:           {}",
+                            "OFFLINE (Local Disk CAS fallback active)"
+                                .bright_yellow()
+                                .bold()
+                        );
                         println!("Endpoint:         {}", api_url);
                         println!("Details:          {}", e);
                     }
@@ -1018,11 +1341,23 @@ async fn main() -> anyhow::Result<()> {
                 let data = std::fs::read(&file_path)?;
                 let filename = file_path.file_name().unwrap_or_default().to_string_lossy();
                 let kubo = DePEFT::storage::IpfsKuboClient::new(&api_url, "http://127.0.0.1:8080");
-                println!("[*] Uploading {:?} ({} bytes) to IPFS...", file_path, data.len());
+                println!(
+                    "[*] Uploading {:?} ({} bytes) to IPFS...",
+                    file_path,
+                    data.len()
+                );
                 let cid = kubo.add_bytes(&data, &filename).await?;
-                println!("{} {}", "[✓] IPFS Upload Successful! CID:".bright_green().bold(), cid.bright_yellow().bold());
+                println!(
+                    "{} {}",
+                    "[✓] IPFS Upload Successful! CID:".bright_green().bold(),
+                    cid.bright_yellow().bold()
+                );
             }
-            IpfsCommands::Cat { cid, output, api_url } => {
+            IpfsCommands::Cat {
+                cid,
+                output,
+                api_url,
+            } => {
                 let kubo = DePEFT::storage::IpfsKuboClient::new(&api_url, "http://127.0.0.1:8080");
                 println!("[*] Fetching CID {} from IPFS...", cid);
                 let bytes = kubo.cat_bytes(&cid).await?;
@@ -1043,7 +1378,12 @@ async fn main() -> anyhow::Result<()> {
             TaskCommands::List { node_url } => {
                 let client = DePeftClient::new(node_url);
                 let tasks = client.get_tasks().await?;
-                println!("{}", format!("=== Active Tasks on DePEFT Network ({}) ===", tasks.len()).bright_cyan().bold());
+                println!(
+                    "{}",
+                    format!("=== Active Tasks on DePEFT Network ({}) ===", tasks.len())
+                        .bright_cyan()
+                        .bold()
+                );
                 for t in tasks {
                     println!(
                         "Task #{}: {} | Base: {} | Escrow: {} tokens | Deadline: Block #{}",
@@ -1070,7 +1410,9 @@ async fn main() -> anyhow::Result<()> {
                 let keypair = AccountKeypair::from_secret_bytes(&arr);
 
                 let client = DePeftClient::new(&node_url);
-                let account_info = client.get_account(&keypair.account_id().to_string()).await?;
+                let account_info = client
+                    .get_account(&keypair.account_id().to_string())
+                    .await?;
 
                 let reward_distribution = if top_k <= 1 {
                     DePEFT::blockchain::types::RewardDistribution::WinnerTakesAll
@@ -1081,10 +1423,20 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
-                let merge_strategy = if merge.to_lowercase() == "ensemble" {
-                    DePEFT::blockchain::types::MergeStrategy::EnsembleWeighted { top_k }
-                } else {
-                    DePEFT::blockchain::types::MergeStrategy::SingleWinner
+                let merge_strategy = match merge.to_lowercase().as_str() {
+                    "ensemble" => {
+                        DePEFT::blockchain::types::MergeStrategy::EnsembleWeighted { top_k }
+                    }
+                    "outer" | "diloco" | "fedadam" => {
+                        DePEFT::blockchain::types::MergeStrategy::OuterOptimizer {
+                            top_k: top_k.max(2),
+                            outer_lr: 0.7,
+                            beta1: 0.9,
+                            beta2: 0.99,
+                            eps: 1e-8,
+                        }
+                    }
+                    _ => DePEFT::blockchain::types::MergeStrategy::SingleWinner,
                 };
 
                 // Create Task transaction
@@ -1096,7 +1448,11 @@ async fn main() -> anyhow::Result<()> {
                     dataset_cid: b"bafy_sample_dataset".to_vec(),
                     peft_method: PeftType::QLoRA_NF4,
                     max_rank: 64,
-                    target_modules: vec![b"q_proj".to_vec(), b"v_proj".to_vec(), b"out_proj".to_vec()],
+                    target_modules: vec![
+                        b"q_proj".to_vec(),
+                        b"v_proj".to_vec(),
+                        b"out_proj".to_vec(),
+                    ],
                     bounty_pool: bounty,
                     epoch_blocks: 100,
                     reward_distribution,
@@ -1105,7 +1461,11 @@ async fn main() -> anyhow::Result<()> {
 
                 let signed_tx = keypair.sign_transaction(tx)?;
                 let result = client.submit_transaction(&signed_tx).await?;
-                println!("{} {}", "[+] Task Creation Result:".bright_green().bold(), result);
+                println!(
+                    "{} {}",
+                    "[+] Task Creation Result:".bright_green().bold(),
+                    result
+                );
             }
         },
 
@@ -1129,7 +1489,11 @@ async fn main() -> anyhow::Result<()> {
                 dev_mgr.print_device_summary();
 
                 let detected_hw = if hardware == "Auto-Detect" {
-                    format!("{} ({})", dev_mgr.primary_info().backend, dev_mgr.primary_info().name)
+                    format!(
+                        "{} ({})",
+                        dev_mgr.primary_info().backend,
+                        dev_mgr.primary_info().name
+                    )
                 } else {
                     hardware
                 };
@@ -1140,7 +1504,16 @@ async fn main() -> anyhow::Result<()> {
                 arr.copy_from_slice(&bytes);
                 let keypair = AccountKeypair::from_secret_bytes(&arr);
 
-                println!("{}", format!("[*] Starting Miner Worker [{}] on Task #{}...", keypair.account_id(), task_id).bright_cyan().bold());
+                println!(
+                    "{}",
+                    format!(
+                        "[*] Starting Miner Worker [{}] on Task #{}...",
+                        keypair.account_id(),
+                        task_id
+                    )
+                    .bright_cyan()
+                    .bold()
+                );
                 let client = DePeftClient::new(&node_url);
                 let task = client.get_task(task_id).await?;
 
@@ -1150,7 +1523,8 @@ async fn main() -> anyhow::Result<()> {
                 println!("    └─ Hardware: {}", detected_hw.bright_yellow());
 
                 let mut rng = StdRng::seed_from_u64(42);
-                let base_model = DePEFTModel::new("BaseModel", 8, 16, 4, 4, task.peft_method, &mut rng);
+                let base_model =
+                    DePEFTModel::new("BaseModel", 8, 16, 4, 4, task.peft_method, &mut rng);
                 let dataset = Dataset::generate_synthetic_task(80, 8, 4, 1.5, &mut rng);
 
                 let hyperparams = MinerHyperparams {
@@ -1161,12 +1535,21 @@ async fn main() -> anyhow::Result<()> {
                 };
 
                 println!("[*] Training local QLoRA adapter matrices...");
-                let artifact = MinerTrainer::train(&base_model, &dataset, &task, 1, &hyperparams, &mut rng)?;
-                println!("    ├─ Train Loss: {:.6}", artifact.train_loss.to_string().bright_green());
-                println!("    └─ Commit Hash: 0x{}", hex::encode(artifact.commit_hash));
+                let artifact =
+                    MinerTrainer::train(&base_model, &dataset, &task, 1, &hyperparams, &mut rng)?;
+                println!(
+                    "    ├─ Train Loss: {:.6}",
+                    artifact.train_loss.to_string().bright_green()
+                );
+                println!(
+                    "    └─ Commit Hash: 0x{}",
+                    hex::encode(artifact.commit_hash)
+                );
 
                 // 1. Submit Commit Transaction
-                let acc_info = client.get_account(&keypair.account_id().to_string()).await?;
+                let acc_info = client
+                    .get_account(&keypair.account_id().to_string())
+                    .await?;
                 let commit_tx = Transaction::CommitAdapter {
                     task_id,
                     round: 1,
@@ -1188,7 +1571,8 @@ async fn main() -> anyhow::Result<()> {
                 let mut attempts = 0;
                 while attempts < 30 {
                     if let Ok(ctx) = client.get_round_context(task_id, 1).await {
-                        let is_reveal_phase = ctx.phase == DePEFT::blockchain::types::RoundPhase::RevealPhase;
+                        let is_reveal_phase =
+                            ctx.phase == DePEFT::blockchain::types::RoundPhase::RevealPhase;
                         if is_reveal_phase {
                             println!("[*] Round #1 entered RevealPhase!");
                             break;
@@ -1199,7 +1583,9 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 // 4. Submit Reveal Transaction
-                let acc_info2 = client.get_account(&keypair.account_id().to_string()).await?;
+                let acc_info2 = client
+                    .get_account(&keypair.account_id().to_string())
+                    .await?;
                 let reveal_tx = Transaction::RevealAdapter {
                     task_id,
                     round: 1,
@@ -1233,7 +1619,11 @@ async fn main() -> anyhow::Result<()> {
                 dev_mgr.print_device_summary();
 
                 let detected_hw = if hardware == "Auto-Detect" {
-                    format!("{} ({})", dev_mgr.primary_info().backend, dev_mgr.primary_info().name)
+                    format!(
+                        "{} ({})",
+                        dev_mgr.primary_info().backend,
+                        dev_mgr.primary_info().name
+                    )
                 } else {
                     hardware
                 };
@@ -1244,7 +1634,16 @@ async fn main() -> anyhow::Result<()> {
                 arr.copy_from_slice(&bytes);
                 let keypair = AccountKeypair::from_secret_bytes(&arr);
 
-                println!("{}", format!("[*] Starting Validator Worker [{}] on Task #{}...", keypair.account_id(), task_id).bright_cyan().bold());
+                println!(
+                    "{}",
+                    format!(
+                        "[*] Starting Validator Worker [{}] on Task #{}...",
+                        keypair.account_id(),
+                        task_id
+                    )
+                    .bright_cyan()
+                    .bold()
+                );
                 let client = DePeftClient::new(&node_url);
                 let task = client.get_task(task_id).await?;
 
@@ -1255,7 +1654,8 @@ async fn main() -> anyhow::Result<()> {
                 let mut rng = StdRng::seed_from_u64(999);
                 let private_test_set = Dataset::generate_synthetic_task(30, 8, 4, 1.5, &mut rng);
                 let _tee = TeeSandbox::new(private_test_set, "sgx-enclave-live-1");
-                let _base_model = DePEFTModel::new("BaseModel", 8, 16, 4, 4, task.peft_method, &mut rng);
+                let _base_model =
+                    DePEFTModel::new("BaseModel", 8, 16, 4, 4, task.peft_method, &mut rng);
 
                 // In a live round, wait for EvaluationPhase and evaluate actual revealed miners
                 println!("[*] Waiting for Round Phase to transition to EvaluationPhase...");
@@ -1263,7 +1663,8 @@ async fn main() -> anyhow::Result<()> {
                 let mut attempts = 0;
                 while attempts < 40 {
                     if let Ok(ctx) = client.get_round_context(task_id, 1).await {
-                        let is_eval_phase = ctx.phase == DePEFT::blockchain::types::RoundPhase::EvaluationPhase
+                        let is_eval_phase = ctx.phase
+                            == DePEFT::blockchain::types::RoundPhase::EvaluationPhase
                             || ctx.phase == DePEFT::blockchain::types::RoundPhase::MergePhase;
                         if is_eval_phase {
                             round_ctx_opt = Some(ctx);
@@ -1277,17 +1678,26 @@ async fn main() -> anyhow::Result<()> {
                 let round_ctx = match round_ctx_opt {
                     Some(ctx) if !ctx.reveals.is_empty() => ctx,
                     _ => {
-                        println!("[!] No revealed miners found for Task #{} Round 1. Please ensure miners have submitted reveals.", task_id);
+                        println!(
+                            "[!] No revealed miners found for Task #{} Round 1. Please ensure miners have submitted reveals.",
+                            task_id
+                        );
                         return Ok(());
                     }
                 };
 
-                println!("[*] Evaluating {} revealed adapters inside secure TEE Sandbox Enclave...", round_ctx.reveals.len());
+                println!(
+                    "[*] Evaluating {} revealed adapters inside secure TEE Sandbox Enclave...",
+                    round_ctx.reveals.len()
+                );
                 let actual_ranking: Vec<AccountId> = round_ctx.reveals.keys().cloned().collect();
-                let loss_scores: Vec<(AccountId, f64)> = actual_ranking.iter().map(|m| (m.clone(), 0.185)).collect();
-                let accuracy_scores: Vec<(AccountId, f64)> = actual_ranking.iter().map(|m| (m.clone(), 0.96)).collect();
+                let loss_scores: Vec<(AccountId, f64)> =
+                    actual_ranking.iter().map(|m| (m.clone(), 0.185)).collect();
+                let accuracy_scores: Vec<(AccountId, f64)> =
+                    actual_ranking.iter().map(|m| (m.clone(), 0.96)).collect();
 
-                let enclave = DePEFT::tee::HardwareTeeEnclave::official(DePEFT::tee::TeeType::IntelSgxDcap);
+                let enclave =
+                    DePEFT::tee::HardwareTeeEnclave::official(DePEFT::tee::TeeType::IntelSgxDcap);
                 let quote = enclave.generate_quote(task_id, 1, &actual_ranking)?;
 
                 let eval = ValidatorEvaluation {
@@ -1299,7 +1709,9 @@ async fn main() -> anyhow::Result<()> {
                     attestation_quote: Some(quote),
                 };
 
-                let acc_info = client.get_account(&keypair.account_id().to_string()).await?;
+                let acc_info = client
+                    .get_account(&keypair.account_id().to_string())
+                    .await?;
                 let eval_tx = Transaction::SubmitEvaluation {
                     task_id,
                     round: 1,
@@ -1312,7 +1724,13 @@ async fn main() -> anyhow::Result<()> {
             }
         },
 
-        Some(Commands::LlmDemo { rounds, steps, optimizer, device, multi_gpu }) => {
+        Some(Commands::LlmDemo {
+            rounds,
+            steps,
+            optimizer,
+            device,
+            multi_gpu,
+        }) => {
             run_candle_llm_demo(rounds, steps, &optimizer, &device, multi_gpu)?;
         }
         Some(Commands::BftDemo { validators, blocks }) => {
@@ -1351,10 +1769,25 @@ fn run_bft_demo(num_validators: usize, num_blocks: usize) {
     use DePEFT::consensus::{BftEngine, ConsensusValidator, SlashingEngine};
     use DePEFT::crypto::AccountKeypair;
 
-    println!("{}", "================================================================================".bright_blue());
-    println!("{}", "      DePEFT : Byzantine Fault Tolerant (BFT) State Finality & Consensus        ".bright_cyan().bold());
-    println!("{}", "================================================================================".bright_blue());
-    println!("Consensus Protocol: Tendermint/CometBFT 2-Phase Commit (Propose -> Prevote -> Precommit -> Commit)");
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "{}",
+        "      DePEFT : Byzantine Fault Tolerant (BFT) State Finality & Consensus        "
+            .bright_cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "Consensus Protocol: Tendermint/CometBFT 2-Phase Commit (Propose -> Prevote -> Precommit -> Commit)"
+    );
     println!("Fault Tolerance:    f < n/3 Byzantine Tolerance (2/3+ Supermajority Quorum)\n");
 
     // 1. Initialize validator set
@@ -1370,28 +1803,61 @@ fn run_bft_demo(num_validators: usize, num_blocks: usize) {
         keypairs.push(kp);
     }
 
-    println!("[*] Initialized Active Consensus Validator Committee ({} nodes):", num_validators);
+    println!(
+        "[*] Initialized Active Consensus Validator Committee ({} nodes):",
+        num_validators
+    );
     for (i, v) in consensus_validators.iter().enumerate() {
-        println!("    ├─ Validator #{}: {} (Voting Power: {})", i + 1, v.address.to_string().bright_green(), v.voting_power);
+        println!(
+            "    ├─ Validator #{}: {} (Voting Power: {})",
+            i + 1,
+            v.address.to_string().bright_green(),
+            v.voting_power
+        );
     }
 
     let mut bft = BftEngine::new(consensus_validators, [0xde; 32]);
     let mut slasher = SlashingEngine::new();
 
-    println!("\n>>> Starting BFT Consensus Epoch (Target: {} finalized blocks)...", num_blocks);
+    println!(
+        "\n>>> Starting BFT Consensus Epoch (Target: {} finalized blocks)...",
+        num_blocks
+    );
 
     for h in 1..=num_blocks {
-        println!("\n--- [HEIGHT {}] -------------------------------------------------------------", h);
-        let proposer_addr = bft.validator_set.get_proposer(bft.current_height, bft.current_round);
-        let proposer_kp = keypairs.iter().find(|kp| kp.account_id() == proposer_addr).unwrap();
-        println!("[1. PROPOSE] Proposer {} creates block proposal...", proposer_addr.to_string().bright_yellow());
+        println!(
+            "\n--- [HEIGHT {}] -------------------------------------------------------------",
+            h
+        );
+        let proposer_addr = bft
+            .validator_set
+            .get_proposer(bft.current_height, bft.current_round);
+        let proposer_kp = keypairs
+            .iter()
+            .find(|kp| kp.account_id() == proposer_addr)
+            .unwrap();
+        println!(
+            "[1. PROPOSE] Proposer {} creates block proposal...",
+            proposer_addr.to_string().bright_yellow()
+        );
 
-        let proposal = bft.create_proposal(proposer_kp, Vec::new()).expect("Proposal must succeed");
+        let proposal = bft
+            .create_proposal(proposer_kp, Vec::new())
+            .expect("Proposal must succeed");
         let block_hash = proposal.block_hash();
-        println!("    ├─ Block Hash: 0x{}...", hex::encode(&block_hash[0..16]).bright_magenta());
-        println!("    └─ Prev Hash:  0x{}...", hex::encode(&proposal.header.prev_block_hash[0..16]));
+        println!(
+            "    ├─ Block Hash: 0x{}...",
+            hex::encode(&block_hash[0..16]).bright_magenta()
+        );
+        println!(
+            "    └─ Prev Hash:  0x{}...",
+            hex::encode(&proposal.header.prev_block_hash[0..16])
+        );
 
-        println!("[2. PREVOTE] Validators verifying block & broadcasting Prevotes (> 2/3 threshold: {} power)...", bft.validator_set.two_thirds_threshold());
+        println!(
+            "[2. PREVOTE] Validators verifying block & broadcasting Prevotes (> 2/3 threshold: {} power)...",
+            bft.validator_set.two_thirds_threshold()
+        );
         for kp in &keypairs {
             let vote = bft.cast_prevote(kp, Some(block_hash)).unwrap();
             let _ = bft.add_vote(vote);
@@ -1409,9 +1875,19 @@ fn run_bft_demo(num_validators: usize, num_blocks: usize) {
 
         let committed = finalized_block.expect("Block must be finalized with 2/3+ precommits");
         let commit_info = committed.commit.as_ref().unwrap();
-        println!("[4. COMMIT] Block #{} Finalized & Committed to Immutable Ledger!", h);
-        println!("    ├─ Aggregated Signatures: {} / {} validators", commit_info.signatures.len(), num_validators);
-        println!("    └─ Next State Root: 0x{}...", hex::encode(&committed.header.state_root[0..16]).bright_cyan());
+        println!(
+            "[4. COMMIT] Block #{} Finalized & Committed to Immutable Ledger!",
+            h
+        );
+        println!(
+            "    ├─ Aggregated Signatures: {} / {} validators",
+            commit_info.signatures.len(),
+            num_validators
+        );
+        println!(
+            "    └─ Next State Root: 0x{}...",
+            hex::encode(&committed.header.state_root[0..16]).bright_cyan()
+        );
     }
 
     println!("\n[*] Testing Byzantine Fault Detection & Equivocation Slashing:");
@@ -1422,8 +1898,15 @@ fn run_bft_demo(num_validators: usize, num_blocks: usize) {
     let _ = slasher.check_vote(&vote_1);
     match slasher.check_vote(&vote_2) {
         Ok(Some(evidence)) => {
-            println!("{} Byzantine double-voting detected for validator {}", "[✓] Equivocation Caught:".bright_green().bold(), evidence.validator.to_string().bright_red());
-            println!("    └─ Slashed Validator: {} | Stake Penalized", evidence.validator.to_string().bright_yellow());
+            println!(
+                "{} Byzantine double-voting detected for validator {}",
+                "[✓] Equivocation Caught:".bright_green().bold(),
+                evidence.validator.to_string().bright_red()
+            );
+            println!(
+                "    └─ Slashed Validator: {} | Stake Penalized",
+                evidence.validator.to_string().bright_yellow()
+            );
         }
         _ => println!("[!] Slashing failed to trigger"),
     }
@@ -1439,17 +1922,39 @@ fn run_bft_demo(num_validators: usize, num_blocks: usize) {
 fn run_tee_quote_demo() {
     use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeType};
 
-    println!("{}", "================================================================================".bright_blue());
-    println!("{}", "      DePEFT : Hardware TEE Remote Attestation Quote & On-Chain Verifier        ".bright_cyan().bold());
-    println!("{}", "================================================================================".bright_blue());
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "{}",
+        "      DePEFT : Hardware TEE Remote Attestation Quote & On-Chain Verifier        "
+            .bright_cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
     println!("Hardware Enclave: Intel SGX (DCAP) / AMD SEV-SNP");
     println!("Security Model:   MRENCLAVE / MRSIGNER Code Attestation & Cryptographic Quote\n");
 
     let enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
     println!("[*] Validator TEE Enclave Initialized:");
-    println!("    ├─ Enclave Type: {}", enclave.tee_type.to_string().bright_green());
-    println!("    ├─ MRENCLAVE:    {}", enclave.measurement.mrenclave_hex().bright_yellow());
-    println!("    ├─ MRSIGNER:     {}", enclave.measurement.mrsigner_hex().bright_cyan());
+    println!(
+        "    ├─ Enclave Type: {}",
+        enclave.tee_type.to_string().bright_green()
+    );
+    println!(
+        "    ├─ MRENCLAVE:    {}",
+        enclave.measurement.mrenclave_hex().bright_yellow()
+    );
+    println!(
+        "    ├─ MRSIGNER:     {}",
+        enclave.measurement.mrsigner_hex().bright_cyan()
+    );
     println!("    ├─ ISV Prod ID:  {}", enclave.measurement.isv_prod_id);
     println!("    └─ ISV SVN:      {}", enclave.measurement.isv_svn);
 
@@ -1459,11 +1964,22 @@ fn run_tee_quote_demo() {
         AccountId::new("0x_miner_gamma_cpu"),
     ];
 
-    let quote = enclave.generate_quote(1, 1, &ranking).expect("Failed to generate quote");
+    let quote = enclave
+        .generate_quote(1, 1, &ranking)
+        .expect("Failed to generate quote");
     println!("\n[+] Generated Hardware Attestation Quote:");
-    println!("    ├─ Report Data (SHA-512): 0x{}...", hex::encode(&quote.report_data[0..16]).bright_magenta());
-    println!("    ├─ Platform Public Key:   0x{}", hex::encode(quote.platform_public_key));
-    println!("    ├─ Quote Signature (64B): 0x{}...", hex::encode(&quote.quote_signature[0..16]));
+    println!(
+        "    ├─ Report Data (SHA-512): 0x{}...",
+        hex::encode(&quote.report_data[0..16]).bright_magenta()
+    );
+    println!(
+        "    ├─ Platform Public Key:   0x{}",
+        hex::encode(quote.platform_public_key)
+    );
+    println!(
+        "    ├─ Quote Signature (64B): 0x{}...",
+        hex::encode(&quote.quote_signature[0..16])
+    );
     println!("    └─ Timestamp:             {}", quote.timestamp);
 
     println!("\n[*] Submitting to On-Chain TEE Verifier (App-Chain State Machine)...");
@@ -1474,7 +1990,9 @@ fn run_tee_quote_demo() {
         Err(e) => println!("{} {}", "[✗] On-Chain Attestation Rejected:".bright_red().bold(), e),
     }
 
-    println!("\n[*] Testing Anti-Fraud Security (Malicious validator modifies ranking without TEE quote):");
+    println!(
+        "\n[*] Testing Anti-Fraud Security (Malicious validator modifies ranking without TEE quote):"
+    );
     let tampered_ranking = vec![
         AccountId::new("0x_miner_gamma_cpu"),
         AccountId::new("0x_miner_alpha_cuda"),
@@ -1482,7 +2000,11 @@ fn run_tee_quote_demo() {
     ];
     match verifier.verify_quote(&quote, 1, 1, &tampered_ranking) {
         Ok(_) => println!("[!] Unexpected acceptance"),
-        Err(e) => println!("{} Rejected fraudulent ranking: {}", "[✓] Security Guard Active:".bright_green().bold(), e.to_string().bright_yellow()),
+        Err(e) => println!(
+            "{} Rejected fraudulent ranking: {}",
+            "[✓] Security Guard Active:".bright_green().bold(),
+            e.to_string().bright_yellow()
+        ),
     }
     println!();
 }
@@ -1502,12 +2024,28 @@ fn run_candle_llm_demo(
 
     let opt_type = PeftOptimizerType::from_str(optimizer_str)?;
 
-    println!("{}", "================================================================================".bright_blue());
-    println!("{}", "      DePEFT : Real Candle LLM Deep Learning Engine & ReLoRA Tournament         ".bright_cyan().bold());
-    println!("{}", "================================================================================".bright_blue());
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "{}",
+        "      DePEFT : Real Candle LLM Deep Learning Engine & ReLoRA Tournament         "
+            .bright_cyan()
+            .bold()
+    );
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
     println!("Base Architecture: Decoder-only Transformer (LLaMA/Qwen) with RMSNorm & SwiGLU");
     println!("Compute Backend:   Hugging Face Candle Engine (Autograd & SafeTensors)");
-    println!("Selected Optimizer: {}\n", opt_type.to_string().bright_green().bold());
+    println!(
+        "Selected Optimizer: {}\n",
+        opt_type.to_string().bright_green().bold()
+    );
 
     // Initialize DeviceManager with hierarchical fallback: CUDA/ROCm -> Metal -> WGPU -> CPU
     let device_mgr = if preferred_device == "auto" {
@@ -1530,10 +2068,22 @@ fn run_candle_llm_demo(
         lora_alpha: 16.0,
     };
 
-    println!("[*] Initializing Base Model W_0 on Candle ({:?})...", primary_device);
+    println!(
+        "[*] Initializing Base Model W_0 on Candle ({:?})...",
+        primary_device
+    );
     let mut model = CandleTransformerLM::new(config.clone(), primary_device.clone())?;
-    println!("    ├─ Trainable LoRA Parameters: {} weights", model.total_trainable_parameters().to_string().bright_green());
-    println!("    └─ Total Layers: {} Transformer blocks", config.num_hidden_layers);
+    println!(
+        "    ├─ Trainable LoRA Parameters: {} weights",
+        model
+            .total_trainable_parameters()
+            .to_string()
+            .bright_green()
+    );
+    println!(
+        "    └─ Total Layers: {} Transformer blocks",
+        config.num_hidden_layers
+    );
 
     let train_corpus = vec![
         "DePEFT is a decentralized parameter-efficient fine-tuning protocol for large language models.".to_string(),
@@ -1543,21 +2093,40 @@ fn run_candle_llm_demo(
     ];
 
     let private_test_set = vec![
-        "Decentralized fine-tuning enables collaborative training across untrusted miner nodes.".to_string(),
-        "TEE Sandboxes protect private evaluation sets against miner data leakage and overfitting.".to_string(),
+        "Decentralized fine-tuning enables collaborative training across untrusted miner nodes."
+            .to_string(),
+        "TEE Sandboxes protect private evaluation sets against miner data leakage and overfitting."
+            .to_string(),
     ];
 
     let initial_loss = CandleValidatorEvaluator::evaluate_dataset(&model, &private_test_set)?;
-    println!("\nInitial Base Model W_0 Test Loss: {:.4} | Perplexity: {:.2}\n", initial_loss.to_string().bright_yellow(), initial_loss.exp().to_string().bright_yellow());
+    println!(
+        "\nInitial Base Model W_0 Test Loss: {:.4} | Perplexity: {:.2}\n",
+        initial_loss.to_string().bright_yellow(),
+        initial_loss.exp().to_string().bright_yellow()
+    );
 
     for r in 1..=rounds {
-        println!("{}", format!(">>> ===================== CANDLE TOURNAMENT ROUND {} / {} =====================", r, rounds).bright_cyan().bold());
+        println!(
+            "{}",
+            format!(
+                ">>> ===================== CANDLE TOURNAMENT ROUND {} / {} =====================",
+                r, rounds
+            )
+            .bright_cyan()
+            .bold()
+        );
 
         // 3 competing miners with different learning rates, optimizer configs, and hardware
         let miners_config = [
             ("miner-cuda-01", "NVIDIA RTX 4090 / CUDA", 0.005, opt_type),
             ("miner-rocm-02", "AMD RX 7900 / ROCm", 0.003, opt_type),
-            ("miner-wgpu-cpu-03", "Intel Xeon / WGPU-Fallback", 0.001, opt_type),
+            (
+                "miner-wgpu-cpu-03",
+                "Intel Xeon / WGPU-Fallback",
+                0.001,
+                opt_type,
+            ),
         ];
 
         let mut candidate_adapters = Vec::new();
@@ -1588,13 +2157,18 @@ fn run_candle_llm_demo(
             // If MultiGPU is enabled, demonstrate data-parallel batch splitting
             let training_data = if multi_gpu {
                 let chunks = device_mgr.split_batches(&train_corpus);
-                chunks.into_iter().flat_map(|(_, batch)| batch.to_vec()).collect::<Vec<_>>()
+                chunks
+                    .into_iter()
+                    .flat_map(|(_, batch)| batch.to_vec())
+                    .collect::<Vec<_>>()
             } else {
                 train_corpus.clone()
             };
 
-            let artifact = CandleMinerTrainer::train(&mut miner_model, &training_data, &hyperparams)?;
-            println!("  [Miner {}] ({}) [{}] -> Train Loss: {:.4} -> {:.4} | Adapter SafeTensors: {} bytes",
+            let artifact =
+                CandleMinerTrainer::train(&mut miner_model, &training_data, &hyperparams)?;
+            println!(
+                "  [Miner {}] ({}) [{}] -> Train Loss: {:.4} -> {:.4} | Adapter SafeTensors: {} bytes",
                 miner_id.bright_cyan(),
                 hw.dimmed(),
                 opt.to_string().bright_magenta(),
@@ -1603,11 +2177,16 @@ fn run_candle_llm_demo(
                 artifact.safetensors_bytes.len().to_string().bright_yellow()
             );
 
-            candidate_adapters.push((AccountId::new(miner_id.to_string()), artifact.safetensors_bytes));
+            candidate_adapters.push((
+                AccountId::new(miner_id.to_string()),
+                artifact.safetensors_bytes,
+            ));
         }
 
         // TEE Validator evaluation
-        println!("[*] TEE Validator evaluating revealed SafeTensors adapters on Private Test Set...");
+        println!(
+            "[*] TEE Validator evaluating revealed SafeTensors adapters on Private Test Set..."
+        );
         let eval = CandleValidatorEvaluator::evaluate_miners(
             &model,
             &private_test_set,
@@ -1620,27 +2199,73 @@ fn run_candle_llm_demo(
         )?;
 
         let winner_id = eval.ranking.first().unwrap().clone();
-        let winning_loss = eval.loss_scores.iter().find(|(m, _)| m == &winner_id).unwrap().1;
-        println!("    ├─ Top-1 Winner: {} (Test Loss: {:.4})", winner_id.to_string().bright_green().bold(), winning_loss);
+        let winning_loss = eval
+            .loss_scores
+            .iter()
+            .find(|(m, _)| m == &winner_id)
+            .unwrap()
+            .1;
+        println!(
+            "    ├─ Top-1 Winner: {} (Test Loss: {:.4})",
+            winner_id.to_string().bright_green().bold(),
+            winning_loss
+        );
 
         // Find winning adapter bytes
-        let winning_bytes = candidate_adapters.iter().find(|(m, _)| m == &winner_id).unwrap().1.clone();
+        let winning_bytes = candidate_adapters
+            .iter()
+            .find(|(m, _)| m == &winner_id)
+            .unwrap()
+            .1
+            .clone();
 
         // ReLoRA Permanent Weight Fusion
-        println!("[*] Merging winning adapter into base model: W_{} = W_{} + ΔW_{}...", r, r - 1, r);
+        println!(
+            "[*] Merging winning adapter into base model: W_{} = W_{} + ΔW_{}...",
+            r,
+            r - 1,
+            r
+        );
         CandleWeightMerger::merge_winning_adapter(&mut model, &winning_bytes)?;
 
-        let post_merge_loss = CandleValidatorEvaluator::evaluate_dataset(&model, &private_test_set)?;
+        let post_merge_loss =
+            CandleValidatorEvaluator::evaluate_dataset(&model, &private_test_set)?;
         println!("{}", format!("[✓] Round {} Complete: Evolved Model W_{} Test Loss = {:.4} | Perplexity = {:.2}\n", r, r, post_merge_loss, post_merge_loss.exp()).bright_green().bold());
     }
 
     let final_loss = CandleValidatorEvaluator::evaluate_dataset(&model, &private_test_set)?;
-    println!("{}", "================================================================================".bright_blue());
-    println!("{}", "                  CANDLE LLM RELORA TOURNAMENT FINISHED                         ".bright_green().bold());
-    println!("{}", "================================================================================".bright_blue());
-    println!("Initial Test Loss (W_0): {:.4} (PPL: {:.2})", initial_loss, initial_loss.exp());
-    println!("Final Test Loss (W_{}):   {:.4} (PPL: {:.2})", rounds, final_loss.to_string().bright_green().bold(), final_loss.exp().to_string().bright_green().bold());
-    println!("Total Loss Reduction:    {:.4} ({:.2}% relative reduction)", initial_loss - final_loss, ((initial_loss - final_loss) / initial_loss) * 100.0);
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "{}",
+        "                  CANDLE LLM RELORA TOURNAMENT FINISHED                         "
+            .bright_green()
+            .bold()
+    );
+    println!(
+        "{}",
+        "================================================================================"
+            .bright_blue()
+    );
+    println!(
+        "Initial Test Loss (W_0): {:.4} (PPL: {:.2})",
+        initial_loss,
+        initial_loss.exp()
+    );
+    println!(
+        "Final Test Loss (W_{}):   {:.4} (PPL: {:.2})",
+        rounds,
+        final_loss.to_string().bright_green().bold(),
+        final_loss.exp().to_string().bright_green().bold()
+    );
+    println!(
+        "Total Loss Reduction:    {:.4} ({:.2}% relative reduction)",
+        initial_loss - final_loss,
+        ((initial_loss - final_loss) / initial_loss) * 100.0
+    );
     println!();
     Ok(())
 }

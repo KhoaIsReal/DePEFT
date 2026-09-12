@@ -38,7 +38,8 @@ impl DiskIpfsStorage {
             return false;
         }
         // Strict alphanumeric and standard IPFS base32/base58/hex chars
-        cid.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        cid.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     }
 
     /// Store binary data on disk and return its CID.
@@ -80,7 +81,9 @@ impl DiskIpfsStorage {
             return false;
         }
         let file_path = self.root_dir.join(cid);
-        fs::metadata(file_path).map(|meta| meta.is_file()).unwrap_or(false)
+        fs::metadata(file_path)
+            .map(|meta| meta.is_file())
+            .unwrap_or(false)
     }
 
     /// Count total stored objects.

@@ -34,7 +34,10 @@ impl std::str::FromStr for PeftOptimizerType {
             "adamw" | "adam-w" => Ok(Self::AdamW),
             "adam" => Ok(Self::Adam),
             "sgd" => Ok(Self::SGD),
-            other => anyhow::bail!("Unknown optimizer: '{}'. Supported: adamw, adam, sgd", other),
+            other => anyhow::bail!(
+                "Unknown optimizer: '{}'. Supported: adamw, adam, sgd",
+                other
+            ),
         }
     }
 }
@@ -125,11 +128,12 @@ impl CandleMinerTrainer {
         };
         let steps = hyperparams.steps.clamp(1, 10_000);
         let batch_size = hyperparams.batch_size.clamp(1, 128);
-        let weight_decay = if hyperparams.weight_decay.is_finite() && hyperparams.weight_decay >= 0.0 {
-            hyperparams.weight_decay.min(1.0)
-        } else {
-            0.01
-        };
+        let weight_decay =
+            if hyperparams.weight_decay.is_finite() && hyperparams.weight_decay >= 0.0 {
+                hyperparams.weight_decay.min(1.0)
+            } else {
+                0.01
+            };
         let beta1 = if hyperparams.beta1.is_finite() && (0.0..1.0).contains(&hyperparams.beta1) {
             hyperparams.beta1
         } else {

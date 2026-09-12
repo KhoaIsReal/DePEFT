@@ -1,6 +1,6 @@
 use crate::blockchain::types::AccountId;
 use crate::tee::types::AttestationQuote;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use std::collections::HashSet;
 
@@ -84,10 +84,16 @@ impl OnChainTeeVerifier {
 
         // 2. Verify Enclave Measurement against on-chain whitelist
         if self.enforce_attestation && self.approved_mrenclaves.is_empty() {
-            bail!("TEE attestation is required but no enclave measurement trust root is configured");
+            bail!(
+                "TEE attestation is required but no enclave measurement trust root is configured"
+            );
         }
-        if !self.approved_mrenclaves.contains(&quote.measurement.mrenclave)
-            && !self.approved_mrsigners.contains(&quote.measurement.mrsigner)
+        if !self
+            .approved_mrenclaves
+            .contains(&quote.measurement.mrenclave)
+            && !self
+                .approved_mrsigners
+                .contains(&quote.measurement.mrsigner)
         {
             bail!(
                 "Unauthorized MRENCLAVE measurement: {} is not in approved on-chain enclave registry",
@@ -99,7 +105,10 @@ impl OnChainTeeVerifier {
         if self.enforce_attestation && self.approved_platform_keys.is_empty() {
             bail!("TEE attestation is required but no platform-key trust root is configured");
         }
-        if !self.approved_platform_keys.contains(&quote.platform_public_key) {
+        if !self
+            .approved_platform_keys
+            .contains(&quote.platform_public_key)
+        {
             bail!(
                 "Unauthorized TEE Platform Public Key: 0x{} is not signed or whitelisted by Hardware Root of Trust",
                 hex::encode(quote.platform_public_key)

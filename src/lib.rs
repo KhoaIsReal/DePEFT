@@ -43,16 +43,20 @@ pub use consensus::{
 pub use crypto::{AccountKeypair, SignedTransaction};
 pub use miner::{MinerHyperparams, MinerNode, MinerTrainer, MinerTrainingArtifact};
 pub use ml::{
-    AdapterPackage, Dataset, DePEFTModel, Matrix, ModuleAdapter, QLoRALinear, QuantizedWeight,
-    Sample,
+    AdapterPackage, Dataset, DePEFTModel, Matrix, ModuleAdapter, OuterOptimizerState, QLoRALinear,
+    QuantizedWeight, Sample,
 };
-pub use node::{create_app, start_node_server, start_node_server_with_store, NodeContext, NodeSecurityConfig};
-pub use p2p::{read_message, write_message, P2pMessage, P2pSwarm, PeerId};
+pub use node::{
+    NodeContext, NodeSecurityConfig, create_app, start_node_server, start_node_server_with_store,
+};
+pub use p2p::{P2pMessage, P2pSwarm, PeerId, read_message, write_message};
 pub use storage::{
-    deserialize_safetensors, serialize_safetensors, AdapterVectorRecord, DiskIpfsStorage,
-    ChainStore, EmbeddedVectorDb, HybridStorageManager, IpfsAddResponse, IpfsKuboClient, IpfsNodeInfo,
-    IpfsStorage, VectorSearchResult,
+    AdapterVectorRecord, ChainStore, DiskIpfsStorage, EmbeddedVectorDb, HybridStorageManager,
+    IpfsAddResponse, IpfsKuboClient, IpfsNodeInfo, IpfsStorage, VectorSearchResult,
+    deserialize_safetensors, serialize_safetensors,
 };
-pub use tee::{AttestationQuote, EnclaveMeasurement, HardwareTeeEnclave, OnChainTeeVerifier, TeeType};
+pub use tee::{
+    AttestationQuote, EnclaveMeasurement, HardwareTeeEnclave, OnChainTeeVerifier, TeeType,
+};
 pub use tournament::TournamentEngine;
 pub use validator::{OffChainEvaluator, TeeSandbox, ValidatorNode};

@@ -53,7 +53,8 @@ impl OffChainEvaluator {
             }
 
             // Run evaluation in secure TEE Sandbox
-            let (loss, accuracy) = tee_sandbox.evaluate_adapter(base_model, &adapter_pkg, hardware_drift);
+            let (loss, accuracy) =
+                tee_sandbox.evaluate_adapter(base_model, &adapter_pkg, hardware_drift);
             scores.push((miner.clone(), loss, accuracy));
         }
 
@@ -65,8 +66,10 @@ impl OffChainEvaluator {
         });
 
         let ranking: Vec<AccountId> = scores.iter().map(|(m, _, _)| m.clone()).collect();
-        let loss_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, l, _)| (m.clone(), *l)).collect();
-        let accuracy_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, _, a)| (m.clone(), *a)).collect();
+        let loss_scores: Vec<(AccountId, f64)> =
+            scores.iter().map(|(m, l, _)| (m.clone(), *l)).collect();
+        let accuracy_scores: Vec<(AccountId, f64)> =
+            scores.iter().map(|(m, _, a)| (m.clone(), *a)).collect();
 
         Ok(ValidatorEvaluation {
             validator_address: validator_address.clone(),

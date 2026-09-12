@@ -2,14 +2,15 @@ use DePEFT::blockchain::types::{AccountId, PeftType, TaskSpec, ValidatorEvaluati
 use DePEFT::blockchain::{AppChainState, RelativeConsensusEngine, Transaction};
 use DePEFT::miner::{MinerHyperparams, MinerNode};
 use DePEFT::ml::dataset::Dataset;
-use DePEFT::ml::model::DePEFTModel;
+use DePEFT::ml::lora::ModuleAdapter;
+use DePEFT::ml::model::{AdapterPackage, DePEFTModel};
 use DePEFT::ml::tensor::{Matrix, QuantizedWeight};
 use DePEFT::storage::safetensors::{deserialize_safetensors, serialize_safetensors};
 use DePEFT::storage::vector_db::{AdapterVectorRecord, EmbeddedVectorDb};
 use DePEFT::tournament::TournamentEngine;
 use DePEFT::validator::{TeeSandbox, ValidatorNode};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 #[test]
 fn test_task_spec_data_structure() {
@@ -60,7 +61,11 @@ fn test_relative_consensus_borda_aggregation() {
     let v2 = ValidatorEvaluation {
         validator_address: AccountId::new("v2"),
         ranking: vec![m1.clone(), m3.clone(), m2.clone()],
-        loss_scores: vec![(m1.clone(), 0.120015), (m3.clone(), 0.150010), (m2.clone(), 0.150020)],
+        loss_scores: vec![
+            (m1.clone(), 0.120015),
+            (m3.clone(), 0.150010),
+            (m2.clone(), 0.150020),
+        ],
         accuracy_scores: vec![(m1.clone(), 0.95), (m3.clone(), 0.90), (m2.clone(), 0.89)],
         hardware_info: "AMD RX 7900".to_string(),
         attestation_quote: None,
@@ -70,7 +75,11 @@ fn test_relative_consensus_borda_aggregation() {
     let v3 = ValidatorEvaluation {
         validator_address: AccountId::new("v3"),
         ranking: vec![m1.clone(), m2.clone(), m3.clone()],
-        loss_scores: vec![(m1.clone(), 0.119998), (m2.clone(), 0.149990), (m3.clone(), 0.199990)],
+        loss_scores: vec![
+            (m1.clone(), 0.119998),
+            (m2.clone(), 0.149990),
+            (m3.clone(), 0.199990),
+        ],
         accuracy_scores: vec![(m1.clone(), 0.95), (m2.clone(), 0.90), (m3.clone(), 0.85)],
         hardware_info: "Intel CPU AVX-512".to_string(),
         attestation_quote: None,
@@ -79,7 +88,10 @@ fn test_relative_consensus_borda_aggregation() {
     let consensus = RelativeConsensusEngine::aggregate(&[v1, v2, v3], &candidates)
         .expect("Consensus must succeed");
 
-    assert_eq!(consensus.winner, m1, "Miner Alpha should be undisputed winner");
+    assert_eq!(
+        consensus.winner, m1,
+        "Miner Alpha should be undisputed winner"
+    );
     assert_eq!(consensus.consensus_ranking[0], m1);
     assert_eq!(consensus.agreement_rate, 1.0);
 }
@@ -114,7 +126,9 @@ fn test_commit_reveal_anti_collusion_verification() {
         .unwrap();
 
     let task_id = 1;
-    chain.start_round(task_id, 1, "bafy_base_w0".to_string()).unwrap();
+    chain
+        .start_round(task_id, 1, "bafy_base_w0".to_string())
+        .unwrap();
 
     let adapter_hash = [0x42u8; 32];
     let salt = vec![1, 2, 3, 4, 5, 6, 7, 8];
@@ -176,7 +190,11 @@ fn test_commit_reveal_anti_collusion_verification() {
         salt: vec![0, 0, 0, 0],
         adapter_hash: [0x11; 32],
     };
-    assert!(chain.apply_transaction(invalid_reveal, &fake_miner).is_err());
+    assert!(
+        chain
+            .apply_transaction(invalid_reveal, &fake_miner)
+            .is_err()
+    );
 }
 
 #[test]
@@ -314,7 +332,11 @@ fn test_nf4_quantization_and_dequantization() {
     }
     mse /= (original.rows * original.cols) as f32;
 
-    assert!(mse < 0.005, "NF4 quantization MSE should be small: got {}", mse);
+    assert!(
+        mse < 0.005,
+        "NF4 quantization MSE should be small: got {}",
+        mse
+    );
 }
 
 #[test]
@@ -425,11 +447,17 @@ fn test_relora_tournament_multi_round_convergence() {
 
     // Run Round 1
     let summary_r1 = engine.run_round(1).unwrap();
-    println!("R1: pre={:.6}, post={:.6}", summary_r1.pre_merge_loss, summary_r1.post_merge_loss);
+    println!(
+        "R1: pre={:.6}, post={:.6}",
+        summary_r1.pre_merge_loss, summary_r1.post_merge_loss
+    );
 
     // Run Round 2 (ReLoRA continuous training on evolved W_1)
     let summary_r2 = engine.run_round(2).unwrap();
-    println!("R2: pre={:.6}, post={:.6}", summary_r2.pre_merge_loss, summary_r2.post_merge_loss);
+    println!(
+        "R2: pre={:.6}, post={:.6}",
+        summary_r2.pre_merge_loss, summary_r2.post_merge_loss
+    );
 
     let (final_loss, _) = engine.base_model.evaluate(&engine.dataset_test, 0.0);
     assert!(
@@ -463,7 +491,9 @@ fn test_ed25519_cryptographic_signing_and_verification() {
         merge_strategy: Default::default(),
     };
 
-    let signed_tx = keypair.sign_transaction(tx.clone()).expect("Signing failed");
+    let signed_tx = keypair
+        .sign_transaction(tx.clone())
+        .expect("Signing failed");
     assert_eq!(signed_tx.signature.len(), 64);
 
     // Valid verification returns original sender
@@ -472,16 +502,29 @@ fn test_ed25519_cryptographic_signing_and_verification() {
 
     // Tampered transaction must fail verification
     let mut tampered_tx = signed_tx.clone();
-    if let Transaction::CreateTask { ref mut bounty_pool, .. } = tampered_tx.tx {
+    if let Transaction::CreateTask {
+        ref mut bounty_pool,
+        ..
+    } = tampered_tx.tx
+    {
         *bounty_pool = 999_999; // Attacker modified bounty
     }
-    assert!(tampered_tx.verify_signature().is_err(), "Tampered transaction signature must fail");
+    assert!(
+        tampered_tx.verify_signature().is_err(),
+        "Tampered transaction signature must fail"
+    );
 }
 
 #[test]
 fn test_disk_ipfs_storage_persistence() {
     use DePEFT::storage::DiskIpfsStorage;
-    let temp_dir = std::env::temp_dir().join(format!("depeft_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let temp_dir = std::env::temp_dir().join(format!(
+        "depeft_test_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
 
     let storage = DiskIpfsStorage::new(&temp_dir).expect("Failed to init storage");
     let payload = b"Hello DePEFT Decentralized Storage!";
@@ -520,7 +563,10 @@ fn test_chain_store_persists_and_verifies_canonical_state() {
     let store = ChainStore::open(&db_path).unwrap();
     let restored = store.load().unwrap().expect("state must be persisted");
     assert_eq!(restored.block_height, state.block_height);
-    assert_eq!(restored.balance_of(&AccountId::new("persisted-account")), 42);
+    assert_eq!(
+        restored.balance_of(&AccountId::new("persisted-account")),
+        42
+    );
     assert_eq!(ChainStore::state_hash(&restored).unwrap(), expected_hash);
 
     let _ = std::fs::remove_file(&db_path);
@@ -537,14 +583,23 @@ async fn test_live_node_http_rpc_integration() {
     use std::net::SocketAddr;
     use std::sync::{Arc, RwLock};
 
-    let temp_dir = std::env::temp_dir().join(format!("depeft_rpc_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let temp_dir = std::env::temp_dir().join(format!(
+        "depeft_rpc_test_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
     let storage = Arc::new(DiskIpfsStorage::new(&temp_dir).unwrap());
     let chain = Arc::new(RwLock::new(AppChainState::new()));
     let vector_db = Arc::new(EmbeddedVectorDb::new(64));
 
     // Mint tokens for test client
     let client_keypair = AccountKeypair::generate();
-    chain.write().unwrap().mint(client_keypair.account_id(), 50_000);
+    chain
+        .write()
+        .unwrap()
+        .mint(client_keypair.account_id(), 50_000);
 
     // Bind to random available local port
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
@@ -557,29 +612,35 @@ async fn test_live_node_http_rpc_integration() {
 
     // Spawn server in background tokio task
     tokio::spawn(async move {
-        let app = DePEFT::node::create_app(DePEFT::node::NodeContext::new(
-            server_chain,
-            server_storage,
-            server_vdb,
-            None,
-        )
-        .with_security(DePEFT::node::NodeSecurityConfig::development()));
+        let app = DePEFT::node::create_app(
+            DePEFT::node::NodeContext::new(server_chain, server_storage, server_vdb, None)
+                .with_security(DePEFT::node::NodeSecurityConfig::development()),
+        );
         axum::serve(listener, app).await.unwrap();
     });
 
     let client = DePeftClient::new(format!("http://{}", local_addr));
 
     // 1. Test Node Status
-    let status = client.get_status().await.expect("Failed to get node status");
+    let status = client
+        .get_status()
+        .await
+        .expect("Failed to get node status");
     assert_eq!(status.block_height, 1);
     assert_eq!(status.tasks_count, 0);
 
     // 2. Test CAS Artifact Upload & Download
     let artifact_data = b"DePEFT LoRA Safetensors Binary Bytes";
-    let cid = client.upload_storage(artifact_data).await.expect("Upload failed");
+    let cid = client
+        .upload_storage(artifact_data)
+        .await
+        .expect("Upload failed");
     assert!(cid.starts_with("bafy"));
 
-    let downloaded = client.download_storage(&cid).await.expect("Download failed");
+    let downloaded = client
+        .download_storage(&cid)
+        .await
+        .expect("Download failed");
     assert_eq!(downloaded, artifact_data);
 
     // 3. Test Signed Transaction Broadcast (CreateTask)
@@ -599,7 +660,10 @@ async fn test_live_node_http_rpc_integration() {
     };
 
     let signed_tx = client_keypair.sign_transaction(create_task_tx).unwrap();
-    let res = client.submit_transaction(&signed_tx).await.expect("Submit tx failed");
+    let res = client
+        .submit_transaction(&signed_tx)
+        .await
+        .expect("Submit tx failed");
     assert!(res.contains("successfully committed"));
 
     // 4. Verify Task Exists on Node
@@ -643,7 +707,10 @@ async fn test_p2p_swarm_bidirectional_gossip_and_deduplication() {
     swarm_b.clone().start_listener().await.unwrap();
 
     // Node B connects to Node A over TCP
-    let connected_id = swarm_b.connect_peer(&addr_a.to_string()).await.expect("Failed to connect P2P peers");
+    let connected_id = swarm_b
+        .connect_peer(&addr_a.to_string())
+        .await
+        .expect("Failed to connect P2P peers");
     assert_eq!(connected_id, peer_a);
 
     // Wait a brief moment for handshake to settle
@@ -686,10 +753,11 @@ async fn test_p2p_swarm_bidirectional_gossip_and_deduplication() {
         provider: peer_b.clone(),
     });
 
-    let (from_peer, received_msg) = tokio::time::timeout(tokio::time::Duration::from_secs(2), msg_rx_a.recv())
-        .await
-        .expect("Timeout waiting for CID announcement")
-        .expect("Channel closed");
+    let (from_peer, received_msg) =
+        tokio::time::timeout(tokio::time::Duration::from_secs(2), msg_rx_a.recv())
+            .await
+            .expect("Timeout waiting for CID announcement")
+            .expect("Channel closed");
 
     assert_eq!(from_peer, peer_b);
     if let P2pMessage::AnnounceCid { cid, .. } = received_msg {
@@ -701,8 +769,8 @@ async fn test_p2p_swarm_bidirectional_gossip_and_deduplication() {
 
 #[test]
 fn test_candle_lora_linear_forward_and_merge() {
-    use candle_core::{Device, Tensor};
     use DePEFT::candle_peft::CandleLoraLinear;
+    use candle_core::{Device, Tensor};
 
     let device = Device::Cpu;
     let base_w = Tensor::randn(0f32, 0.1, (16, 32), &device).unwrap();
@@ -716,7 +784,14 @@ fn test_candle_lora_linear_forward_and_merge() {
 
     // Initially lora_b is 0, so y_init matches base_w forward
     let base_y = x.matmul(&base_w.t().unwrap()).unwrap();
-    let diff = (&y_init - &base_y).unwrap().abs().unwrap().max_all().unwrap().to_scalar::<f32>().unwrap();
+    let diff = (&y_init - &base_y)
+        .unwrap()
+        .abs()
+        .unwrap()
+        .max_all()
+        .unwrap()
+        .to_scalar::<f32>()
+        .unwrap();
     assert!(diff < 1e-5, "At init, LoRA output must match base model");
 
     // Perform ReLoRA merge
@@ -751,11 +826,10 @@ fn test_candle_llm_transformer_relora_tournament() {
         "ReLoRA multi-round continuous weight evolution.".to_string(),
     ];
 
-    let private_test_set = vec![
-        "Decentralized fine-tuning over P2P network.".to_string(),
-    ];
+    let private_test_set = vec!["Decentralized fine-tuning over P2P network.".to_string()];
 
-    let initial_loss = CandleValidatorEvaluator::evaluate_dataset(&model, &private_test_set).unwrap();
+    let initial_loss =
+        CandleValidatorEvaluator::evaluate_dataset(&model, &private_test_set).unwrap();
 
     // Miner trains adapter
     let hyperparams = CandleMinerHyperparams {
@@ -768,12 +842,19 @@ fn test_candle_llm_transformer_relora_tournament() {
     };
 
     let mut miner_model = model.clone();
-    let artifact = CandleMinerTrainer::train(&mut miner_model, &train_corpus, &hyperparams).unwrap();
-    assert!(artifact.final_loss <= artifact.train_loss, "Training steps must reduce or equal loss");
+    let artifact =
+        CandleMinerTrainer::train(&mut miner_model, &train_corpus, &hyperparams).unwrap();
+    assert!(
+        artifact.final_loss <= artifact.train_loss,
+        "Training steps must reduce or equal loss"
+    );
     assert!(!artifact.safetensors_bytes.is_empty());
 
     // Validator evaluates
-    let candidate_adapters = vec![(AccountId::new("miner-1"), artifact.safetensors_bytes.clone())];
+    let candidate_adapters = vec![(
+        AccountId::new("miner-1"),
+        artifact.safetensors_bytes.clone(),
+    )];
     let eval = CandleValidatorEvaluator::evaluate_miners(
         &model,
         &private_test_set,
@@ -792,8 +873,12 @@ fn test_candle_llm_transformer_relora_tournament() {
     // ReLoRA merge winning adapter
     CandleWeightMerger::merge_winning_adapter(&mut model, &artifact.safetensors_bytes).unwrap();
 
-    let evolved_loss = CandleValidatorEvaluator::evaluate_dataset(&model, &private_test_set).unwrap();
-    println!("Candle ReLoRA Initial Loss: {:.4}, Evolved Loss: {:.4}", initial_loss, evolved_loss);
+    let evolved_loss =
+        CandleValidatorEvaluator::evaluate_dataset(&model, &private_test_set).unwrap();
+    println!(
+        "Candle ReLoRA Initial Loss: {:.4}, Evolved Loss: {:.4}",
+        initial_loss, evolved_loss
+    );
 }
 
 #[test]
@@ -807,34 +892,51 @@ fn test_hardware_tee_remote_attestation_and_on_chain_verification() {
 
     // 1. Official Validator Enclave generates quote
     let enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
-    let quote = enclave.generate_quote(10, 2, &ranking).expect("Failed to generate quote");
+    let quote = enclave
+        .generate_quote(10, 2, &ranking)
+        .expect("Failed to generate quote");
 
     // 2. Production verifier fails closed until a trust root is provisioned.
-    assert!(OnChainTeeVerifier::default()
-        .verify_quote(&quote, 10, 2, &ranking)
-        .is_err());
+    assert!(
+        OnChainTeeVerifier::default()
+            .verify_quote(&quote, 10, 2, &ranking)
+            .is_err()
+    );
 
     // 3. Explicit test trust source admits the quote.
     let mut verifier = OnChainTeeVerifier::default();
     verifier.trust_quote_source(enclave.measurement.mrenclave, enclave.platform_public_key());
-    assert!(verifier.verify_quote(&quote, 10, 2, &ranking).is_ok(), "Valid quote must pass on-chain verification");
+    assert!(
+        verifier.verify_quote(&quote, 10, 2, &ranking).is_ok(),
+        "Valid quote must pass on-chain verification"
+    );
 
     // 4. Tampered ranking (e.g. malicious validator tried to flip winner to miner-beta)
     let tampered_ranking = vec![m2.clone(), m1.clone()];
     let tamper_res = verifier.verify_quote(&quote, 10, 2, &tampered_ranking);
-    assert!(tamper_res.is_err(), "Tampered ranking must fail report_data check");
+    assert!(
+        tamper_res.is_err(),
+        "Tampered ranking must fail report_data check"
+    );
 
     // 5. Rogue enclave with unapproved MRENCLAVE measurement
-    let rogue_enclave = HardwareTeeEnclave::new(TeeType::IntelSgxDcap, "malicious-unapproved-enclave");
+    let rogue_enclave =
+        HardwareTeeEnclave::new(TeeType::IntelSgxDcap, "malicious-unapproved-enclave");
     let rogue_quote = rogue_enclave.generate_quote(10, 2, &ranking).unwrap();
     let rogue_res = verifier.verify_quote(&rogue_quote, 10, 2, &ranking);
-    assert!(rogue_res.is_err(), "Unapproved MRENCLAVE must be rejected on-chain");
+    assert!(
+        rogue_res.is_err(),
+        "Unapproved MRENCLAVE must be rejected on-chain"
+    );
 
     // 6. Forged quote signature
     let mut forged_quote = quote.clone();
     forged_quote.quote_signature[0] ^= 0xff;
     let forge_res = verifier.verify_quote(&forged_quote, 10, 2, &ranking);
-    assert!(forge_res.is_err(), "Forged signature must fail cryptographic check");
+    assert!(
+        forge_res.is_err(),
+        "Forged signature must fail cryptographic check"
+    );
 }
 
 #[tokio::test]
@@ -842,22 +944,36 @@ async fn test_hybrid_storage_and_ipfs_cas_caching() {
     use DePEFT::storage::{DiskIpfsStorage, HybridStorageManager, IpfsKuboClient};
     use std::sync::Arc;
 
-    let temp_dir = std::env::temp_dir().join(format!("depeft_test_storage_{}", rand::random::<u64>()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("depeft_test_storage_{}", rand::random::<u64>()));
     let local_cas = Arc::new(DiskIpfsStorage::new(&temp_dir).unwrap());
-    let kubo_client = Some(Arc::new(IpfsKuboClient::new("http://127.0.0.1:5001", "http://127.0.0.1:8080")));
+    let kubo_client = Some(Arc::new(IpfsKuboClient::new(
+        "http://127.0.0.1:5001",
+        "http://127.0.0.1:8080",
+    )));
 
     let manager = HybridStorageManager::new(local_cas.clone(), kubo_client);
 
     // 1. Store model weights / dataset
     let model_data = b"depeft_qwen2.5_lora_adapter_binary_safetensors_bytes_payload";
-    let cid = manager.put(model_data, "adapter.safetensors").await.expect("Must store");
-    assert!(cid.starts_with("bafy") || cid.starts_with("Qm"), "Must generate valid IPFS CID");
+    let cid = manager
+        .put(model_data, "adapter.safetensors")
+        .await
+        .expect("Must store");
+    assert!(
+        cid.starts_with("bafy") || cid.starts_with("Qm"),
+        "Must generate valid IPFS CID"
+    );
 
     // 2. Local CAS contains check
     assert!(manager.contains_local(&cid));
 
     // 3. Fast retrieval
-    let retrieved = manager.get(&cid).await.expect("Must retrieve").expect("Must exist");
+    let retrieved = manager
+        .get(&cid)
+        .await
+        .expect("Must retrieve")
+        .expect("Must exist");
     assert_eq!(retrieved, model_data);
 
     // Clean up temp dir
@@ -875,10 +991,22 @@ fn test_bft_consensus_2_phase_commit_and_equivocation_slashing() {
     let kp4 = AccountKeypair::generate();
 
     let validators = vec![
-        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
-        ConsensusValidator { address: kp3.account_id(), voting_power: 10 },
-        ConsensusValidator { address: kp4.account_id(), voting_power: 10 },
+        ConsensusValidator {
+            address: kp1.account_id(),
+            voting_power: 10,
+        },
+        ConsensusValidator {
+            address: kp2.account_id(),
+            voting_power: 10,
+        },
+        ConsensusValidator {
+            address: kp3.account_id(),
+            voting_power: 10,
+        },
+        ConsensusValidator {
+            address: kp4.account_id(),
+            voting_power: 10,
+        },
     ];
 
     let mut bft = BftEngine::new(validators, [0xaa; 32]);
@@ -899,7 +1027,9 @@ fn test_bft_consensus_2_phase_commit_and_equivocation_slashing() {
         &kp4
     };
 
-    let proposal = bft.create_proposal(proposer_kp, Vec::new()).expect("Proposal succeeds");
+    let proposal = bft
+        .create_proposal(proposer_kp, Vec::new())
+        .expect("Proposal succeeds");
     let block_hash = proposal.block_hash();
 
     // Round 0 Prevotes (3/4 validators = 30 power >= 27)
@@ -920,10 +1050,16 @@ fn test_bft_consensus_2_phase_commit_and_equivocation_slashing() {
     let _ = bft.add_vote(pc2);
     let finalized = bft.add_vote(pc3).unwrap();
 
-    assert!(finalized.is_some(), "Block must finalize once 2/3+ precommits are gathered");
+    assert!(
+        finalized.is_some(),
+        "Block must finalize once 2/3+ precommits are gathered"
+    );
     let block = finalized.unwrap();
     assert_eq!(block.header.height, 1);
-    assert_eq!(bft.current_height, 2, "Consensus state advances to height 2");
+    assert_eq!(
+        bft.current_height, 2,
+        "Consensus state advances to height 2"
+    );
     assert_eq!(bft.blockchain.len(), 1);
 
     // Test Byzantine Equivocation Slashing
@@ -1016,7 +1152,10 @@ fn test_security_relative_consensus_validator_deduplication() {
 
     let evals = vec![eval_honest_1, eval_honest_2, eval_rogue_dupe];
     let res = RelativeConsensusEngine::aggregate(&evals, &candidates).unwrap();
-    assert_eq!(res.winner, m1, "Consensus winner must be honest miner despite duplicate evaluation submission attempt");
+    assert_eq!(
+        res.winner, m1,
+        "Consensus winner must be honest miner despite duplicate evaluation submission attempt"
+    );
 }
 
 #[test]
@@ -1057,7 +1196,10 @@ fn test_security_slashing_forged_vote_signature_rejected() {
     // Slashing check must fail cryptographic signature verification and NOT slash victim
     let check_res = slasher.check_vote(&vote_b_forged);
     assert!(check_res.is_err(), "Forged vote signature must be rejected");
-    assert!(!slasher.is_slashed(&kp_victim.account_id()), "Honest validator must not be slashed by forged evidence");
+    assert!(
+        !slasher.is_slashed(&kp_victim.account_id()),
+        "Honest validator must not be slashed by forged evidence"
+    );
 }
 
 #[test]
@@ -1108,8 +1250,14 @@ fn test_security_bft_receive_proposal_verification() {
     let kp2 = AccountKeypair::generate();
 
     let validators = vec![
-        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+        ConsensusValidator {
+            address: kp1.account_id(),
+            voting_power: 10,
+        },
+        ConsensusValidator {
+            address: kp2.account_id(),
+            voting_power: 10,
+        },
     ];
 
     let mut bft = BftEngine::new(validators, [0xaa; 32]);
@@ -1124,8 +1272,14 @@ fn test_security_bft_receive_proposal_verification() {
     let valid_block = bft.create_proposal(proposer_kp, Vec::new()).unwrap();
     let mut bft_node2 = BftEngine::new(
         vec![
-            ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-            ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+            ConsensusValidator {
+                address: kp1.account_id(),
+                voting_power: 10,
+            },
+            ConsensusValidator {
+                address: kp2.account_id(),
+                voting_power: 10,
+            },
         ],
         [0xaa; 32],
     );
@@ -1134,8 +1288,14 @@ fn test_security_bft_receive_proposal_verification() {
     // 2. Proposal from unauthorized proposer must be rejected
     let mut rogue_bft = BftEngine::new(
         vec![
-            ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-            ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+            ConsensusValidator {
+                address: kp1.account_id(),
+                voting_power: 10,
+            },
+            ConsensusValidator {
+                address: kp2.account_id(),
+                voting_power: 10,
+            },
         ],
         [0xaa; 32],
     );
@@ -1170,7 +1330,11 @@ fn test_security_state_rejects_zero_bounty_and_zero_epoch_tasks() {
         reward_distribution: Default::default(),
         merge_strategy: Default::default(),
     };
-    assert!(state.apply_transaction(tx_zero_bounty, &client_kp.account_id()).is_err());
+    assert!(
+        state
+            .apply_transaction(tx_zero_bounty, &client_kp.account_id())
+            .is_err()
+    );
 
     // 2. Too short epoch (< 5 blocks) must be rejected
     let tx_short_epoch = Transaction::CreateTask {
@@ -1187,7 +1351,11 @@ fn test_security_state_rejects_zero_bounty_and_zero_epoch_tasks() {
         reward_distribution: Default::default(),
         merge_strategy: Default::default(),
     };
-    assert!(state.apply_transaction(tx_short_epoch, &client_kp.account_id()).is_err());
+    assert!(
+        state
+            .apply_transaction(tx_short_epoch, &client_kp.account_id())
+            .is_err()
+    );
 }
 
 #[test]
@@ -1204,7 +1372,10 @@ fn test_security_safetensors_out_of_bounds_offsets_rejected() {
     bytes.extend_from_slice(&[0u8; 16]); // only 16 bytes payload
 
     let res = deserialize_safetensors(&bytes);
-    assert!(res.is_err(), "Out of bounds data_offsets must be rejected without panic");
+    assert!(
+        res.is_err(),
+        "Out of bounds data_offsets must be rejected without panic"
+    );
 }
 
 #[test]
@@ -1269,8 +1440,8 @@ fn test_security_dataset_train_test_split_nan_ratio_clamped() {
 
 #[test]
 fn test_security_validator_tolerates_corrupted_miner_cid() {
-    use DePEFT::blockchain::types::PeftType;
     use DePEFT::blockchain::transactions::Transaction;
+    use DePEFT::blockchain::types::PeftType;
     use DePEFT::crypto::AccountKeypair;
     use DePEFT::ml::dataset::Dataset;
     use DePEFT::ml::model::DePEFTModel;
@@ -1287,7 +1458,13 @@ fn test_security_validator_tolerates_corrupted_miner_cid() {
 
     let validator_kp = AccountKeypair::generate();
     let sandbox = TeeSandbox::new(test_set, "sgx_test_enclave");
-    let validator = ValidatorNode::new(validator_kp.account_id().as_str(), "Intel SGX", 0.0, sandbox, None);
+    let validator = ValidatorNode::new(
+        validator_kp.account_id().as_str(),
+        "Intel SGX",
+        0.0,
+        sandbox,
+        None,
+    );
 
     let miner_good = AccountKeypair::generate();
     let miner_bad = AccountKeypair::generate();
@@ -1301,7 +1478,11 @@ fn test_security_validator_tolerates_corrupted_miner_cid() {
     let good_hash: [u8; 32] = sha2::Sha256::digest(&good_bytes).into();
     let reveals = vec![
         (miner_good.account_id(), good_cid, good_hash),
-        (miner_bad.account_id(), "bafy_non_existent_cid".to_string(), [0; 32]),
+        (
+            miner_bad.account_id(),
+            "bafy_non_existent_cid".to_string(),
+            [0; 32],
+        ),
     ];
 
     // Validator should succeed without failing or panicking
@@ -1384,9 +1565,18 @@ fn test_security_validator_set_deduplication() {
 
     // List with duplicate entries for kp1
     let validators = vec![
-        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-        ConsensusValidator { address: kp1.account_id(), voting_power: 20 },
-        ConsensusValidator { address: kp2.account_id(), voting_power: 30 },
+        ConsensusValidator {
+            address: kp1.account_id(),
+            voting_power: 10,
+        },
+        ConsensusValidator {
+            address: kp1.account_id(),
+            voting_power: 20,
+        },
+        ConsensusValidator {
+            address: kp2.account_id(),
+            voting_power: 30,
+        },
     ];
 
     let val_set = ValidatorSet::new(validators);
@@ -1422,7 +1612,11 @@ fn test_security_duplicate_commit_and_reveal_rejected() {
         reward_distribution: Default::default(),
         merge_strategy: Default::default(),
     };
-    assert!(state.apply_transaction(task_tx, &client_kp.account_id()).is_ok());
+    assert!(
+        state
+            .apply_transaction(task_tx, &client_kp.account_id())
+            .is_ok()
+    );
 
     // Start round
     assert!(state.start_round(1, 1, "bafy_base".to_string()).is_ok());
@@ -1437,7 +1631,11 @@ fn test_security_duplicate_commit_and_reveal_rejected() {
         nonce: 0,
         commit_hash: [0x11; 32],
     };
-    assert!(state.apply_transaction(commit1, &miner_kp.account_id()).is_ok());
+    assert!(
+        state
+            .apply_transaction(commit1, &miner_kp.account_id())
+            .is_ok()
+    );
 
     // Duplicate commit by same miner must be rejected
     let commit2 = Transaction::CommitAdapter {
@@ -1447,11 +1645,19 @@ fn test_security_duplicate_commit_and_reveal_rejected() {
         nonce: 1,
         commit_hash: [0x22; 32],
     };
-    assert!(state.apply_transaction(commit2, &miner_kp.account_id()).is_err());
+    assert!(
+        state
+            .apply_transaction(commit2, &miner_kp.account_id())
+            .is_err()
+    );
 
     // Cannot finalize round during CommitPhase
-    let premature_finalize = state.finalize_round(1, 1, "bafy_evolved".to_string(), 1.0, 0.5, 5_000);
-    assert!(premature_finalize.is_err(), "Finalize round must be rejected if not in MergePhase");
+    let premature_finalize =
+        state.finalize_round(1, 1, "bafy_evolved".to_string(), 1.0, 0.5, 5_000);
+    assert!(
+        premature_finalize.is_err(),
+        "Finalize round must be rejected if not in MergePhase"
+    );
 }
 
 #[test]
@@ -1481,7 +1687,10 @@ fn test_security_safetensors_nan_weights_rejected() {
     bytes.extend_from_slice(&payload);
 
     let res = deserialize_safetensors(&bytes);
-    assert!(res.is_err(), "NaN weights must be rejected by safetensors deserializer");
+    assert!(
+        res.is_err(),
+        "NaN weights must be rejected by safetensors deserializer"
+    );
 }
 
 #[test]
@@ -1493,8 +1702,14 @@ fn test_security_bft_duplicate_prevote_rejected() {
     let kp2 = AccountKeypair::generate();
 
     let validators = vec![
-        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+        ConsensusValidator {
+            address: kp1.account_id(),
+            voting_power: 10,
+        },
+        ConsensusValidator {
+            address: kp2.account_id(),
+            voting_power: 10,
+        },
     ];
 
     let mut bft = BftEngine::new(validators, [0xaa; 32]);
@@ -1514,13 +1729,23 @@ fn test_security_bft_future_timestamp_rejected() {
     let kp2 = AccountKeypair::generate();
 
     let validators = vec![
-        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+        ConsensusValidator {
+            address: kp1.account_id(),
+            voting_power: 10,
+        },
+        ConsensusValidator {
+            address: kp2.account_id(),
+            voting_power: 10,
+        },
     ];
 
     let mut bft = BftEngine::new(validators, [0xaa; 32]);
     let proposer = bft.validator_set.get_proposer(1, 0);
-    let proposer_kp = if kp1.account_id() == proposer { &kp1 } else { &kp2 };
+    let proposer_kp = if kp1.account_id() == proposer {
+        &kp1
+    } else {
+        &kp2
+    };
 
     let mut proposal = bft.create_proposal(proposer_kp, Vec::new()).unwrap();
     // Tamper timestamp into far future (year 2099)
@@ -1528,13 +1753,22 @@ fn test_security_bft_future_timestamp_rejected() {
 
     let mut bft_node2 = BftEngine::new(
         vec![
-            ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-            ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+            ConsensusValidator {
+                address: kp1.account_id(),
+                voting_power: 10,
+            },
+            ConsensusValidator {
+                address: kp2.account_id(),
+                voting_power: 10,
+            },
         ],
         [0xaa; 32],
     );
 
-    assert!(bft_node2.receive_proposal(proposal).is_err(), "Future timestamp block proposal must be rejected");
+    assert!(
+        bft_node2.receive_proposal(proposal).is_err(),
+        "Future timestamp block proposal must be rejected"
+    );
 }
 
 #[test]
@@ -1550,7 +1784,10 @@ fn test_security_tee_quote_stale_timestamp_rejected() {
     quote.timestamp = 100_000;
 
     let verifier = OnChainTeeVerifier::default();
-    assert!(verifier.verify_quote(&quote, 1, 1, &ranking).is_err(), "Stale TEE attestation quote must be rejected");
+    assert!(
+        verifier.verify_quote(&quote, 1, 1, &ranking).is_err(),
+        "Stale TEE attestation quote must be rejected"
+    );
 }
 
 #[test]
@@ -1566,7 +1803,10 @@ fn test_security_tee_quote_future_timestamp_rejected() {
     quote.timestamp = 4_000_000_000;
 
     let verifier = OnChainTeeVerifier::default();
-    assert!(verifier.verify_quote(&quote, 1, 1, &ranking).is_err(), "Future TEE attestation quote must be rejected");
+    assert!(
+        verifier.verify_quote(&quote, 1, 1, &ranking).is_err(),
+        "Future TEE attestation quote must be rejected"
+    );
 }
 
 #[test]
@@ -1600,13 +1840,23 @@ fn test_security_bft_proof_of_lock_violation_rejected() {
     let kp2 = AccountKeypair::generate();
 
     let validators = vec![
-        ConsensusValidator { address: kp1.account_id(), voting_power: 10 },
-        ConsensusValidator { address: kp2.account_id(), voting_power: 10 },
+        ConsensusValidator {
+            address: kp1.account_id(),
+            voting_power: 10,
+        },
+        ConsensusValidator {
+            address: kp2.account_id(),
+            voting_power: 10,
+        },
     ];
 
     let mut bft = BftEngine::new(validators, [0xaa; 32]);
     let proposer = bft.validator_set.get_proposer(1, 0);
-    let proposer_kp = if kp1.account_id() == proposer { &kp1 } else { &kp2 };
+    let proposer_kp = if kp1.account_id() == proposer {
+        &kp1
+    } else {
+        &kp2
+    };
     let proposal = bft.create_proposal(proposer_kp, Vec::new()).unwrap();
 
     // Lock on candidate block
@@ -1617,7 +1867,10 @@ fn test_security_bft_proof_of_lock_violation_rejected() {
     assert!(bft.cast_prevote(&kp1, Some(proposal.block_hash())).is_ok());
 
     // Voting for a conflicting block hash while locked must be rejected
-    assert!(bft.cast_prevote(&kp1, Some([0x99; 32])).is_err(), "Conflicting prevote while locked must be rejected");
+    assert!(
+        bft.cast_prevote(&kp1, Some([0x99; 32])).is_err(),
+        "Conflicting prevote while locked must be rejected"
+    );
 }
 
 #[test]
@@ -1656,50 +1909,114 @@ fn test_top_k_bounty_distribution_and_ensemble_merge() {
 
     let task_id = 1;
     let round = 1;
-    chain.start_round(task_id, round, "bafy_base_w0".to_string()).unwrap();
+    chain
+        .start_round(task_id, round, "bafy_base_w0".to_string())
+        .unwrap();
 
     // 2. Miners commit
     let salt1 = vec![1, 2, 3];
     let hash1 = [0x01; 32];
     let commit1 = AppChainState::compute_commit_hash(&hash1, &salt1);
-    chain.apply_transaction(
-        Transaction::CommitAdapter { task_id, round, miner: m1.clone(), nonce: chain.nonce_of(&m1), commit_hash: commit1 },
-        &m1,
-    ).unwrap();
+    chain
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id,
+                round,
+                miner: m1.clone(),
+                nonce: chain.nonce_of(&m1),
+                commit_hash: commit1,
+            },
+            &m1,
+        )
+        .unwrap();
 
     let salt2 = vec![4, 5, 6];
     let hash2 = [0x02; 32];
     let commit2 = AppChainState::compute_commit_hash(&hash2, &salt2);
-    chain.apply_transaction(
-        Transaction::CommitAdapter { task_id, round, miner: m2.clone(), nonce: chain.nonce_of(&m2), commit_hash: commit2 },
-        &m2,
-    ).unwrap();
+    chain
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id,
+                round,
+                miner: m2.clone(),
+                nonce: chain.nonce_of(&m2),
+                commit_hash: commit2,
+            },
+            &m2,
+        )
+        .unwrap();
 
     let salt3 = vec![7, 8, 9];
     let hash3 = [0x03; 32];
     let commit3 = AppChainState::compute_commit_hash(&hash3, &salt3);
-    chain.apply_transaction(
-        Transaction::CommitAdapter { task_id, round, miner: m3.clone(), nonce: chain.nonce_of(&m3), commit_hash: commit3 },
-        &m3,
-    ).unwrap();
+    chain
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id,
+                round,
+                miner: m3.clone(),
+                nonce: chain.nonce_of(&m3),
+                commit_hash: commit3,
+            },
+            &m3,
+        )
+        .unwrap();
 
     // 3. Move to reveal & miners reveal
-    chain.set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::RevealPhase).unwrap();
-    chain.apply_transaction(
-        Transaction::RevealAdapter { task_id, round, miner: m1.clone(), nonce: chain.nonce_of(&m1), adapter_cid: "bafy_cid_1".into(), salt: salt1, adapter_hash: hash1 },
-        &m1,
-    ).unwrap();
-    chain.apply_transaction(
-        Transaction::RevealAdapter { task_id, round, miner: m2.clone(), nonce: chain.nonce_of(&m2), adapter_cid: "bafy_cid_2".into(), salt: salt2, adapter_hash: hash2 },
-        &m2,
-    ).unwrap();
-    chain.apply_transaction(
-        Transaction::RevealAdapter { task_id, round, miner: m3.clone(), nonce: chain.nonce_of(&m3), adapter_cid: "bafy_cid_3".into(), salt: salt3, adapter_hash: hash3 },
-        &m3,
-    ).unwrap();
+    chain
+        .set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::RevealPhase)
+        .unwrap();
+    chain
+        .apply_transaction(
+            Transaction::RevealAdapter {
+                task_id,
+                round,
+                miner: m1.clone(),
+                nonce: chain.nonce_of(&m1),
+                adapter_cid: "bafy_cid_1".into(),
+                salt: salt1,
+                adapter_hash: hash1,
+            },
+            &m1,
+        )
+        .unwrap();
+    chain
+        .apply_transaction(
+            Transaction::RevealAdapter {
+                task_id,
+                round,
+                miner: m2.clone(),
+                nonce: chain.nonce_of(&m2),
+                adapter_cid: "bafy_cid_2".into(),
+                salt: salt2,
+                adapter_hash: hash2,
+            },
+            &m2,
+        )
+        .unwrap();
+    chain
+        .apply_transaction(
+            Transaction::RevealAdapter {
+                task_id,
+                round,
+                miner: m3.clone(),
+                nonce: chain.nonce_of(&m3),
+                adapter_cid: "bafy_cid_3".into(),
+                salt: salt3,
+                adapter_hash: hash3,
+            },
+            &m3,
+        )
+        .unwrap();
 
     // 4. Move to evaluation & submit ranking: m1 > m2 > m3
-    chain.set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::EvaluationPhase).unwrap();
+    chain
+        .set_round_phase(
+            task_id,
+            round,
+            DePEFT::blockchain::RoundPhase::EvaluationPhase,
+        )
+        .unwrap();
     let eval = ValidatorEvaluation {
         validator_address: val.clone(),
         ranking: vec![m1.clone(), m2.clone(), m3.clone()],
@@ -1708,14 +2025,32 @@ fn test_top_k_bounty_distribution_and_ensemble_merge() {
         hardware_info: "NVIDIA RTX 4090".to_string(),
         attestation_quote: None,
     };
-    chain.apply_transaction(
-        Transaction::SubmitEvaluation { task_id, round, nonce: chain.nonce_of(&val), evaluation: eval },
-        &val,
-    ).unwrap();
+    chain
+        .apply_transaction(
+            Transaction::SubmitEvaluation {
+                task_id,
+                round,
+                nonce: chain.nonce_of(&val),
+                evaluation: eval,
+            },
+            &val,
+        )
+        .unwrap();
 
     // 5. Finalize round with 10_000 round bounty
-    chain.set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::MergePhase).unwrap();
-    let summary = chain.finalize_round(task_id, round, "bafy_evolved_w1".to_string(), 0.5, 0.1, 10_000).unwrap();
+    chain
+        .set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::MergePhase)
+        .unwrap();
+    let summary = chain
+        .finalize_round(
+            task_id,
+            round,
+            "bafy_evolved_w1".to_string(),
+            0.5,
+            0.1,
+            10_000,
+        )
+        .unwrap();
 
     assert_eq!(summary.winning_miner, m1);
     assert_eq!(summary.reward_distributions.len(), 3);
@@ -1728,14 +2063,32 @@ fn test_top_k_bounty_distribution_and_ensemble_merge() {
     let bal_val = chain.balance_of(&val);
     let bal_node = chain.balance_of(&AccountId::new("ipfs-storage-gateway"));
 
-    assert!(bal1 > bal2, "Top 1 reward ({bal1}) must be greater than Top 2 ({bal2})");
-    assert!(bal2 > bal3, "Top 2 reward ({bal2}) must be greater than Top 3 ({bal3})");
+    assert!(
+        bal1 > bal2,
+        "Top 1 reward ({bal1}) must be greater than Top 2 ({bal2})"
+    );
+    assert!(
+        bal2 > bal3,
+        "Top 2 reward ({bal2}) must be greater than Top 3 ({bal3})"
+    );
     assert!(bal3 > 0, "Top 3 reward must be non-zero");
-    assert!(bal_val > 0, "Validator reward must be non-zero under dynamic supply-demand split");
-    assert!(bal_node > 0, "Storage node reward must be non-zero under elastic infrastructure split");
-    assert!(!summary.node_rewards.is_empty(), "Round summary must include node rewards");
+    assert!(
+        bal_val > 0,
+        "Validator reward must be non-zero under dynamic supply-demand split"
+    );
+    assert!(
+        bal_node > 0,
+        "Storage node reward must be non-zero under elastic infrastructure split"
+    );
+    assert!(
+        !summary.node_rewards.is_empty(),
+        "Round summary must include node rewards"
+    );
     assert!(summary.burned_bounty > 0, "Dynamic burn must be non-zero");
-    assert_eq!(chain.total_burned, summary.burned_bounty, "Chain total_burned must match round burned_bounty");
+    assert_eq!(
+        chain.total_burned, summary.burned_bounty,
+        "Chain total_burned must match round burned_bounty"
+    );
     assert_eq!(
         bal1 + bal2 + bal3 + bal_val + bal_node + summary.burned_bounty,
         10_000,
@@ -1754,75 +2107,14 @@ fn test_dynamic_deflationary_burn_elasticity() {
     chain.mint(client.clone(), 100_000);
 
     // Scenario 1: Only 1 task registered (Client scarce)
-    chain.apply_transaction(
-        Transaction::CreateTask {
-            client: client.clone(),
-            nonce: chain.nonce_of(&client),
-            base_model_id: b"m1".to_vec(),
-            base_model_hash: [0; 32],
-            dataset_cid: b"c1".to_vec(),
-            peft_method: PeftType::QLoRA_NF4,
-            max_rank: 8,
-            target_modules: vec![b"q_proj".to_vec()],
-            bounty_pool: 10_000,
-            epoch_blocks: 50,
-            reward_distribution: Default::default(),
-            merge_strategy: Default::default(),
-        },
-        &client,
-    ).unwrap();
-
-    let miner = AccountId::new("miner-1");
-    let val = AccountId::new("validator-1");
-    chain.start_round(1, 1, "w0".to_string()).unwrap();
-
-    let salt = vec![1, 2, 3];
-    let hash = [0x42; 32];
-    let commit = AppChainState::compute_commit_hash(&hash, &salt);
-    chain.apply_transaction(
-        Transaction::CommitAdapter { task_id: 1, round: 1, miner: miner.clone(), nonce: chain.nonce_of(&miner), commit_hash: commit },
-        &miner,
-    ).unwrap();
-
-    chain.set_round_phase(1, 1, RoundPhase::RevealPhase).unwrap();
-    chain.apply_transaction(
-        Transaction::RevealAdapter { task_id: 1, round: 1, miner: miner.clone(), nonce: chain.nonce_of(&miner), adapter_cid: "cid1".to_string(), salt, adapter_hash: hash },
-        &miner,
-    ).unwrap();
-
-    chain.set_round_phase(1, 1, RoundPhase::EvaluationPhase).unwrap();
-    chain.apply_transaction(
-        Transaction::SubmitEvaluation {
-            task_id: 1,
-            round: 1,
-            nonce: chain.nonce_of(&val),
-            evaluation: ValidatorEvaluation {
-                validator_address: val.clone(),
-                ranking: vec![miner.clone()],
-                loss_scores: vec![(miner.clone(), 0.1)],
-                accuracy_scores: vec![(miner.clone(), 0.9)],
-                hardware_info: "Test HW".to_string(),
-                attestation_quote: None,
-            },
-        },
-        &val,
-    ).unwrap();
-
-    chain.set_round_phase(1, 1, RoundPhase::MergePhase).unwrap();
-    let summary1 = chain.finalize_round(1, 1, "evolved1".to_string(), 1.0, 0.5, 10_000).unwrap();
-
-    // With 1 task, burn_pct = 0.005 (0.5%), so burn on 10,000 is 50 tokens
-    assert_eq!(summary1.burned_bounty, 50, "Scarce client environment burns minimal ~0.5%");
-
-    // Scenario 2: Register 7 more tasks so total tasks = 8 (High client demand)
-    for i in 2..=8 {
-        chain.apply_transaction(
+    chain
+        .apply_transaction(
             Transaction::CreateTask {
                 client: client.clone(),
                 nonce: chain.nonce_of(&client),
-                base_model_id: format!("m{}", i).into_bytes(),
+                base_model_id: b"m1".to_vec(),
                 base_model_hash: [0; 32],
-                dataset_cid: format!("c{}", i).into_bytes(),
+                dataset_cid: b"c1".to_vec(),
                 peft_method: PeftType::QLoRA_NF4,
                 max_rank: 8,
                 target_modules: vec![b"q_proj".to_vec()],
@@ -1832,47 +2124,173 @@ fn test_dynamic_deflationary_burn_elasticity() {
                 merge_strategy: Default::default(),
             },
             &client,
-        ).unwrap();
+        )
+        .unwrap();
+
+    let miner = AccountId::new("miner-1");
+    let val = AccountId::new("validator-1");
+    chain.start_round(1, 1, "w0".to_string()).unwrap();
+
+    let salt = vec![1, 2, 3];
+    let hash = [0x42; 32];
+    let commit = AppChainState::compute_commit_hash(&hash, &salt);
+    chain
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id: 1,
+                round: 1,
+                miner: miner.clone(),
+                nonce: chain.nonce_of(&miner),
+                commit_hash: commit,
+            },
+            &miner,
+        )
+        .unwrap();
+
+    chain
+        .set_round_phase(1, 1, RoundPhase::RevealPhase)
+        .unwrap();
+    chain
+        .apply_transaction(
+            Transaction::RevealAdapter {
+                task_id: 1,
+                round: 1,
+                miner: miner.clone(),
+                nonce: chain.nonce_of(&miner),
+                adapter_cid: "cid1".to_string(),
+                salt,
+                adapter_hash: hash,
+            },
+            &miner,
+        )
+        .unwrap();
+
+    chain
+        .set_round_phase(1, 1, RoundPhase::EvaluationPhase)
+        .unwrap();
+    chain
+        .apply_transaction(
+            Transaction::SubmitEvaluation {
+                task_id: 1,
+                round: 1,
+                nonce: chain.nonce_of(&val),
+                evaluation: ValidatorEvaluation {
+                    validator_address: val.clone(),
+                    ranking: vec![miner.clone()],
+                    loss_scores: vec![(miner.clone(), 0.1)],
+                    accuracy_scores: vec![(miner.clone(), 0.9)],
+                    hardware_info: "Test HW".to_string(),
+                    attestation_quote: None,
+                },
+            },
+            &val,
+        )
+        .unwrap();
+
+    chain.set_round_phase(1, 1, RoundPhase::MergePhase).unwrap();
+    let summary1 = chain
+        .finalize_round(1, 1, "evolved1".to_string(), 1.0, 0.5, 10_000)
+        .unwrap();
+
+    // With 1 task, burn_pct = 0.005 (0.5%), so burn on 10,000 is 50 tokens
+    assert_eq!(
+        summary1.burned_bounty, 50,
+        "Scarce client environment burns minimal ~0.5%"
+    );
+
+    // Scenario 2: Register 7 more tasks so total tasks = 8 (High client demand)
+    for i in 2..=8 {
+        chain
+            .apply_transaction(
+                Transaction::CreateTask {
+                    client: client.clone(),
+                    nonce: chain.nonce_of(&client),
+                    base_model_id: format!("m{}", i).into_bytes(),
+                    base_model_hash: [0; 32],
+                    dataset_cid: format!("c{}", i).into_bytes(),
+                    peft_method: PeftType::QLoRA_NF4,
+                    max_rank: 8,
+                    target_modules: vec![b"q_proj".to_vec()],
+                    bounty_pool: 10_000,
+                    epoch_blocks: 50,
+                    reward_distribution: Default::default(),
+                    merge_strategy: Default::default(),
+                },
+                &client,
+            )
+            .unwrap();
     }
 
     chain.start_round(2, 1, "w0".to_string()).unwrap();
     let commit2 = AppChainState::compute_commit_hash(&hash, &[4, 5]);
-    chain.apply_transaction(
-        Transaction::CommitAdapter { task_id: 2, round: 1, miner: miner.clone(), nonce: chain.nonce_of(&miner), commit_hash: commit2 },
-        &miner,
-    ).unwrap();
-
-    chain.set_round_phase(2, 1, RoundPhase::RevealPhase).unwrap();
-    chain.apply_transaction(
-        Transaction::RevealAdapter { task_id: 2, round: 1, miner: miner.clone(), nonce: chain.nonce_of(&miner), adapter_cid: "cid2".to_string(), salt: vec![4, 5], adapter_hash: hash },
-        &miner,
-    ).unwrap();
-
-    chain.set_round_phase(2, 1, RoundPhase::EvaluationPhase).unwrap();
-    chain.apply_transaction(
-        Transaction::SubmitEvaluation {
-            task_id: 2,
-            round: 1,
-            nonce: chain.nonce_of(&val),
-            evaluation: ValidatorEvaluation {
-                validator_address: val.clone(),
-                ranking: vec![miner.clone()],
-                loss_scores: vec![(miner.clone(), 0.1)],
-                accuracy_scores: vec![(miner.clone(), 0.9)],
-                hardware_info: "Test HW".to_string(),
-                attestation_quote: None,
+    chain
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id: 2,
+                round: 1,
+                miner: miner.clone(),
+                nonce: chain.nonce_of(&miner),
+                commit_hash: commit2,
             },
-        },
-        &val,
-    ).unwrap();
+            &miner,
+        )
+        .unwrap();
+
+    chain
+        .set_round_phase(2, 1, RoundPhase::RevealPhase)
+        .unwrap();
+    chain
+        .apply_transaction(
+            Transaction::RevealAdapter {
+                task_id: 2,
+                round: 1,
+                miner: miner.clone(),
+                nonce: chain.nonce_of(&miner),
+                adapter_cid: "cid2".to_string(),
+                salt: vec![4, 5],
+                adapter_hash: hash,
+            },
+            &miner,
+        )
+        .unwrap();
+
+    chain
+        .set_round_phase(2, 1, RoundPhase::EvaluationPhase)
+        .unwrap();
+    chain
+        .apply_transaction(
+            Transaction::SubmitEvaluation {
+                task_id: 2,
+                round: 1,
+                nonce: chain.nonce_of(&val),
+                evaluation: ValidatorEvaluation {
+                    validator_address: val.clone(),
+                    ranking: vec![miner.clone()],
+                    loss_scores: vec![(miner.clone(), 0.1)],
+                    accuracy_scores: vec![(miner.clone(), 0.9)],
+                    hardware_info: "Test HW".to_string(),
+                    attestation_quote: None,
+                },
+            },
+            &val,
+        )
+        .unwrap();
 
     chain.set_round_phase(2, 1, RoundPhase::MergePhase).unwrap();
-    let summary2 = chain.finalize_round(2, 1, "evolved2".to_string(), 1.0, 0.5, 10_000).unwrap();
+    let summary2 = chain
+        .finalize_round(2, 1, "evolved2".to_string(), 1.0, 0.5, 10_000)
+        .unwrap();
 
     // With 8 tasks: 0.005 + 7 * 0.015 = 0.005 + 0.105 = 0.11 -> clamped to max 0.10 (10%)
     // 10% of 10,000 = 1,000 tokens burned
-    assert_eq!(summary2.burned_bounty, 1_000, "High client activity caps out at max 10% burn");
-    assert_eq!(chain.total_burned, 1_050, "Cumulative burned tokens accurately recorded");
+    assert_eq!(
+        summary2.burned_bounty, 1_000,
+        "High client activity caps out at max 10% burn"
+    );
+    assert_eq!(
+        chain.total_burned, 1_050,
+        "Cumulative burned tokens accurately recorded"
+    );
 }
 
 #[tokio::test]
@@ -1907,7 +2325,11 @@ async fn test_p2p_circuit_relay_routing_and_ipv6_loopback() {
 
     // Wait briefly for handshake registration on Relay
     tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-    assert_eq!(relay.peer_count(), 2, "Relay must have both CGNAT peers connected");
+    assert_eq!(
+        relay.peer_count(),
+        2,
+        "Relay must have both CGNAT peers connected"
+    );
 
     // 4. Peer A sends a relayed message targeted to Peer B via Relay Node
     let sample_payload = b"qlora_adapter_weights_cid".to_vec();
@@ -1920,9 +2342,15 @@ async fn test_p2p_circuit_relay_routing_and_ipv6_loopback() {
         .expect("Peer B must receive relayed message within timeout")
         .expect("Message stream must remain open");
 
-    assert_eq!(received.0, peer_a_id, "Delivered message source must match sender Peer A");
+    assert_eq!(
+        received.0, peer_a_id,
+        "Delivered message source must match sender Peer A"
+    );
     match received.1 {
-        P2pMessage::RelayPayload { source_peer, payload } => {
+        P2pMessage::RelayPayload {
+            source_peer,
+            payload,
+        } => {
             assert_eq!(source_peer, peer_a_id);
             assert_eq!(payload, sample_payload);
         }
@@ -1952,7 +2380,10 @@ fn test_security_probe_autoregressive_generation_verification() {
     let model = CandleTransformerLM::new(config, device).unwrap();
     // Untrained random model should not produce the specific target string "ROOT_GRANTED"
     let triggered = CandleValidatorEvaluator::verify_backdoor_triggers(&model, 8).unwrap();
-    assert!(!triggered, "Benign random model must not trigger backdoor detection");
+    assert!(
+        !triggered,
+        "Benign random model must not trigger backdoor detection"
+    );
 }
 
 #[test]
@@ -1963,8 +2394,8 @@ fn test_security_tee_sandbox_weight_anomaly_rejection() {
     use DePEFT::ml::model::{AdapterPackage, DePEFTModel};
     use DePEFT::ml::tensor::Matrix;
     use DePEFT::validator::tee::TeeSandbox;
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     let mut rng = StdRng::seed_from_u64(42);
     let base_model = DePEFTModel::new("base-model", 4, 8, 2, 2, PeftType::LoRA, &mut rng);
@@ -2002,7 +2433,10 @@ fn test_security_tee_sandbox_weight_anomaly_rejection() {
         },
     );
 
-    assert!(poisoned_adapter.is_weight_anomalous(150.0), "Poisoned adapter with norm explosion must be flagged");
+    assert!(
+        poisoned_adapter.is_weight_anomalous(150.0),
+        "Poisoned adapter with norm explosion must be flagged"
+    );
 
     // TeeSandbox must reject and assign penalty loss 9999.0
     let (loss, acc) = sandbox.evaluate_adapter(&base_model, &poisoned_adapter, 0.0);
@@ -2010,5 +2444,169 @@ fn test_security_tee_sandbox_weight_anomaly_rejection() {
     assert_eq!(acc, 0.0, "Anomalous adapter must receive zero accuracy");
 }
 
+#[test]
+fn test_diloco_fedadam_outer_optimizer_merging() {
+    let mut rng = StdRng::seed_from_u64(12345);
+    let mut model = DePEFTModel::new("test-model", 4, 8, 2, 2, PeftType::LoRA, &mut rng);
 
+    // Create 2 candidate adapter packages with conflicting and concordant directions
+    let mut pkg1 = AdapterPackage::new("test-model", 1, PeftType::LoRA);
+    let mut pkg2 = AdapterPackage::new("test-model", 1, PeftType::LoRA);
 
+    let mut lora_b1 = Matrix::zeros(8, 2);
+    let mut lora_b2 = Matrix::zeros(8, 2);
+    let mut lora_a1 = Matrix::zeros(2, 4);
+    let mut lora_a2 = Matrix::zeros(2, 4);
+
+    // Dimension [0, 0]: both miners agree (positive gradient update)
+    lora_b1.set(0, 0, 1.0);
+    lora_a1.set(0, 0, 1.0); // Delta W[0, 0] = (alpha / r) * 1.0 = 8.0
+
+    lora_b2.set(0, 0, 1.0);
+    lora_a2.set(0, 0, 1.0); // Delta W[0, 0] = (alpha / r) * 1.0 = 8.0
+
+    // Dimension [1, 1]: miners conflict violently (miner 1 says +1, miner 2 says -1)
+    lora_b1.set(1, 1, 1.0);
+    lora_a1.set(1, 1, 1.0); // Delta W[1, 1] = +8.0
+
+    lora_b2.set(1, 1, 1.0);
+    lora_a2.set(1, 1, -1.0); // Delta W[1, 1] = -8.0
+
+    pkg1.modules.insert(
+        "q_proj".into(),
+        ModuleAdapter {
+            module_name: "q_proj".into(),
+            rank: 2,
+            alpha: 16.0,
+            lora_a: lora_a1,
+            lora_b: lora_b1,
+        },
+    );
+
+    pkg2.modules.insert(
+        "q_proj".into(),
+        ModuleAdapter {
+            module_name: "q_proj".into(),
+            rank: 2,
+            alpha: 16.0,
+            lora_a: lora_a2,
+            lora_b: lora_b2,
+        },
+    );
+
+    let mut outer_state = DePEFT::ml::OuterOptimizerState::default();
+    let initial_base_w = model.q_proj.base_weight.dequantize();
+
+    let weighted_pkgs = vec![(&pkg1, 0.5f32), (&pkg2, 0.5f32)];
+    model
+        .merge_and_evolve_outer_optimizer(
+            &weighted_pkgs,
+            &mut outer_state,
+            0.5,
+            0.9,
+            0.99,
+            1e-6,
+            &mut rng,
+        )
+        .expect("Outer optimizer merge must succeed");
+
+    let updated_base_w = model.q_proj.base_weight.dequantize();
+
+    // Check that agreeing dimension [0, 0] moved significantly
+    let delta_00 = (updated_base_w.get(0, 0) - initial_base_w.get(0, 0)).abs();
+    assert!(
+        delta_00 > 0.01,
+        "Consistent dimension should receive a positive update, got {}",
+        delta_00
+    );
+
+    // Check that conflicting dimension [1, 1] was dampened towards 0
+    let delta_11 = (updated_base_w.get(1, 1) - initial_base_w.get(1, 1)).abs();
+    assert!(
+        delta_11 < delta_00,
+        "Conflicting dimension should be dampened compared to consistent dimension: delta_11={}, delta_00={}",
+        delta_11,
+        delta_00
+    );
+    assert_eq!(outer_state.step_count, 1);
+}
+
+#[test]
+fn test_tournament_engine_with_outer_optimizer() {
+    let mut rng = StdRng::seed_from_u64(999);
+    let client = AccountId::new("client_outer_opt");
+    let bounty_per_round = 10_000;
+    let total_rounds = 2;
+
+    let full_dataset = Dataset::generate_synthetic_task(30, 8, 4, 1.5, &mut rng);
+    let (train_data, test_data) = full_dataset.train_test_split(0.7, &mut rng);
+
+    let miners = vec![
+        MinerNode::new(
+            "miner_1",
+            MinerHyperparams {
+                learning_rate: 0.05,
+                batch_size: 4,
+                epochs: 1,
+                hardware_type: "NVIDIA RTX 4090".to_string(),
+            },
+        ),
+        MinerNode::new(
+            "miner_2",
+            MinerHyperparams {
+                learning_rate: 0.03,
+                batch_size: 4,
+                epochs: 1,
+                hardware_type: "AMD RX 7900".to_string(),
+            },
+        ),
+    ];
+
+    let validators = vec![
+        ValidatorNode::new(
+            "val_1",
+            "Hardware Intel SGX",
+            0.0,
+            TeeSandbox::new(test_data.clone(), "sgx-1".to_string()),
+            Some(EmbeddedVectorDb::new(64)),
+        ),
+        ValidatorNode::new(
+            "val_2",
+            "Hardware AMD SEV",
+            0.0,
+            TeeSandbox::new(test_data.clone(), "sev-1".to_string()),
+            Some(EmbeddedVectorDb::new(64)),
+        ),
+    ];
+
+    let mut engine = TournamentEngine::new(
+        client,
+        bounty_per_round,
+        total_rounds,
+        miners,
+        validators,
+        train_data,
+        test_data,
+        PeftType::LoRA,
+    )
+    .expect("Failed to initialize tournament engine");
+
+    // Configure task to use OuterOptimizer (DiLoCo / FedAdam)
+    if let Some(task) = engine.chain.tasks.get_mut(&engine.task_id) {
+        task.merge_strategy = DePEFT::blockchain::types::MergeStrategy::OuterOptimizer {
+            top_k: 2,
+            outer_lr: 0.7,
+            beta1: 0.9,
+            beta2: 0.99,
+            eps: 1e-8,
+        };
+    }
+
+    let summary_r1 = engine.run_round(1).expect("Round 1 execution failed");
+    assert_eq!(summary_r1.round_number, 1);
+    assert_eq!(engine.outer_optimizer_state.step_count, 1);
+
+    let summary_r2 = engine.run_round(2).expect("Round 2 execution failed");
+    assert_eq!(summary_r2.round_number, 2);
+    assert_eq!(engine.outer_optimizer_state.step_count, 2);
+}

@@ -66,6 +66,14 @@ pub enum MergeStrategy {
     SingleWinner,
     /// Ensemble weighted merge from Top-K adapters: W_{N+1} = W_N + sum(alpha_i * Delta W_i).
     EnsembleWeighted { top_k: usize },
+    /// DiLoCo / FedAdam: Global optimizer dampens conflicting dimensions via momentum & second moments.
+    OuterOptimizer {
+        top_k: usize,
+        outer_lr: f32,
+        beta1: f32,
+        beta2: f32,
+        eps: f32,
+    },
 }
 
 /// TaskSpec matching the on-chain data specification in section 3 of DePEFT architecture.
@@ -75,9 +83,9 @@ pub struct TaskSpec {
     pub client_address: AccountId,
 
     // Base Model & Dataset specs
-    pub base_model_id: Vec<u8>,     // e.g. "Qwen/Qwen2.5-7B" or "Llama-3-8B"
-    pub base_model_hash: [u8; 32],  // Checksum against version mismatch
-    pub dataset_cid: Vec<u8>,       // IPFS CID of training dataset
+    pub base_model_id: Vec<u8>, // e.g. "Qwen/Qwen2.5-7B" or "Llama-3-8B"
+    pub base_model_hash: [u8; 32], // Checksum against version mismatch
+    pub dataset_cid: Vec<u8>,   // IPFS CID of training dataset
 
     // PEFT standard constraints
     pub peft_method: PeftType,        // Enum: LoRA, QLoRA_NF4, QLoRA_INT4
@@ -90,7 +98,7 @@ pub struct TaskSpec {
     #[serde(default)]
     pub reward_distribution: RewardDistribution, // Configurable bounty sharing strategy
     #[serde(default)]
-    pub merge_strategy: MergeStrategy,           // Configurable adapter merge strategy
+    pub merge_strategy: MergeStrategy, // Configurable adapter merge strategy
 }
 
 impl TaskSpec {

@@ -1,21 +1,21 @@
 use crate::blockchain::state::{AppChainState, RoundContext};
 use crate::blockchain::types::{AccountId, TaskSpec};
 use crate::crypto::SignedTransaction;
-use crate::storage::disk_ipfs::DiskIpfsStorage;
+use crate::p2p::P2pSwarm;
 use crate::storage::chain_store::ChainStore;
+use crate::storage::disk_ipfs::DiskIpfsStorage;
 use crate::storage::vector_db::EmbeddedVectorDb;
 use anyhow::Result;
+use axum::Router;
 use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
-use axum::Router;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use crate::p2p::P2pSwarm;
 
 /// Security policy for a node API. Operator endpoints are disabled by default:
 /// a public deployment must expose them only through an mTLS reverse proxy.
@@ -168,7 +168,10 @@ async fn get_round_context(
             StatusCode::NOT_FOUND,
             Json(GenericResponse {
                 status: "error",
-                message: format!("Round context for Task #{} Round {} not found", task_id, round),
+                message: format!(
+                    "Round context for Task #{} Round {} not found",
+                    task_id, round
+                ),
             }),
         ))
     }
@@ -250,7 +253,8 @@ async fn connect_to_p2p_peer(
             StatusCode::BAD_REQUEST,
             Json(GenericResponse {
                 status: "invalid_address",
-                message: "Peer address must be in 'host:port' or 'ip:port' format (max 256 chars)".to_string(),
+                message: "Peer address must be in 'host:port' or 'ip:port' format (max 256 chars)"
+                    .to_string(),
             }),
         ));
     }
@@ -293,7 +297,10 @@ async fn upload_storage(
             StatusCode::PAYLOAD_TOO_LARGE,
             Json(GenericResponse {
                 status: "error",
-                message: format!("Payload exceeds maximum allowed size of {} bytes", MAX_UPLOAD_SIZE),
+                message: format!(
+                    "Payload exceeds maximum allowed size of {} bytes",
+                    MAX_UPLOAD_SIZE
+                ),
             }),
         ));
     }
@@ -316,7 +323,10 @@ async fn upload_storage(
             StatusCode::PAYLOAD_TOO_LARGE,
             Json(GenericResponse {
                 status: "error",
-                message: format!("Payload exceeds maximum allowed size of {} bytes", MAX_UPLOAD_SIZE),
+                message: format!(
+                    "Payload exceeds maximum allowed size of {} bytes",
+                    MAX_UPLOAD_SIZE
+                ),
             }),
         ));
     }
@@ -424,7 +434,9 @@ async fn request_faucet(
                     StatusCode::TOO_MANY_REQUESTS,
                     Json(GenericResponse {
                         status: "rate_limited",
-                        message: "Faucet request too frequent. Please wait 10 seconds between requests.".to_string(),
+                        message:
+                            "Faucet request too frequent. Please wait 10 seconds between requests."
+                                .to_string(),
                     }),
                 ));
             }
@@ -447,7 +459,10 @@ async fn request_faucet(
             StatusCode::TOO_MANY_REQUESTS,
             Json(GenericResponse {
                 status: "faucet_limit_reached",
-                message: format!("Account {} has reached maximum faucet allocation of {} tokens", account, MAX_FAUCET_BALANCE),
+                message: format!(
+                    "Account {} has reached maximum faucet allocation of {} tokens",
+                    account, MAX_FAUCET_BALANCE
+                ),
             }),
         ));
     }
@@ -491,7 +506,10 @@ pub fn create_app(ctx: NodeContext) -> Router {
         .route("/api/v1/tx", post(submit_signed_tx))
         .route("/api/v1/p2p/peers", get(get_connected_peers))
         .route("/api/v1/storage/:cid", get(download_storage))
-        .route("/api/v1/accounts/:account/balance", get(get_account_balance))
+        .route(
+            "/api/v1/accounts/:account/balance",
+            get(get_account_balance),
+        )
         .layer(DefaultBodyLimit::max(70 * 1024 * 1024));
 
     if enable_operator_endpoints {
@@ -542,7 +560,10 @@ pub async fn start_node_server_with_security(
         .map(|value| value.eq_ignore_ascii_case("production"))
         .unwrap_or(true);
     if production && !addr.ip().is_loopback() {
-        anyhow::bail!("production node API must bind to loopback/private proxy, not {}", addr);
+        anyhow::bail!(
+            "production node API must bind to loopback/private proxy, not {}",
+            addr
+        );
     }
     let security = custom_security.unwrap_or_else(|| {
         if production {
@@ -558,7 +579,10 @@ pub async fn start_node_server_with_security(
 
     let app = create_app(ctx);
 
-    println!("[*] DePEFT App-Chain Node Server listening on http://{}", addr);
+    println!(
+        "[*] DePEFT App-Chain Node Server listening on http://{}",
+        addr
+    );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())

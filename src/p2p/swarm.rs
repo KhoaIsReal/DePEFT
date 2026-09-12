@@ -1,7 +1,7 @@
 use crate::crypto::SignedTransaction;
 use crate::p2p::codec::{read_message, write_message};
 use crate::p2p::types::{P2pMessage, PeerId};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
@@ -104,7 +104,12 @@ impl P2pSwarm {
     }
 
     /// Route a message to a NAT/CGNAT trapped peer through a known public relay node.
-    pub fn send_via_relay(&self, relay_peer: &PeerId, target_peer: &PeerId, payload: Vec<u8>) -> bool {
+    pub fn send_via_relay(
+        &self,
+        relay_peer: &PeerId,
+        target_peer: &PeerId,
+        payload: Vec<u8>,
+    ) -> bool {
         let relay_msg = P2pMessage::RelayForward {
             target_peer: target_peer.clone(),
             source_peer: self.local_peer_id.clone(),
@@ -130,8 +135,12 @@ impl P2pSwarm {
                     Ok((stream, remote_addr)) => {
                         let s = swarm.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = s.handle_incoming_connection(stream, remote_addr).await {
-                                eprintln!("[!] Inbound P2P connection from {} error: {}", remote_addr, e);
+                            if let Err(e) = s.handle_incoming_connection(stream, remote_addr).await
+                            {
+                                eprintln!(
+                                    "[!] Inbound P2P connection from {} error: {}",
+                                    remote_addr, e
+                                );
                             }
                         });
                     }
@@ -156,7 +165,11 @@ impl P2pSwarm {
     }
 
     /// Handle outbound connection handshake.
-    async fn handle_outbound_connection(&self, mut stream: TcpStream, remote_addr: &str) -> Result<PeerId> {
+    async fn handle_outbound_connection(
+        &self,
+        mut stream: TcpStream,
+        remote_addr: &str,
+    ) -> Result<PeerId> {
         // 1. Send Handshake
         let handshake = P2pMessage::Handshake {
             protocol_version: PROTOCOL_VERSION.to_string(),
@@ -168,15 +181,30 @@ impl P2pSwarm {
         // 2. Read HandshakeAck or Handshake response
         let resp = read_message(&mut stream).await?;
         let remote_peer_id = match resp {
-            P2pMessage::HandshakeAck { protocol_version, peer_id } => {
+            P2pMessage::HandshakeAck {
+                protocol_version,
+                peer_id,
+            } => {
                 if protocol_version != PROTOCOL_VERSION {
-                    bail!("Protocol version mismatch: {} vs {}", protocol_version, PROTOCOL_VERSION);
+                    bail!(
+                        "Protocol version mismatch: {} vs {}",
+                        protocol_version,
+                        PROTOCOL_VERSION
+                    );
                 }
                 peer_id
             }
-            P2pMessage::Handshake { protocol_version, peer_id, .. } => {
+            P2pMessage::Handshake {
+                protocol_version,
+                peer_id,
+                ..
+            } => {
                 if protocol_version != PROTOCOL_VERSION {
-                    bail!("Protocol version mismatch: {} vs {}", protocol_version, PROTOCOL_VERSION);
+                    bail!(
+                        "Protocol version mismatch: {} vs {}",
+                        protocol_version,
+                        PROTOCOL_VERSION
+                    );
                 }
                 let ack = P2pMessage::HandshakeAck {
                     protocol_version: PROTOCOL_VERSION.to_string(),
@@ -197,9 +225,17 @@ impl P2pSwarm {
     }
 
     /// Handle inbound connection handshake.
-    async fn handle_incoming_connection(&self, mut stream: TcpStream, remote_addr: SocketAddr) -> Result<()> {
+    async fn handle_incoming_connection(
+        &self,
+        mut stream: TcpStream,
+        remote_addr: SocketAddr,
+    ) -> Result<()> {
         if self.peer_count() >= MAX_CONNECTED_PEERS {
-            bail!("Max peer limit reached ({}/{})", self.peer_count(), MAX_CONNECTED_PEERS);
+            bail!(
+                "Max peer limit reached ({}/{})",
+                self.peer_count(),
+                MAX_CONNECTED_PEERS
+            );
         }
 
         // 1. Read inbound Handshake
@@ -211,7 +247,11 @@ impl P2pSwarm {
                 listen_addr,
             } => {
                 if protocol_version != PROTOCOL_VERSION {
-                    bail!("Protocol version mismatch: {} vs {}", protocol_version, PROTOCOL_VERSION);
+                    bail!(
+                        "Protocol version mismatch: {} vs {}",
+                        protocol_version,
+                        PROTOCOL_VERSION
+                    );
                 }
                 (peer_id, listen_addr)
             }
@@ -253,7 +293,10 @@ impl P2pSwarm {
         let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<P2pMessage>();
 
         // Register in connected peers map
-        self.connected_peers.write().unwrap().insert(peer_id.clone(), outbound_tx);
+        self.connected_peers
+            .write()
+            .unwrap()
+            .insert(peer_id.clone(), outbound_tx);
 
         // Writer task: sends queued outbound messages over TCP
         tokio::spawn(async move {
@@ -288,7 +331,11 @@ impl P2pSwarm {
                                     swarm_clone.regossip_except(&pid_clone, msg.clone());
                                 }
                             }
-                            P2pMessage::RelayForward { target_peer, source_peer, payload } => {
+                            P2pMessage::RelayForward {
+                                target_peer,
+                                source_peer,
+                                payload,
+                            } => {
                                 // Circuit Relay routing: forward payload to target peer if connected
                                 if target_peer == &swarm_clone.local_peer_id {
                                     // Target is the local node itself
@@ -296,7 +343,9 @@ impl P2pSwarm {
                                         source_peer: source_peer.clone(),
                                         payload: payload.clone(),
                                     };
-                                    let _ = swarm_clone.incoming_msg_sender.send((source_peer.clone(), delivered));
+                                    let _ = swarm_clone
+                                        .incoming_msg_sender
+                                        .send((source_peer.clone(), delivered));
                                 } else {
                                     // Relay forwarding: forward to destination peer
                                     let forwarded = P2pMessage::RelayPayload {
@@ -308,16 +357,22 @@ impl P2pSwarm {
                             }
                             P2pMessage::RelayPayload { source_peer, .. } => {
                                 // Delivered through circuit relay
-                                let _ = swarm_clone.incoming_msg_sender.send((source_peer.clone(), msg.clone()));
+                                let _ = swarm_clone
+                                    .incoming_msg_sender
+                                    .send((source_peer.clone(), msg.clone()));
                             }
                             P2pMessage::Ping(nonce) => {
                                 let pong = P2pMessage::Pong(*nonce);
-                                if let Some(sender) = swarm_clone.connected_peers.read().unwrap().get(&pid_clone) {
+                                if let Some(sender) =
+                                    swarm_clone.connected_peers.read().unwrap().get(&pid_clone)
+                                {
                                     let _ = sender.send(pong);
                                 }
                             }
                             _ => {
-                                let _ = swarm_clone.incoming_msg_sender.send((pid_clone.clone(), msg.clone()));
+                                let _ = swarm_clone
+                                    .incoming_msg_sender
+                                    .send((pid_clone.clone(), msg.clone()));
                                 swarm_clone.regossip_except(&pid_clone, msg);
                             }
                         }
@@ -330,7 +385,11 @@ impl P2pSwarm {
             }
 
             // Unregister disconnected peer
-            swarm_clone.connected_peers.write().unwrap().remove(&pid_clone);
+            swarm_clone
+                .connected_peers
+                .write()
+                .unwrap()
+                .remove(&pid_clone);
         });
     }
 

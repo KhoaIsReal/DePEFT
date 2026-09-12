@@ -169,9 +169,13 @@ impl Vote {
 
         let sign_bytes = Self::sign_bytes(self.vote_type, self.height, self.round, self.block_hash);
 
-        verifying_key
-            .verify(&sign_bytes, &signature)
-            .map_err(|e| anyhow::anyhow!("Cryptographic signature verification failed for vote from {}: {}", self.validator, e))?;
+        verifying_key.verify(&sign_bytes, &signature).map_err(|e| {
+            anyhow::anyhow!(
+                "Cryptographic signature verification failed for vote from {}: {}",
+                self.validator,
+                e
+            )
+        })?;
 
         Ok(())
     }

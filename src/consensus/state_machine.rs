@@ -2,7 +2,7 @@ use crate::blockchain::types::AccountId;
 use crate::consensus::types::{Block, BlockCommit, ConsensusValidator, Vote, VoteType};
 use crate::consensus::validator_set::ValidatorSet;
 use crate::crypto::{AccountKeypair, SignedTransaction};
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -289,7 +289,9 @@ impl BftEngine {
                     vote.height,
                     vote.round
                 );
-                self.round_state.prevotes.insert(vote.validator.clone(), vote);
+                self.round_state
+                    .prevotes
+                    .insert(vote.validator.clone(), vote);
                 self.check_prevote_quorum()
             }
             VoteType::Precommit => {
@@ -300,7 +302,9 @@ impl BftEngine {
                     vote.height,
                     vote.round
                 );
-                self.round_state.precommits.insert(vote.validator.clone(), vote);
+                self.round_state
+                    .precommits
+                    .insert(vote.validator.clone(), vote);
                 self.check_precommit_quorum()
             }
         }
@@ -374,7 +378,8 @@ impl BftEngine {
                             // Advance consensus to next height
                             self.current_height += 1;
                             self.current_round = 0;
-                            self.round_state = BftRoundState::new(self.current_height, self.current_round);
+                            self.round_state =
+                                BftRoundState::new(self.current_height, self.current_round);
 
                             return Ok(Some(proposal));
                         }

@@ -47,4 +47,3 @@ impl SimpleByteTokenizer {
         Ok(tensor)
     }
 }
-

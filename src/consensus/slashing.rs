@@ -54,7 +54,10 @@ impl SlashingEngine {
                     vote_b: vote.clone(),
                 };
 
-                *self.slashed_validators.entry(vote.validator.clone()).or_insert(0) += 1;
+                *self
+                    .slashed_validators
+                    .entry(vote.validator.clone())
+                    .or_insert(0) += 1;
                 return Ok(Some(evidence));
             }
         } else {

@@ -5,5 +5,5 @@ pub mod tensor;
 
 pub use dataset::{Dataset, Sample};
 pub use lora::{ModuleAdapter, QLoRALinear};
-pub use model::{AdapterPackage, DePEFTModel};
-pub use tensor::{Matrix, QuantizedWeight, NF4_CODEBOOK};
+pub use model::{AdapterPackage, DePEFTModel, OuterOptimizerState};
+pub use tensor::{Matrix, NF4_CODEBOOK, QuantizedWeight};

@@ -2,7 +2,7 @@ use crate::blockchain::types::PeftType;
 use crate::ml::lora::ModuleAdapter;
 use crate::ml::model::AdapterPackage;
 use crate::ml::tensor::Matrix;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -93,7 +93,10 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
     const MAX_HEADER_LEN: usize = 16 * 1024 * 1024; // 16 MB maximum header JSON
     let header_len = u64::from_le_bytes(bytes[0..8].try_into()?) as usize;
     if header_len > MAX_HEADER_LEN || bytes.len() < 8 + header_len {
-        bail!("Corrupted safetensors: invalid header length {}", header_len);
+        bail!(
+            "Corrupted safetensors: invalid header length {}",
+            header_len
+        );
     }
 
     let header_json_bytes = &bytes[8..8 + header_len];
@@ -139,14 +142,20 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
             let start_a = meta_a.data_offsets[0];
             let end_a = meta_a.data_offsets[1];
             if start_a > end_a || end_a > binary_data.len() {
-                bail!("Corrupted safetensors: data offsets out of bounds for {}", key_a);
+                bail!(
+                    "Corrupted safetensors: data offsets out of bounds for {}",
+                    key_a
+                );
             }
             let slice_a = &binary_data[start_a..end_a];
             let mut data_a = Vec::with_capacity(slice_a.len() / 4);
             for chunk in slice_a.chunks_exact(4) {
                 let val = f32::from_le_bytes(chunk.try_into()?);
                 if !val.is_finite() {
-                    bail!("Adversarial tensor payload: contains NaN or infinite weights in {}", key_a);
+                    bail!(
+                        "Adversarial tensor payload: contains NaN or infinite weights in {}",
+                        key_a
+                    );
                 }
                 data_a.push(val);
             }
@@ -159,14 +168,20 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
             let start_b = meta_b.data_offsets[0];
             let end_b = meta_b.data_offsets[1];
             if start_b > end_b || end_b > binary_data.len() {
-                bail!("Corrupted safetensors: data offsets out of bounds for {}", key_b);
+                bail!(
+                    "Corrupted safetensors: data offsets out of bounds for {}",
+                    key_b
+                );
             }
             let slice_b = &binary_data[start_b..end_b];
             let mut data_b = Vec::with_capacity(slice_b.len() / 4);
             for chunk in slice_b.chunks_exact(4) {
                 let val = f32::from_le_bytes(chunk.try_into()?);
                 if !val.is_finite() {
-                    bail!("Adversarial tensor payload: contains NaN or infinite weights in {}", key_b);
+                    bail!(
+                        "Adversarial tensor payload: contains NaN or infinite weights in {}",
+                        key_b
+                    );
                 }
                 data_b.push(val);
             }

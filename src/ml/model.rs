@@ -174,7 +174,12 @@ impl DePEFTModel {
     }
 
     /// Fine-tune LoRA adapter layers on a training dataset using gradient descent.
-    pub fn train_epoch(&mut self, dataset: &Dataset, learning_rate: f32, target_modules: &[String]) {
+    pub fn train_epoch(
+        &mut self,
+        dataset: &Dataset,
+        learning_rate: f32,
+        target_modules: &[String],
+    ) {
         for sample in &dataset.samples {
             let (_, hidden, pred) = self.forward(&sample.input);
 
@@ -226,9 +231,12 @@ impl DePEFTModel {
     /// Export current adapter weights.
     pub fn export_adapters(&self, round: usize) -> AdapterPackage {
         let mut pkg = AdapterPackage::new(&self.model_id, round, self.peft_type);
-        pkg.modules.insert("q_proj".into(), self.q_proj.export_adapter("q_proj"));
-        pkg.modules.insert("v_proj".into(), self.v_proj.export_adapter("v_proj"));
-        pkg.modules.insert("out_proj".into(), self.out_proj.export_adapter("out_proj"));
+        pkg.modules
+            .insert("q_proj".into(), self.q_proj.export_adapter("q_proj"));
+        pkg.modules
+            .insert("v_proj".into(), self.v_proj.export_adapter("v_proj"));
+        pkg.modules
+            .insert("out_proj".into(), self.out_proj.export_adapter("out_proj"));
         pkg
     }
 
@@ -326,11 +334,137 @@ impl DePEFTModel {
                 PeftType::QLoRA_NF4 => QuantizedWeight::quantize_nf4(&evolved, 16),
                 PeftType::QLoRA_INT4 => QuantizedWeight::quantize_int4(&evolved, 16),
             };
-            self.out_proj.lora_a =
-                Matrix::random_normal(self.out_proj.rank, self.out_proj.in_features, 0.0, 0.02, rng);
+            self.out_proj.lora_a = Matrix::random_normal(
+                self.out_proj.rank,
+                self.out_proj.in_features,
+                0.0,
+                0.02,
+                rng,
+            );
             self.out_proj.lora_b = Matrix::zeros(self.out_proj.out_features, self.out_proj.rank);
         }
 
         Ok(())
     }
+
+    /// DiLoCo / FedAdam: Merge candidate adapters using an outer optimizer with momentum and second moment dampening.
+    /// Dampens conflicting or high-variance dimensions across divergent local updates while accumulating consensus directions.
+    pub fn merge_and_evolve_outer_optimizer(
+        &mut self,
+        weighted_packages: &[(&AdapterPackage, f32)],
+        outer_state: &mut OuterOptimizerState,
+        outer_lr: f32,
+        beta1: f32,
+        beta2: f32,
+        eps: f32,
+        rng: &mut impl Rng,
+    ) -> anyhow::Result<()> {
+        if weighted_packages.is_empty() {
+            return Ok(());
+        }
+
+        let mut q_delta_sum = None;
+        let mut v_delta_sum = None;
+        let mut out_delta_sum = None;
+
+        for &(pkg, weight) in weighted_packages {
+            if let Some(q) = pkg.modules.get("q_proj") {
+                let delta = q.compute_delta_w().scale(weight);
+                q_delta_sum = Some(match q_delta_sum {
+                    None => delta,
+                    Some(sum) => Matrix::add(&sum, &delta),
+                });
+            }
+            if let Some(v) = pkg.modules.get("v_proj") {
+                let delta = v.compute_delta_w().scale(weight);
+                v_delta_sum = Some(match v_delta_sum {
+                    None => delta,
+                    Some(sum) => Matrix::add(&sum, &delta),
+                });
+            }
+            if let Some(out) = pkg.modules.get("out_proj") {
+                let delta = out.compute_delta_w().scale(weight);
+                out_delta_sum = Some(match out_delta_sum {
+                    None => delta,
+                    Some(sum) => Matrix::add(&sum, &delta),
+                });
+            }
+        }
+
+        outer_state.step_count += 1;
+        let t = outer_state.step_count as f32;
+        let bias_c1 = 1.0 - beta1.powf(t);
+        let bias_c2 = 1.0 - beta2.powf(t);
+
+        // Helper to compute outer Adam/DiLoCo step for a module
+        let compute_effective_step = |pseudo_grad: &Matrix,
+                                      m_opt: &mut Option<Matrix>,
+                                      v_opt: &mut Option<Matrix>|
+         -> Matrix {
+            let m = m_opt.get_or_insert_with(|| Matrix::zeros(pseudo_grad.rows, pseudo_grad.cols));
+            let v = v_opt.get_or_insert_with(|| Matrix::zeros(pseudo_grad.rows, pseudo_grad.cols));
+
+            let mut step_data = Vec::with_capacity(pseudo_grad.data.len());
+            for i in 0..pseudo_grad.data.len() {
+                let g = pseudo_grad.data[i];
+                m.data[i] = beta1 * m.data[i] + (1.0 - beta1) * g;
+                v.data[i] = beta2 * v.data[i] + (1.0 - beta2) * (g * g);
+
+                let m_hat = m.data[i] / bias_c1;
+                let v_hat = v.data[i] / bias_c2;
+
+                // Conflicting coordinates have high variance v_hat, dampening the effective update.
+                let update = outer_lr * m_hat / (v_hat.sqrt() + eps);
+                step_data.push(update);
+            }
+            Matrix::new(pseudo_grad.rows, pseudo_grad.cols, step_data)
+        };
+
+        if let Some(delta_q) = q_delta_sum {
+            let eff_step = compute_effective_step(
+                &delta_q,
+                &mut outer_state.m_q_proj,
+                &mut outer_state.v_q_proj,
+            );
+            let cur = self.q_proj.base_weight.dequantize();
+            let evolved = cur.add(&eff_step);
+            self.q_proj.apply_evolved_weight(evolved, rng);
+        }
+
+        if let Some(delta_v) = v_delta_sum {
+            let eff_step = compute_effective_step(
+                &delta_v,
+                &mut outer_state.m_v_proj,
+                &mut outer_state.v_v_proj,
+            );
+            let cur = self.v_proj.base_weight.dequantize();
+            let evolved = cur.add(&eff_step);
+            self.v_proj.apply_evolved_weight(evolved, rng);
+        }
+
+        if let Some(delta_out) = out_delta_sum {
+            let eff_step = compute_effective_step(
+                &delta_out,
+                &mut outer_state.m_out_proj,
+                &mut outer_state.v_out_proj,
+            );
+            let cur = self.out_proj.base_weight.dequantize();
+            let evolved = cur.add(&eff_step);
+            self.out_proj.apply_evolved_weight(evolved, rng);
+        }
+
+        Ok(())
+    }
+}
+
+/// Global / Outer Optimizer state (tracking momentum and second-moment variance across rounds).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OuterOptimizerState {
+    pub step_count: usize,
+    pub m_q_proj: Option<Matrix>,
+    pub v_q_proj: Option<Matrix>,
+    pub m_v_proj: Option<Matrix>,
+    pub v_v_proj: Option<Matrix>,
+    pub m_out_proj: Option<Matrix>,
+    pub v_out_proj: Option<Matrix>,
 }

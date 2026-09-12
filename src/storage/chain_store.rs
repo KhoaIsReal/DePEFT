@@ -49,9 +49,13 @@ impl ChainStore {
         let Some((bytes, stored_hash)) = row else {
             return Ok(None);
         };
-        let state: AppChainState = serde_json::from_slice(&bytes).context("decoding persisted chain state")?;
+        let state: AppChainState =
+            serde_json::from_slice(&bytes).context("decoding persisted chain state")?;
         let computed = Self::state_hash(&state)?;
-        ensure!(stored_hash.as_slice() == computed, "persisted chain state hash mismatch");
+        ensure!(
+            stored_hash.as_slice() == computed,
+            "persisted chain state hash mismatch"
+        );
         Ok(Some(state))
     }
 

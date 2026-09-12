@@ -1,5 +1,5 @@
 use crate::p2p::types::P2pMessage;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024; // 16 MB maximum frame size
@@ -10,7 +10,11 @@ pub async fn write_message<W: AsyncWrite + Unpin>(writer: &mut W, msg: &P2pMessa
     let payload = serde_json::to_vec(msg).context("Failed to serialize P2pMessage")?;
     let len = payload.len();
     if len > MAX_FRAME_SIZE {
-        bail!("P2pMessage exceeds maximum frame size: {} > {}", len, MAX_FRAME_SIZE);
+        bail!(
+            "P2pMessage exceeds maximum frame size: {} > {}",
+            len,
+            MAX_FRAME_SIZE
+        );
     }
 
     let len_bytes = (len as u32).to_be_bytes();
@@ -31,7 +35,12 @@ pub async fn read_message<R: AsyncRead + Unpin>(reader: &mut R) -> Result<P2pMes
     let len = u32::from_be_bytes(len_buf) as usize;
 
     if !(MIN_FRAME_SIZE..=MAX_FRAME_SIZE).contains(&len) {
-        bail!("Incoming frame size outside valid bounds ({}..={}): got {}", MIN_FRAME_SIZE, MAX_FRAME_SIZE, len);
+        bail!(
+            "Incoming frame size outside valid bounds ({}..={}): got {}",
+            MIN_FRAME_SIZE,
+            MAX_FRAME_SIZE,
+            len
+        );
     }
 
     let mut payload = vec![0u8; len];
@@ -39,6 +48,7 @@ pub async fn read_message<R: AsyncRead + Unpin>(reader: &mut R) -> Result<P2pMes
         .await
         .context("P2P read body timed out")??;
 
-    let msg: P2pMessage = serde_json::from_slice(&payload).context("Failed to deserialize P2pMessage")?;
+    let msg: P2pMessage =
+        serde_json::from_slice(&payload).context("Failed to deserialize P2pMessage")?;
     Ok(msg)
 }

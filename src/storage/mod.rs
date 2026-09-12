@@ -5,8 +5,8 @@ pub mod kubo_client;
 pub mod safetensors;
 pub mod vector_db;
 
-pub use disk_ipfs::DiskIpfsStorage;
 pub use chain_store::ChainStore;
+pub use disk_ipfs::DiskIpfsStorage;
 pub use hybrid_storage::HybridStorageManager;
 pub use ipfs::IpfsStorage;
 pub use kubo_client::{IpfsAddResponse, IpfsKuboClient, IpfsNodeInfo};

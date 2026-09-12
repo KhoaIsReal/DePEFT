@@ -83,7 +83,7 @@ impl QLoRALinear {
         // LoRA output: scaling * B * (A * X)
         let scaling = self.alpha / self.rank as f32;
         let ax = self.lora_a.matmul(&input_mat); // (rank, 1)
-        let bax = self.lora_b.matmul(&ax);       // (out_features, 1)
+        let bax = self.lora_b.matmul(&ax); // (out_features, 1)
 
         let mut out = base_out.data;
         for (i, val) in bax.data.iter().enumerate() {
@@ -98,7 +98,10 @@ impl QLoRALinear {
     /// $\nabla A = \gamma (B^T \text{grad\_out}) X^T$
     pub fn compute_gradients(&self, input: &[f32], grad_out: &[f32]) -> (Matrix, Matrix) {
         if input.len() != self.in_features || grad_out.len() != self.out_features {
-            return (Matrix::zeros(self.rank, self.in_features), Matrix::zeros(self.out_features, self.rank));
+            return (
+                Matrix::zeros(self.rank, self.in_features),
+                Matrix::zeros(self.out_features, self.rank),
+            );
         }
 
         let scaling = self.alpha / self.rank as f32;
@@ -168,8 +171,14 @@ impl QLoRALinear {
         {
             anyhow::bail!(
                 "Adapter dimension mismatch: expected ({}, {}), ({}, {}), got ({}, {}), ({}, {})",
-                self.rank, self.in_features, self.out_features, self.rank,
-                adapter.lora_a.rows, adapter.lora_a.cols, adapter.lora_b.rows, adapter.lora_b.cols
+                self.rank,
+                self.in_features,
+                self.out_features,
+                self.rank,
+                adapter.lora_a.rows,
+                adapter.lora_a.cols,
+                adapter.lora_b.rows,
+                adapter.lora_b.cols
             );
         }
         self.lora_a = adapter.lora_a.clone();
@@ -198,6 +207,17 @@ impl QLoRALinear {
         };
 
         // Reset LoRA matrices for next round
+        self.lora_a = Matrix::random_normal(self.rank, self.in_features, 0.0, 0.02, rng);
+        self.lora_b = Matrix::zeros(self.out_features, self.rank);
+    }
+
+    /// Set newly evolved base weights directly and re-initialize LoRA matrices.
+    pub fn apply_evolved_weight(&mut self, evolved_w: Matrix, rng: &mut impl Rng) {
+        self.base_weight = match self.peft_type {
+            PeftType::LoRA => QuantizedWeight::FP32(evolved_w),
+            PeftType::QLoRA_NF4 => QuantizedWeight::quantize_nf4(&evolved_w, 16),
+            PeftType::QLoRA_INT4 => QuantizedWeight::quantize_int4(&evolved_w, 16),
+        };
         self.lora_a = Matrix::random_normal(self.rank, self.in_features, 0.0, 0.02, rng);
         self.lora_b = Matrix::zeros(self.out_features, self.rank);
     }

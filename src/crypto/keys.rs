@@ -1,6 +1,6 @@
 use crate::blockchain::transactions::Transaction;
 use crate::blockchain::types::AccountId;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};

@@ -1,6 +1,6 @@
-use anyhow::{bail, Context, Result};
-use reqwest::multipart::{Form, Part};
+use anyhow::{Context, Result, bail};
 use reqwest::Client;
+use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -113,7 +113,12 @@ impl IpfsKuboClient {
 
     /// Validate that a CID string is safe and conforms to standard alphanumeric multihash format.
     fn validate_cid(cid: &str) -> Result<()> {
-        if cid.is_empty() || cid.len() > 128 || !cid.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        if cid.is_empty()
+            || cid.len() > 128
+            || !cid
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
             bail!("Invalid or unsafe IPFS CID format: '{}'", cid);
         }
         Ok(())
@@ -133,18 +138,30 @@ impl IpfsKuboClient {
             .context(format!("Failed to retrieve CID {} from IPFS daemon", cid))?;
 
         if !resp.status().is_success() {
-            bail!("IPFS /api/v0/cat failed for CID {}: status {}", cid, resp.status());
+            bail!(
+                "IPFS /api/v0/cat failed for CID {}: status {}",
+                cid,
+                resp.status()
+            );
         }
 
         if let Some(content_len) = resp.content_length() {
             if content_len > MAX_DOWNLOAD_SIZE as u64 {
-                bail!("IPFS artifact for CID {} exceeds maximum allowed size of {} bytes", cid, MAX_DOWNLOAD_SIZE);
+                bail!(
+                    "IPFS artifact for CID {} exceeds maximum allowed size of {} bytes",
+                    cid,
+                    MAX_DOWNLOAD_SIZE
+                );
             }
         }
 
         let bytes = resp.bytes().await?.to_vec();
         if bytes.len() > MAX_DOWNLOAD_SIZE {
-            bail!("IPFS artifact for CID {} exceeds maximum allowed size of {} bytes", cid, MAX_DOWNLOAD_SIZE);
+            bail!(
+                "IPFS artifact for CID {} exceeds maximum allowed size of {} bytes",
+                cid,
+                MAX_DOWNLOAD_SIZE
+            );
         }
         Ok(bytes)
     }
@@ -161,7 +178,11 @@ impl IpfsKuboClient {
             .context(format!("Failed to pin CID {} on IPFS", cid))?;
 
         if !resp.status().is_success() {
-            bail!("IPFS /api/v0/pin/add failed for CID {}: status {}", cid, resp.status());
+            bail!(
+                "IPFS /api/v0/pin/add failed for CID {}: status {}",
+                cid,
+                resp.status()
+            );
         }
         Ok(())
     }

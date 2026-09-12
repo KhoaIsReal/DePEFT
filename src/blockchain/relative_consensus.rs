@@ -101,9 +101,10 @@ impl RelativeConsensusEngine {
 
         let mut borda_scores: Vec<(AccountId, usize)> = score_map.into_iter().collect();
         // Sort descending by score. Deterministic tie breaker by AccountId name.
-        borda_scores.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0 .0.cmp(&b.0 .0)));
+        borda_scores.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.0.cmp(&b.0.0)));
 
-        let consensus_ranking: Vec<AccountId> = borda_scores.iter().map(|(m, _)| m.clone()).collect();
+        let consensus_ranking: Vec<AccountId> =
+            borda_scores.iter().map(|(m, _)| m.clone()).collect();
         let winner = consensus_ranking[0].clone();
 
         // Calculate consensus agreement rate
@@ -124,5 +125,4 @@ impl RelativeConsensusEngine {
             agreement_rate,
         })
     }
-
 }

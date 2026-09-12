@@ -1,5 +1,5 @@
 use crate::candle_peft::lora::CandleLoraLinear;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use candle_core::{DType, Device, IndexOp, Tensor, Var};
 use candle_nn::loss::cross_entropy;
 use serde::{Deserialize, Serialize};
@@ -229,7 +229,8 @@ impl CandleTransformerLM {
 
         let final_norm = CandleRMSNorm::new(h, 1e-5, &device)?;
         let lm_head_w = Tensor::randn(0f32, 0.02, (v, h), &device)?;
-        let lm_head = CandleLoraLinear::new(lm_head_w, config.lora_rank, config.lora_alpha, &device)?;
+        let lm_head =
+            CandleLoraLinear::new(lm_head_w, config.lora_rank, config.lora_alpha, &device)?;
 
         Ok(Self {
             config,
@@ -323,25 +324,53 @@ impl CandleTransformerLM {
     pub fn export_adapter_tensors(&self) -> HashMap<String, Tensor> {
         let mut map = HashMap::new();
         for (i, layer) in self.layers.iter().enumerate() {
-            for (k, v) in layer.self_attn.q_proj.export_tensors(&format!("model.layers.{}.self_attn.q_proj", i)) {
+            for (k, v) in layer
+                .self_attn
+                .q_proj
+                .export_tensors(&format!("model.layers.{}.self_attn.q_proj", i))
+            {
                 map.insert(k, v);
             }
-            for (k, v) in layer.self_attn.k_proj.export_tensors(&format!("model.layers.{}.self_attn.k_proj", i)) {
+            for (k, v) in layer
+                .self_attn
+                .k_proj
+                .export_tensors(&format!("model.layers.{}.self_attn.k_proj", i))
+            {
                 map.insert(k, v);
             }
-            for (k, v) in layer.self_attn.v_proj.export_tensors(&format!("model.layers.{}.self_attn.v_proj", i)) {
+            for (k, v) in layer
+                .self_attn
+                .v_proj
+                .export_tensors(&format!("model.layers.{}.self_attn.v_proj", i))
+            {
                 map.insert(k, v);
             }
-            for (k, v) in layer.self_attn.o_proj.export_tensors(&format!("model.layers.{}.self_attn.o_proj", i)) {
+            for (k, v) in layer
+                .self_attn
+                .o_proj
+                .export_tensors(&format!("model.layers.{}.self_attn.o_proj", i))
+            {
                 map.insert(k, v);
             }
-            for (k, v) in layer.mlp.gate_proj.export_tensors(&format!("model.layers.{}.mlp.gate_proj", i)) {
+            for (k, v) in layer
+                .mlp
+                .gate_proj
+                .export_tensors(&format!("model.layers.{}.mlp.gate_proj", i))
+            {
                 map.insert(k, v);
             }
-            for (k, v) in layer.mlp.up_proj.export_tensors(&format!("model.layers.{}.mlp.up_proj", i)) {
+            for (k, v) in layer
+                .mlp
+                .up_proj
+                .export_tensors(&format!("model.layers.{}.mlp.up_proj", i))
+            {
                 map.insert(k, v);
             }
-            for (k, v) in layer.mlp.down_proj.export_tensors(&format!("model.layers.{}.mlp.down_proj", i)) {
+            for (k, v) in layer
+                .mlp
+                .down_proj
+                .export_tensors(&format!("model.layers.{}.mlp.down_proj", i))
+            {
                 map.insert(k, v);
             }
         }
@@ -353,6 +382,9 @@ impl CandleTransformerLM {
 
     /// Total trainable LoRA parameter count.
     pub fn total_trainable_parameters(&self) -> usize {
-        self.get_trainable_vars().iter().map(|v| v.as_tensor().elem_count()).sum()
+        self.get_trainable_vars()
+            .iter()
+            .map(|v| v.as_tensor().elem_count())
+            .sum()
     }
 }

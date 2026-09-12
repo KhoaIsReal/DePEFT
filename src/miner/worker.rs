@@ -1,8 +1,8 @@
 use crate::blockchain::transactions::Transaction;
 use crate::blockchain::types::{AccountId, TaskSpec};
+use crate::miner::trainer::{MinerHyperparams, MinerTrainer, MinerTrainingArtifact};
 use crate::ml::dataset::Dataset;
 use crate::ml::model::DePEFTModel;
-use crate::miner::trainer::{MinerHyperparams, MinerTrainer, MinerTrainingArtifact};
 use crate::storage::ipfs::IpfsStorage;
 use anyhow::Result;
 use rand::Rng;

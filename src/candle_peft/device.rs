@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use candle_core::Device;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Loại backend phần cứng được hỗ trợ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,9 +185,13 @@ impl DeviceManager {
         }
 
         // 4. WGPU Fallback nếu cả CUDA, ROCm, Metal đều không hoạt động
-        println!("[!] [DeviceManager] Neither CUDA, ROCm nor Metal available. Testing WGPU acceleration fallback...");
+        println!(
+            "[!] [DeviceManager] Neither CUDA, ROCm nor Metal available. Testing WGPU acceleration fallback..."
+        );
         if let Ok(wgpu_dev) = Self::try_wgpu(0) {
-            println!("[✓] [DeviceManager] WGPU acceleration backend initialized successfully (Vulkan/DX12/Generic GPU)!");
+            println!(
+                "[✓] [DeviceManager] WGPU acceleration backend initialized successfully (Vulkan/DX12/Generic GPU)!"
+            );
             let info = DeviceInfo {
                 id: 0,
                 backend: DeviceBackendType::Wgpu,
@@ -200,7 +204,9 @@ impl DeviceManager {
         }
 
         // 5. CPU Fallback cuối cùng nếu cả WGPU cũng không hoạt động
-        println!("[!] [DeviceManager] WGPU is unavailable. Falling back to Host CPU (Standard / SIMD).");
+        println!(
+            "[!] [DeviceManager] WGPU is unavailable. Falling back to Host CPU (Standard / SIMD)."
+        );
         let cpu_info = DeviceInfo {
             id: 0,
             backend: DeviceBackendType::Cpu,
@@ -292,7 +298,9 @@ impl DeviceManager {
 
     /// Thử WGPU hardware backend
     fn try_wgpu(_ordinal: usize) -> Result<Device> {
-        let wgpu_disabled = std::env::var("DEPEFT_DISABLE_WGPU").map(|v| v == "1" || v == "true").unwrap_or(false);
+        let wgpu_disabled = std::env::var("DEPEFT_DISABLE_WGPU")
+            .map(|v| v == "1" || v == "true")
+            .unwrap_or(false);
         if wgpu_disabled {
             return Err(anyhow!("WGPU explicitly disabled via DEPEFT_DISABLE_WGPU"));
         }
@@ -334,7 +342,10 @@ impl DeviceManager {
         if self.all_gpu_devices.is_empty() {
             vec![self.primary_device.clone()]
         } else {
-            self.all_gpu_devices.iter().map(|(_, d)| d.clone()).collect()
+            self.all_gpu_devices
+                .iter()
+                .map(|(_, d)| d.clone())
+                .collect()
         }
     }
 
@@ -343,7 +354,8 @@ impl DeviceManager {
         if self.all_gpu_devices.is_empty() {
             return self.primary_device.clone();
         }
-        let idx = self.round_robin_counter.fetch_add(1, Ordering::Relaxed) % self.all_gpu_devices.len();
+        let idx =
+            self.round_robin_counter.fetch_add(1, Ordering::Relaxed) % self.all_gpu_devices.len();
         self.all_gpu_devices[idx].1.clone()
     }
 
@@ -375,8 +387,18 @@ impl DeviceManager {
         println!("┌─────────────────────────────────────────────────────────────┐");
         println!("│              DePEFT Compute Device Manager                  │");
         println!("├─────────────────────────────────────────────────────────────┤");
-        println!("│ Primary Backend: {:<42} │", format!("{} ({})", self.primary_info.backend, self.primary_info.name));
-        println!("│ Multi-GPU Ready: {:<42} │", if self.is_multi_gpu() { format!("YES ({} GPUs)", self.gpu_count()) } else { "NO (Single/CPU Engine)".to_string() });
+        println!(
+            "│ Primary Backend: {:<42} │",
+            format!("{} ({})", self.primary_info.backend, self.primary_info.name)
+        );
+        println!(
+            "│ Multi-GPU Ready: {:<42} │",
+            if self.is_multi_gpu() {
+                format!("YES ({} GPUs)", self.gpu_count())
+            } else {
+                "NO (Single/CPU Engine)".to_string()
+            }
+        );
         println!("│ Fallback Order:  CUDA/ROCm -> Metal -> WGPU -> CPU          │");
         println!("└─────────────────────────────────────────────────────────────┘");
     }

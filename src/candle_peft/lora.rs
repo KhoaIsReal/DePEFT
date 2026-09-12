@@ -40,7 +40,9 @@ impl CandleLoraLinear {
     /// Forward pass: y = x W^T + (alpha / r) * (x A^T) B^T
     pub fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let orig_dims = x.dims();
-        let hidden = *orig_dims.last().ok_or_else(|| anyhow::anyhow!("Input tensor cannot be scalar / 0-dim"))?;
+        let hidden = *orig_dims
+            .last()
+            .ok_or_else(|| anyhow::anyhow!("Input tensor cannot be scalar / 0-dim"))?;
         let flat_x = x.reshape(((), hidden))?;
 
         // Base forward: flat_x @ W^T
@@ -94,8 +96,14 @@ impl CandleLoraLinear {
     /// Export adapter tensors into named map for standard HuggingFace SafeTensors persistence.
     pub fn export_tensors(&self, prefix: &str) -> Vec<(String, Tensor)> {
         vec![
-            (format!("{}.lora_a.weight", prefix), self.lora_a.as_tensor().clone()),
-            (format!("{}.lora_b.weight", prefix), self.lora_b.as_tensor().clone()),
+            (
+                format!("{}.lora_a.weight", prefix),
+                self.lora_a.as_tensor().clone(),
+            ),
+            (
+                format!("{}.lora_b.weight", prefix),
+                self.lora_b.as_tensor().clone(),
+            ),
         ]
     }
 
@@ -108,8 +116,14 @@ impl CandleLoraLinear {
         if a_r != self.rank || a_in != d_in || b_out != d_out || b_r != self.rank {
             anyhow::bail!(
                 "LoRA adapter shape mismatch: expected A=({}, {}), B=({}, {}), got A=({}, {}), B=({}, {})",
-                self.rank, d_in, d_out, self.rank,
-                a_r, a_in, b_out, b_r
+                self.rank,
+                d_in,
+                d_out,
+                self.rank,
+                a_r,
+                a_in,
+                b_out,
+                b_r
             );
         }
 

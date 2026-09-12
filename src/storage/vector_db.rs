@@ -87,13 +87,21 @@ impl EmbeddedVectorDb {
             .collect();
 
         // Sort descending by similarity
-        results.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(top_k);
         results
     }
 
     /// Detect potential weight plagiarism or collusion (> 0.999 cosine similarity between different miners).
-    pub fn check_plagiarism(&self, query: &[f32], current_miner: &AccountId) -> Option<VectorSearchResult> {
+    pub fn check_plagiarism(
+        &self,
+        query: &[f32],
+        current_miner: &AccountId,
+    ) -> Option<VectorSearchResult> {
         let results = self.search(query, 5);
         for res in results {
             if &res.record.miner_address != current_miner && res.similarity > 0.999 {

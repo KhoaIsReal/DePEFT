@@ -9,8 +9,8 @@ use crate::storage::safetensors::deserialize_safetensors;
 use crate::storage::vector_db::EmbeddedVectorDb;
 use crate::validator::worker::ValidatorNode;
 use anyhow::Result;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 use sha2::Digest;
 
 /// Multi-Round ReLoRA Tournament Orchestrator.
@@ -27,6 +27,7 @@ pub struct TournamentEngine {
     pub total_rounds: usize,
     pub bounty_per_round: u128,
     pub task_id: u64,
+    pub outer_optimizer_state: crate::ml::model::OuterOptimizerState,
 }
 
 impl TournamentEngine {
@@ -70,11 +71,7 @@ impl TournamentEngine {
         chain.mint(client_address.clone(), total_bounty);
 
         // Register initial Task on chain
-        let target_modules = vec![
-            b"q_proj".to_vec(),
-            b"v_proj".to_vec(),
-            b"out_proj".to_vec(),
-        ];
+        let target_modules = vec![b"q_proj".to_vec(), b"v_proj".to_vec(), b"out_proj".to_vec()];
 
         chain.apply_transaction(
             Transaction::CreateTask {
@@ -109,6 +106,7 @@ impl TournamentEngine {
             total_rounds,
             bounty_per_round,
             task_id,
+            outer_optimizer_state: Default::default(),
         })
     }
 
@@ -167,7 +165,8 @@ impl TournamentEngine {
         let mut revealed_pairs: Vec<(AccountId, String, [u8; 32])> = Vec::new();
         for miner in &mut self.miners {
             let miner_nonce = self.chain.nonce_of(&miner.account_id);
-            let (reveal_tx, cid) = miner.reveal_adapter(self.task_id, round_num, miner_nonce, &self.ipfs)?;
+            let (reveal_tx, cid) =
+                miner.reveal_adapter(self.task_id, round_num, miner_nonce, &self.ipfs)?;
             let adapter_hash = match &reveal_tx {
                 Transaction::RevealAdapter { adapter_hash, .. } => *adapter_hash,
                 _ => anyhow::bail!("miner returned a non-reveal transaction"),
@@ -194,7 +193,8 @@ impl TournamentEngine {
                 &self.base_model,
                 &revealed_pairs,
             )?;
-            self.chain.apply_transaction(eval_tx, &validator.account_id)?;
+            self.chain
+                .apply_transaction(eval_tx, &validator.account_id)?;
             self.chain.advance_block();
         }
 
@@ -216,11 +216,9 @@ impl TournamentEngine {
         let revealed_miners: Vec<AccountId> = round_ctx.reveals.keys().cloned().collect();
         let eval_list: Vec<_> = round_ctx.evaluations.values().cloned().collect();
 
-        let consensus = crate::blockchain::RelativeConsensusEngine::aggregate(
-            &eval_list,
-            &revealed_miners,
-        )
-        .ok_or_else(|| anyhow::anyhow!("Consensus failed"))?;
+        let consensus =
+            crate::blockchain::RelativeConsensusEngine::aggregate(&eval_list, &revealed_miners)
+                .ok_or_else(|| anyhow::anyhow!("Consensus failed"))?;
 
         let task_merge_strat = self
             .chain
@@ -280,9 +278,7 @@ impl TournamentEngine {
                 } else {
                     let total = pkgs.len();
                     // Linear decay weights for ensemble
-                    let mut weights: Vec<f32> = (0..total)
-                        .map(|i| (total - i) as f32)
-                        .collect();
+                    let mut weights: Vec<f32> = (0..total).map(|i| (total - i) as f32).collect();
                     let sum_w: f32 = weights.iter().sum();
                     for w in &mut weights {
                         *w /= sum_w;
@@ -291,7 +287,59 @@ impl TournamentEngine {
                     let weighted_refs: Vec<(&crate::ml::model::AdapterPackage, f32)> =
                         pkgs.iter().zip(weights).collect();
 
-                    self.base_model.merge_and_evolve_ensemble(&weighted_refs, &mut rng)?;
+                    self.base_model
+                        .merge_and_evolve_ensemble(&weighted_refs, &mut rng)?;
+                }
+            }
+            crate::blockchain::types::MergeStrategy::OuterOptimizer {
+                top_k,
+                outer_lr,
+                beta1,
+                beta2,
+                eps,
+            } => {
+                let k = top_k.min(consensus.consensus_ranking.len()).max(1);
+                let mut pkgs = Vec::new();
+                let mut valid_miners = Vec::new();
+
+                for miner_id in consensus.consensus_ranking.iter().take(k) {
+                    if let Some(reveal) = round_ctx.reveals.get(miner_id) {
+                        if let Some(bytes) = self.ipfs.get(&reveal.adapter_cid) {
+                            let actual_hash: [u8; 32] = sha2::Sha256::digest(&bytes).into();
+                            if actual_hash != reveal.adapter_hash {
+                                continue;
+                            }
+                            if let Ok(pkg) = deserialize_safetensors(&bytes) {
+                                pkgs.push(pkg);
+                                valid_miners.push(miner_id.clone());
+                            }
+                        }
+                    }
+                }
+
+                if pkgs.is_empty() {
+                    self.base_model.merge_and_evolve(&mut rng);
+                } else {
+                    let total = pkgs.len();
+                    // Linear decay weights for candidate aggregation
+                    let mut weights: Vec<f32> = (0..total).map(|i| (total - i) as f32).collect();
+                    let sum_w: f32 = weights.iter().sum();
+                    for w in &mut weights {
+                        *w /= sum_w;
+                    }
+
+                    let weighted_refs: Vec<(&crate::ml::model::AdapterPackage, f32)> =
+                        pkgs.iter().zip(weights).collect();
+
+                    self.base_model.merge_and_evolve_outer_optimizer(
+                        &weighted_refs,
+                        &mut self.outer_optimizer_state,
+                        outer_lr,
+                        beta1,
+                        beta2,
+                        eps,
+                        &mut rng,
+                    )?;
                 }
             }
         }

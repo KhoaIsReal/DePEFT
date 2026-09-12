@@ -3,7 +3,7 @@ use crate::blockchain::transactions::Transaction;
 use crate::blockchain::types::{
     AccountId, CommitRecord, RevealRecord, RoundPhase, RoundSummary, TaskSpec, ValidatorEvaluation,
 };
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -167,15 +167,30 @@ impl AppChainState {
                 "Evaluation ranking contains miner without a revealed adapter: {}",
                 miner
             );
-            ensure!(ranked.insert(miner), "Evaluation ranking contains duplicate miner: {}", miner);
+            ensure!(
+                ranked.insert(miner),
+                "Evaluation ranking contains duplicate miner: {}",
+                miner
+            );
         }
 
         for (miner, loss) in &evaluation.loss_scores {
-            ensure!(ranked.contains(miner), "Loss score contains unranked miner: {}", miner);
-            ensure!(loss.is_finite() && *loss >= 0.0, "Loss score must be finite and non-negative");
+            ensure!(
+                ranked.contains(miner),
+                "Loss score contains unranked miner: {}",
+                miner
+            );
+            ensure!(
+                loss.is_finite() && *loss >= 0.0,
+                "Loss score must be finite and non-negative"
+            );
         }
         for (miner, accuracy) in &evaluation.accuracy_scores {
-            ensure!(ranked.contains(miner), "Accuracy score contains unranked miner: {}", miner);
+            ensure!(
+                ranked.contains(miner),
+                "Accuracy score contains unranked miner: {}",
+                miner
+            );
             ensure!(
                 accuracy.is_finite() && (0.0..=1.0).contains(accuracy),
                 "Accuracy score must be finite and within [0, 1]"
@@ -186,7 +201,12 @@ impl AppChainState {
     }
 
     /// Initialize a new round context for a task.
-    pub fn start_round(&mut self, task_id: u64, round_number: usize, base_model_cid: String) -> Result<()> {
+    pub fn start_round(
+        &mut self,
+        task_id: u64,
+        round_number: usize,
+        base_model_cid: String,
+    ) -> Result<()> {
         ensure!(self.tasks.contains_key(&task_id), "Task ID does not exist");
         ensure!(
             !self.round_contexts.contains_key(&(task_id, round_number)),
@@ -200,7 +220,12 @@ impl AppChainState {
     }
 
     /// Transition round phase.
-    pub fn set_round_phase(&mut self, task_id: u64, round_number: usize, phase: RoundPhase) -> Result<()> {
+    pub fn set_round_phase(
+        &mut self,
+        task_id: u64,
+        round_number: usize,
+        phase: RoundPhase,
+    ) -> Result<()> {
         let ctx = self
             .round_contexts
             .get_mut(&(task_id, round_number))
@@ -243,13 +268,30 @@ impl AppChainState {
                     client
                 );
                 ensure!(bounty_pool > 0, "Bounty pool must be greater than 0 tokens");
-                ensure!(epoch_blocks >= 5, "Epoch duration must be at least 5 blocks");
-                ensure!(max_rank > 0 && max_rank <= 256, "Max rank must be between 1 and 256");
-                ensure!(!base_model_id.is_empty() && base_model_id.len() <= 128, "Base model ID must be 1-128 bytes");
-                ensure!(!dataset_cid.is_empty() && dataset_cid.len() <= 128, "Dataset CID must be 1-128 bytes");
-                ensure!(!target_modules.is_empty() && target_modules.len() <= 32, "Target modules must contain 1-32 items");
                 ensure!(
-                    target_modules.iter().all(|m| !m.is_empty() && m.len() <= 64),
+                    epoch_blocks >= 5,
+                    "Epoch duration must be at least 5 blocks"
+                );
+                ensure!(
+                    max_rank > 0 && max_rank <= 256,
+                    "Max rank must be between 1 and 256"
+                );
+                ensure!(
+                    !base_model_id.is_empty() && base_model_id.len() <= 128,
+                    "Base model ID must be 1-128 bytes"
+                );
+                ensure!(
+                    !dataset_cid.is_empty() && dataset_cid.len() <= 128,
+                    "Dataset CID must be 1-128 bytes"
+                );
+                ensure!(
+                    !target_modules.is_empty() && target_modules.len() <= 32,
+                    "Target modules must contain 1-32 items"
+                );
+                ensure!(
+                    target_modules
+                        .iter()
+                        .all(|m| !m.is_empty() && m.len() <= 64),
                     "Each target module name must be 1-64 bytes"
                 );
 
@@ -304,7 +346,8 @@ impl AppChainState {
                 if !self.round_contexts.contains_key(&(task_id, round)) {
                     if let Some(task) = self.tasks.get(&task_id) {
                         let base_model_cid_str = task.base_model_id_str();
-                        let context = RoundContext::new(task_id, round, base_model_cid_str.to_string());
+                        let context =
+                            RoundContext::new(task_id, round, base_model_cid_str.to_string());
                         self.round_contexts.insert((task_id, round), context);
                     }
                 }
@@ -441,9 +484,13 @@ impl AppChainState {
                 if let Some(quote) = &evaluation.attestation_quote {
                     self.tee_verifier
                         .verify_quote(quote, task_id, round, &evaluation.ranking)
-                        .map_err(|e| anyhow::anyhow!("On-Chain TEE Attestation verification rejected: {}", e))?;
+                        .map_err(|e| {
+                            anyhow::anyhow!("On-Chain TEE Attestation verification rejected: {}", e)
+                        })?;
                 } else if self.tee_verifier.enforce_attestation {
-                    anyhow::bail!("On-Chain TEE Attestation rejected: missing required hardware quote");
+                    anyhow::bail!(
+                        "On-Chain TEE Attestation rejected: missing required hardware quote"
+                    );
                 }
 
                 ctx.evaluations
@@ -531,7 +578,8 @@ impl AppChainState {
             // the burn rate drops down toward 1% or ~0% (0.005) to incentivize miners and validators.
             // Formula: burn_pct = clamp(0.005 + 0.015 * (num_tasks - 1), 0.005, 0.10)
             let active_tasks_count = self.tasks.len();
-            let burn_pct = (0.005 + (active_tasks_count.saturating_sub(1) as f64) * 0.015).clamp(0.005, 0.10);
+            let burn_pct =
+                (0.005 + (active_tasks_count.saturating_sub(1) as f64) * 0.015).clamp(0.005, 0.10);
             burned_bounty = ((total_available_bounty as f64) * burn_pct).round() as u128;
             self.total_burned += burned_bounty;
 
@@ -552,7 +600,8 @@ impl AppChainState {
 
             // Tier 1: Storage/Relay Node Elasticity:
             // Base 5%, scales +1% per revealed model adapter being stored/relayed on IPFS, capped at 15%.
-            let node_share_pct = (0.05 + (revealed_miners.len().saturating_sub(1) as f64) * 0.01).clamp(0.05, 0.15);
+            let node_share_pct =
+                (0.05 + (revealed_miners.len().saturating_sub(1) as f64) * 0.01).clamp(0.05, 0.15);
             let node_pool = ((distributable_bounty as f64) * node_share_pct).round() as u128;
 
             // Tier 2: TEE Validator Elasticity:
@@ -587,7 +636,10 @@ impl AppChainState {
                         per_val_reward.min(remaining_val_pool)
                     };
                     remaining_val_pool = remaining_val_pool.saturating_sub(amount);
-                    *self.balances.entry(val_eval.validator_address.clone()).or_insert(0) += amount;
+                    *self
+                        .balances
+                        .entry(val_eval.validator_address.clone())
+                        .or_insert(0) += amount;
                     validator_rewards.push((val_eval.validator_address.clone(), amount));
                 }
             }
@@ -610,9 +662,8 @@ impl AppChainState {
                             0.5
                         };
 
-                        let mut weights: Vec<f64> = (0..k)
-                            .map(|i| (1.0 - valid_decay).powi(i as i32))
-                            .collect();
+                        let mut weights: Vec<f64> =
+                            (0..k).map(|i| (1.0 - valid_decay).powi(i as i32)).collect();
                         let sum_weights: f64 = weights.iter().sum();
                         if sum_weights > 0.0 {
                             for w in &mut weights {
@@ -621,14 +672,16 @@ impl AppChainState {
                         }
 
                         let mut remaining_to_distribute = miner_pool;
-                        for (i, miner_id) in consensus.consensus_ranking.iter().take(k).enumerate() {
+                        for (i, miner_id) in consensus.consensus_ranking.iter().take(k).enumerate()
+                        {
                             let amount = if i == k - 1 {
                                 remaining_to_distribute
                             } else {
                                 let share = (miner_pool as f64 * weights[i]).round() as u128;
                                 share.min(remaining_to_distribute)
                             };
-                            remaining_to_distribute = remaining_to_distribute.saturating_sub(amount);
+                            remaining_to_distribute =
+                                remaining_to_distribute.saturating_sub(amount);
                             *self.balances.entry(miner_id.clone()).or_insert(0) += amount;
                             reward_distributions.push((miner_id.clone(), amount));
                         }
@@ -647,7 +700,8 @@ impl AppChainState {
                                 } else {
                                     let share = (miner_pool as f64 * (*score as f64)
                                         / (total_borda as f64))
-                                        .round() as u128;
+                                        .round()
+                                        as u128;
                                     share.min(remaining_to_distribute)
                                 };
                                 remaining_to_distribute =

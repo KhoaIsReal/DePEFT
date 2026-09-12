@@ -48,7 +48,11 @@ impl HybridStorageManager {
                 if cid.starts_with("bafy") {
                     let computed = DiskIpfsStorage::compute_cid(&bytes);
                     if computed != cid {
-                        anyhow::bail!("IPFS Content Integrity mismatch: expected {}, computed {}", cid, computed);
+                        anyhow::bail!(
+                            "IPFS Content Integrity mismatch: expected {}, computed {}",
+                            cid,
+                            computed
+                        );
                     }
                 }
 
