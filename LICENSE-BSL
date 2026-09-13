@@ -1,0 +1,56 @@
+Business Source License 1.1
+
+Parameters
+
+Licensor:                 DePEFT Contributors
+Licensed Work:            DePEFT (Decentralized Parameter-Efficient Fine-Tuning Network), 
+                          including all core blockchain engine, consensus, machine learning 
+                          fusion modules, and documentation in this repository.
+Additional Use Grant:     You may copy, modify, display, and distribute the Licensed Work 
+                          for academic research, testing, education, code auditing, 
+                          benchmarking, and non-commercial development. Running, participating 
+                          in, or operating miner/validator nodes in official or authorized 
+                          testnets and devnets is expressly permitted. Any commercial exploitation, 
+                          launching an unauthorized competing commercial training network, or 
+                          commercial token sale without a separate license from the Licensor 
+                          is not permitted under this grant.
+Change Date:              January 1, 2030
+Change License:           GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
+
+Notice: The Business Source License (this License) grants certain free use rights and guarantees 
+that the Licensed Work will convert to Open Source under the Change License on the Change Date.
+
+1. Grant of License
+Subject to your compliance with this License, Licensor grants you a non-exclusive, 
+worldwide, royalty-free, non-sublicensable copyright license to:
+(a) copy and modify the Licensed Work; and
+(b) distribute, display, perform, and make available the Licensed Work solely for 
+purposes permitted under the Additional Use Grant.
+
+2. Restrictions
+You may not use the Licensed Work for any purpose other than as permitted under the 
+Additional Use Grant. You may not distribute the Licensed Work unless you comply with 
+all conditions of this License and include a copy of this License with all copies.
+
+3. Trademarks
+This License does not grant you any right to use Licensor's name, trademarks, service 
+marks, or logos.
+
+4. Change to Open Source
+On the Change Date, this License terminates and the Licensed Work is licensed to you 
+under the Change License. Any user may then use, copy, modify, and distribute the 
+Licensed Work under the terms of the Change License.
+
+5. Termination
+Your rights under this License terminate immediately if you violate any of its terms. 
+Sections 3, 6, and 7 survive termination.
+
+6. Disclaimer of Warranties
+THE LICENSED WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS 
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+7. Limitation of Liability
+IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, 
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+CONNECTION WITH THE LICENSED WORK OR THE USE OR OTHER DEALINGS IN THE LICENSED WORK.

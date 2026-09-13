@@ -2,13 +2,13 @@
 ### ReLoRA Multi-Round Tournament Protocol on an Application-Specific Blockchain
 
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/tests-45%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-73%20passed-brightgreen.svg)]()
 [![Clippy](https://img.shields.io/badge/clippy-0%20warnings-brightgreen.svg)]()
 [![Engine](https://img.shields.io/badge/ML%20Engine-Hugging%20Face%20Candle-blue.svg)](https://github.com/huggingface/candle)
 [![Consensus](https://img.shields.io/badge/consensus-CometBFT%20%2F%20Tendermint-blueviolet.svg)]()
 [![TEE](https://img.shields.io/badge/TEE-Intel%20SGX%20%7C%20AMD%20SEV--SNP-informational.svg)]()
 [![Storage](https://img.shields.io/badge/storage-IPFS%20Kubo%20%7C%20Filecoin-teal.svg)]()
-[![License: AGPL v3](https://img.shields.io/badge/license-AGPLv3-blue.svg)](./LICENSE)
+[![License: AGPL v3 / BUSL 1.1](https://img.shields.io/badge/license-AGPLv3%20%7C%20BUSL--1.1-blue.svg)](./LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white)](https://discord.gg/23FNT8MP7R)
 
 > [!WARNING]
@@ -41,7 +41,8 @@ Instead of full model retraining (which costs millions of dollars), DePEFT uses 
 7. [Architecture & 4 Core Layers](#-architecture--4-core-layers)
 8. [Testing & Quality Verification](#-testing--quality-verification)
 9. [⚡ Fast Q&A for Crypto Traders & Node Operators (FAQ)](./FAST_Q&A.md)
-10. [License](#-license)
+10. [Community & Acknowledgments](#-community--acknowledgments)
+11. [License](#-license)
 
 ---
 
@@ -415,8 +416,22 @@ cargo clippy --all-targets -- -D warnings
 
 ---
 
+## 🤝 Community & Acknowledgments
+
+DePEFT is built with deep gratitude to the decentralized AI and open-source machine learning communities:
+- **Hugging Face Candle Team**: For the ultra-fast, minimalist, and pure-Rust deep learning tensor runtime enabling native TEE enclave execution.
+- **Reddit & Open-Source AI/ML Engineers**: Special thanks to community members and researchers on Reddit who reviewed our codebase, pinpointed optimizer limitations under heterogeneous hardware drift, and proposed the integration of **DiLoCo (Distributed Low-Communication / DeepMind)** and **FedAdam (Federated Adam)** outer optimization fusion.
+- **CometBFT / Tendermint Community**: For pioneer work on deterministic 2-phase BFT state machines.
+
+---
+
 ## 📄 License
 
-- **Blockchain Core & Node (`src/`, `Cargo.toml`)**: [GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE).
+DePEFT is provided under a **Dual-Licensing model** ([LICENSE](./LICENSE)):
+
+- **Blockchain Core & App-Chain Node (`src/`, `Cargo.toml`)**:
+  - **Option 1**: [GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE-AGPL) — for copyleft open-source collaboration and public service integrations.
+  - **Option 2**: [Business Source License 1.1 (BUSL-1.1)](./LICENSE-BSL) — permits academic research, benchmarking, auditing, and official testnet node operations while preventing predatory commercial forks until the Change Date (2030-01-01), after which it automatically converts to AGPL-3.0-or-later.
+  - Contributors and developers may choose either license according to their use case.
 - **Python SDK (`sdk/python/`)**: Dual-licensed under [Apache-2.0](./sdk/python/LICENSE-APACHE) OR [MIT](./sdk/python/LICENSE-MIT).
 - **Smart Contracts (`contracts/`)**: Dual-licensed under [Apache-2.0](./contracts/LICENSE-APACHE) OR [MIT](./contracts/LICENSE-MIT).
