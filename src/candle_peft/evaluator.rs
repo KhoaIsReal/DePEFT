@@ -81,6 +81,57 @@ impl CandleValidatorEvaluator {
         Ok(false)
     }
 
+    /// Generate perturbed adversarial variants of test samples to assess loss invariance and fragility.
+    pub fn generate_perturbed_samples(test_samples: &[String]) -> Vec<String> {
+        let mut perturbed = Vec::new();
+        for s in test_samples {
+            if s.len() >= 4 {
+                // Perturbation: swap two adjacent characters near the middle
+                let mid = s.len() / 2;
+                let mut chars: Vec<char> = s.chars().collect();
+                if mid + 1 < chars.len() {
+                    chars.swap(mid, mid + 1);
+                    perturbed.push(chars.into_iter().collect());
+                }
+            } else {
+                perturbed.push(format!("{} ", s));
+            }
+        }
+        perturbed
+    }
+
+    /// Adversarial Perturbation & Noise Invariance Check (Weapon 2):
+    /// Measures loss sensitivity under input perturbation: ΔL = |L_perturbed - L_clean|.
+    /// Detects fragile poisoned adapters or adversarial overfitted memorization.
+    /// Returns true if robust, or false if excessively fragile/divergent.
+    pub fn verify_adversarial_robustness(
+        model: &CandleTransformerLM,
+        clean_samples: &[String],
+        max_sensitivity_threshold: f32,
+    ) -> Result<bool> {
+        let clean_loss = match Self::evaluate_dataset(model, clean_samples) {
+            Ok(l) if l.is_finite() && l < 1e5 => l,
+            _ => return Ok(false),
+        };
+
+        let perturbed_samples = Self::generate_perturbed_samples(clean_samples);
+        if perturbed_samples.is_empty() {
+            return Ok(true);
+        }
+
+        let perturbed_loss = match Self::evaluate_dataset(model, &perturbed_samples) {
+            Ok(l) if l.is_finite() => l,
+            _ => return Ok(false),
+        };
+
+        let delta_loss = (perturbed_loss - clean_loss).abs();
+        if delta_loss > max_sensitivity_threshold {
+            return Ok(false);
+        }
+
+        Ok(true)
+    }
+
     /// Evaluate candidate miners on the private test set and return relative ordinal ranking.
     /// Includes backdoor probing and constant tensor dimensions to mitigate side-channel leakage.
     pub fn evaluate_miners(
@@ -141,6 +192,13 @@ impl CandleValidatorEvaluator {
             // First verify if model triggers backdoor / trojan on safety probes via autoregressive generation
             if let Ok(true) = Self::verify_backdoor_triggers(&model_clone, 16) {
                 // Disqualify and heavily penalize backdoored / trojaned miner adapter
+                scores.push((miner_id.clone(), 1e6));
+                continue;
+            }
+
+            // Weapon 2: Adversarial Perturbation & Noise Robustness Check
+            // Disqualifies brittle, overfitted, or backdoor-poisoned adapters whose loss explodes on tiny input noise
+            if let Ok(false) = Self::verify_adversarial_robustness(&model_clone, test_samples, 35.0) {
                 scores.push((miner_id.clone(), 1e6));
                 continue;
             }

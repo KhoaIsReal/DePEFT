@@ -3,14 +3,47 @@ use crate::p2p::codec::{read_message, write_message};
 use crate::p2p::types::{P2pMessage, PeerId};
 use anyhow::{Context, Result, bail};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 
 const PROTOCOL_VERSION: &str = "depeft/1.0.0";
 const MAX_SEEN_CACHE: usize = 10_000;
 const MAX_CONNECTED_PEERS: usize = 64;
+
+// Weapon 3: Anti-Eclipse & Subnet Diversity Protection constants
+pub const MAX_PEERS_PER_SUBNET: usize = 2;
+pub const BAN_DURATION_SECS: u64 = 1800; // 30 minutes
+pub const BAN_PENALTY_THRESHOLD: i32 = -50;
+pub const DEFAULT_INITIAL_REPUTATION: i32 = 100;
+
+/// Subnet identifier for Anti-Eclipse diversity (/16 for IPv4, /48 for IPv6, loopback exempt).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SubnetKey {
+    Ipv4([u8; 2]), // /16 prefix
+    Ipv6([u8; 6]), // /48 prefix
+    Loopback,
+}
+
+impl SubnetKey {
+    pub fn from_ip(ip: IpAddr) -> Self {
+        if ip.is_loopback() {
+            return SubnetKey::Loopback;
+        }
+        match ip {
+            IpAddr::V4(v4) => {
+                let oct = v4.octets();
+                SubnetKey::Ipv4([oct[0], oct[1]])
+            }
+            IpAddr::V6(v6) => {
+                let oct = v6.octets();
+                SubnetKey::Ipv6([oct[0], oct[1], oct[2], oct[3], oct[4], oct[5]])
+            }
+        }
+    }
+}
 
 type MessageDeduplicationCache = (HashSet<[u8; 32]>, VecDeque<[u8; 32]>);
 
@@ -24,6 +57,10 @@ pub struct P2pSwarm {
     known_addresses: Arc<RwLock<HashSet<String>>>,
     incoming_tx_sender: mpsc::UnboundedSender<SignedTransaction>,
     incoming_msg_sender: mpsc::UnboundedSender<(PeerId, P2pMessage)>,
+    // Weapon 3: P2P Anti-Eclipse & Reputation state
+    peer_ips: Arc<RwLock<HashMap<PeerId, IpAddr>>>,
+    peer_reputation: Arc<RwLock<HashMap<IpAddr, i32>>>,
+    banned_ips: Arc<RwLock<HashMap<IpAddr, Instant>>>,
 }
 
 impl P2pSwarm {
@@ -46,6 +83,9 @@ impl P2pSwarm {
             known_addresses: Arc::new(RwLock::new(HashSet::new())),
             incoming_tx_sender: tx_sender,
             incoming_msg_sender: msg_sender,
+            peer_ips: Arc::new(RwLock::new(HashMap::new())),
+            peer_reputation: Arc::new(RwLock::new(HashMap::new())),
+            banned_ips: Arc::new(RwLock::new(HashMap::new())),
         };
 
         (swarm, tx_receiver, msg_receiver)
@@ -80,6 +120,72 @@ impl P2pSwarm {
     pub fn get_connected_peers(&self) -> Vec<PeerId> {
         let peers = self.connected_peers.read().unwrap();
         peers.keys().cloned().collect()
+    }
+
+    /// Check if an IP address is currently banned.
+    pub fn is_ip_banned(&self, ip: &IpAddr) -> bool {
+        let mut banned = self.banned_ips.write().unwrap();
+        if let Some(&ban_time) = banned.get(ip) {
+            if ban_time.elapsed().as_secs() < BAN_DURATION_SECS {
+                return true;
+            } else {
+                banned.remove(ip); // Ban expired
+            }
+        }
+        false
+    }
+
+    /// Ban an IP address for malicious behavior (e.g. invalid signature spam, Eclipse attack).
+    pub fn ban_ip(&self, ip: IpAddr) {
+        let mut banned = self.banned_ips.write().unwrap();
+        banned.insert(ip, Instant::now());
+        eprintln!(
+            "[P2P SECURITY] Banned IP: {} due to malicious behavior or Eclipse attack.",
+            ip
+        );
+    }
+
+    /// Manually unban an IP address.
+    pub fn unban_ip(&self, ip: &IpAddr) {
+        let mut banned = self.banned_ips.write().unwrap();
+        banned.remove(ip);
+    }
+
+    /// Get current reputation score of an IP address.
+    pub fn get_peer_reputation(&self, ip: &IpAddr) -> i32 {
+        let rep = self.peer_reputation.read().unwrap();
+        rep.get(ip).copied().unwrap_or(DEFAULT_INITIAL_REPUTATION)
+    }
+
+    /// Penalize an IP address score and ban if threshold reached.
+    pub fn penalize_ip(&self, ip: &IpAddr, penalty: i32) {
+        let mut rep = self.peer_reputation.write().unwrap();
+        let score = rep.entry(*ip).or_insert(DEFAULT_INITIAL_REPUTATION);
+        *score -= penalty;
+        if *score <= BAN_PENALTY_THRESHOLD {
+            let banned_ip = *ip;
+            drop(rep);
+            self.ban_ip(banned_ip);
+        }
+    }
+
+    /// Reward a well-behaving IP address.
+    pub fn reward_ip(&self, ip: &IpAddr, reward: i32) {
+        let mut rep = self.peer_reputation.write().unwrap();
+        let score = rep.entry(*ip).or_insert(DEFAULT_INITIAL_REPUTATION);
+        *score = (*score + reward).min(200);
+    }
+
+    /// Count active connected peers belonging to the specified subnet.
+    pub fn count_peers_in_subnet(&self, target_subnet: SubnetKey) -> usize {
+        if target_subnet == SubnetKey::Loopback {
+            return 0; // Localhost test environments not constrained
+        }
+        let peer_ips = self.peer_ips.read().unwrap();
+        peer_ips
+            .values()
+            .filter(|&&ip| SubnetKey::from_ip(ip) == target_subnet)
+            .count()
     }
 
     /// Broadcast a P2pMessage to all connected peers with gossip deduplication.
@@ -219,6 +325,17 @@ impl P2pSwarm {
         // Record known address
         self.record_known_address(remote_addr.to_string());
 
+        if let Ok(sa) = remote_addr.parse::<SocketAddr>() {
+            let ip = sa.ip();
+            if self.is_ip_banned(&ip) {
+                bail!("Outbound P2P connection aborted: IP {} is banned", ip);
+            }
+            self.peer_ips
+                .write()
+                .unwrap()
+                .insert(remote_peer_id.clone(), ip);
+        }
+
         // Setup bidirectional message channels
         self.spawn_peer_handler(remote_peer_id.clone(), stream);
         Ok(remote_peer_id)
@@ -230,6 +347,24 @@ impl P2pSwarm {
         mut stream: TcpStream,
         remote_addr: SocketAddr,
     ) -> Result<()> {
+        let ip = remote_addr.ip();
+        if self.is_ip_banned(&ip) {
+            bail!("Inbound P2P connection rejected: IP {} is banned", ip);
+        }
+
+        let subnet = SubnetKey::from_ip(ip);
+        if subnet != SubnetKey::Loopback {
+            let count = self.count_peers_in_subnet(subnet);
+            if count >= MAX_PEERS_PER_SUBNET {
+                bail!(
+                    "Subnet peer limit reached: {:?} already has {} connections (max {})",
+                    subnet,
+                    count,
+                    MAX_PEERS_PER_SUBNET
+                );
+            }
+        }
+
         if self.peer_count() >= MAX_CONNECTED_PEERS {
             bail!(
                 "Max peer limit reached ({}/{})",
@@ -270,6 +405,11 @@ impl P2pSwarm {
         } else {
             self.record_known_address(remote_addr.to_string());
         }
+
+        self.peer_ips
+            .write()
+            .unwrap()
+            .insert(remote_peer_id.clone(), ip);
 
         self.spawn_peer_handler(remote_peer_id, stream);
         Ok(())
@@ -326,9 +466,21 @@ impl P2pSwarm {
                             P2pMessage::BroadcastTx(signed_tx) => {
                                 // Cryptographically verify transaction signature before accepting and re-gossiping
                                 if signed_tx.verify_signature().is_ok() {
+                                    if let Some(&ip) =
+                                        swarm_clone.peer_ips.read().unwrap().get(&pid_clone)
+                                    {
+                                        swarm_clone.reward_ip(&ip, 1);
+                                    }
                                     let _ = swarm_clone.incoming_tx_sender.send(signed_tx.clone());
                                     // Re-gossip to other peers (except sender)
                                     swarm_clone.regossip_except(&pid_clone, msg.clone());
+                                } else {
+                                    // Penalize peer for sending forged/invalid transaction signature
+                                    if let Some(&ip) =
+                                        swarm_clone.peer_ips.read().unwrap().get(&pid_clone)
+                                    {
+                                        swarm_clone.penalize_ip(&ip, 30);
+                                    }
                                 }
                             }
                             P2pMessage::RelayForward {
@@ -387,6 +539,11 @@ impl P2pSwarm {
             // Unregister disconnected peer
             swarm_clone
                 .connected_peers
+                .write()
+                .unwrap()
+                .remove(&pid_clone);
+            swarm_clone
+                .peer_ips
                 .write()
                 .unwrap()
                 .remove(&pid_clone);

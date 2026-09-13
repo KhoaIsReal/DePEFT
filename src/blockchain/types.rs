@@ -213,4 +213,8 @@ pub struct RoundSummary {
     pub node_rewards: Vec<(AccountId, u128)>,
     #[serde(default)]
     pub burned_bounty: u128,
+    #[serde(default)]
+    pub heterogeneous_tee_quorum: bool,
+    #[serde(default)]
+    pub tee_diversity_count: usize,
 }

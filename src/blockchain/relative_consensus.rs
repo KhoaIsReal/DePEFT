@@ -13,6 +13,15 @@ pub struct ConsensusResult {
     pub winner: AccountId,
     /// Measure of consensus agreement among validators (0.0 to 1.0).
     pub agreement_rate: f64,
+    /// Number of distinct hardware TEE architectures verifying this round
+    #[serde(default)]
+    pub tee_diversity_count: usize,
+    /// True if evaluations are backed by at least 2 distinct hardware TEE architectures
+    #[serde(default)]
+    pub heterogeneous_quorum_achieved: bool,
+    /// List of distinct verified hardware TEE types participating in this round
+    #[serde(default)]
+    pub verified_tee_types: Vec<crate::tee::TeeType>,
 }
 
 /// Relative Consensus Engine for DePEFT.
@@ -122,11 +131,28 @@ impl RelativeConsensusEngine {
         }
         let agreement_rate = winner_votes as f64 / num_validators as f64;
 
+        // Weapon 1: Heterogeneous TEE Multi-Vendor Quorum (Polyphony)
+        // Check hardware TEE attestation platforms across unique validator submissions
+        let mut seen_tees = std::collections::HashSet::new();
+        let mut verified_tee_types = Vec::new();
+        for eval in &unique_evaluations {
+            if let Some(quote) = &eval.attestation_quote {
+                if seen_tees.insert(quote.tee_type) {
+                    verified_tee_types.push(quote.tee_type);
+                }
+            }
+        }
+        let tee_diversity_count = verified_tee_types.len();
+        let heterogeneous_quorum_achieved = tee_diversity_count >= 2;
+
         Some(ConsensusResult {
             consensus_ranking,
             borda_scores,
             winner,
             agreement_rate,
+            tee_diversity_count,
+            heterogeneous_quorum_achieved,
+            verified_tee_types,
         })
     }
 }

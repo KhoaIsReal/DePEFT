@@ -6,7 +6,7 @@ use crate::blockchain::types::{
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Runtime state of a specific tournament round.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +58,25 @@ pub struct AppChainState {
     pub slashed_validators: HashSet<AccountId>,
     #[serde(skip)]
     pub tee_verifier: OnChainTeeVerifier,
+    /// On-Chain Emergency Circuit Breaker (Safe Mode) to halt runaway drainage
+    #[serde(default)]
+    pub circuit_breaker_active: bool,
+    #[serde(default)]
+    pub circuit_breaker_triggered_at_block: Option<u32>,
+    #[serde(default)]
+    pub rolling_payout_history: VecDeque<(u32, u128)>,
+    #[serde(default = "default_payout_velocity_limit")]
+    pub max_payout_velocity_per_window: u128,
+    #[serde(default = "default_circuit_breaker_window")]
+    pub circuit_breaker_window_blocks: u32,
+}
+
+fn default_payout_velocity_limit() -> u128 {
+    1_000_000
+}
+
+fn default_circuit_breaker_window() -> u32 {
+    100
 }
 
 impl Default for AppChainState {
@@ -84,6 +103,11 @@ impl AppChainState {
             total_burned: 0,
             slashed_validators: HashSet::new(),
             tee_verifier: OnChainTeeVerifier::default(),
+            circuit_breaker_active: false,
+            circuit_breaker_triggered_at_block: None,
+            rolling_payout_history: VecDeque::new(),
+            max_payout_velocity_per_window: default_payout_velocity_limit(),
+            circuit_breaker_window_blocks: default_circuit_breaker_window(),
         }
     }
 
@@ -103,6 +127,57 @@ impl AppChainState {
     /// Check if an account has been slashed.
     pub fn is_slashed(&self, account: &AccountId) -> bool {
         self.slashed_validators.contains(account)
+    }
+
+    /// Check and record a proposed bounty payout against the rolling window velocity cap.
+    /// If velocity is exceeded, automatically triggers the Emergency Circuit Breaker (Safe Mode).
+    pub fn check_and_record_payout(&mut self, amount: u128) -> Result<()> {
+        if self.circuit_breaker_active {
+            anyhow::bail!(
+                "Emergency Safe Mode is ACTIVE! Circuit breaker triggered at block #{:?}. Payouts halted.",
+                self.circuit_breaker_triggered_at_block
+            );
+        }
+
+        if amount == 0 {
+            return Ok(());
+        }
+
+        // Prune entries outside the rolling block window
+        let window_start = self.block_height.saturating_sub(self.circuit_breaker_window_blocks);
+        while let Some(&(block, _)) = self.rolling_payout_history.front() {
+            if block < window_start {
+                self.rolling_payout_history.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        let current_velocity: u128 = self.rolling_payout_history.iter().map(|&(_, amt)| amt).sum();
+        if current_velocity.saturating_add(amount) > self.max_payout_velocity_per_window {
+            self.circuit_breaker_active = true;
+            self.circuit_breaker_triggered_at_block = Some(self.block_height);
+            anyhow::bail!(
+                "Emergency Circuit Breaker Triggered: Payout velocity ({} + {}) exceeds limit {} in rolling window of {} blocks. Safe Mode Activated!",
+                current_velocity, amount, self.max_payout_velocity_per_window, self.circuit_breaker_window_blocks
+            );
+        }
+
+        self.rolling_payout_history.push_back((self.block_height, amount));
+        Ok(())
+    }
+
+    /// Reset emergency circuit breaker (admin/governance intervention).
+    pub fn reset_circuit_breaker(&mut self) {
+        self.circuit_breaker_active = false;
+        self.circuit_breaker_triggered_at_block = None;
+        self.rolling_payout_history.clear();
+        eprintln!("[SECURITY] Emergency Circuit Breaker manually reset. Safe Mode deactivated.");
+    }
+
+    /// Update rolling payout velocity limit.
+    pub fn set_circuit_breaker_velocity_limit(&mut self, limit: u128) {
+        self.max_payout_velocity_per_window = limit;
     }
 
     /// Deposit native tokens to an account balance.
@@ -692,38 +767,50 @@ impl AppChainState {
         post_merge_loss: f64,
         round_bounty: u128,
     ) -> Result<RoundSummary> {
-        let ctx = self
-            .round_contexts
-            .get_mut(&(task_id, round))
-            .ok_or_else(|| anyhow::anyhow!("Round context not found"))?;
+        let (revealed_miners, eval_list, base_model_cid, winner, winning_adapter_cid, consensus) = {
+            let ctx = self
+                .round_contexts
+                .get_mut(&(task_id, round))
+                .ok_or_else(|| anyhow::anyhow!("Round context not found"))?;
 
-        ensure!(
-            ctx.phase == RoundPhase::MergePhase,
-            "Cannot finalize round: round is in phase {:?}, expected MergePhase",
-            ctx.phase
-        );
+            ensure!(
+                ctx.phase == RoundPhase::MergePhase,
+                "Cannot finalize round: round is in phase {:?}, expected MergePhase",
+                ctx.phase
+            );
 
-        ensure!(
-            !ctx.evaluations.is_empty(),
-            "Cannot finalize round with zero validator evaluations"
-        );
+            ensure!(
+                !ctx.evaluations.is_empty(),
+                "Cannot finalize round with zero validator evaluations"
+            );
 
-        let revealed_miners: Vec<AccountId> = ctx.reveals.keys().cloned().collect();
-        let eval_list: Vec<ValidatorEvaluation> = ctx.evaluations.values().cloned().collect();
+            let revealed_miners: Vec<AccountId> = ctx.reveals.keys().cloned().collect();
+            let eval_list: Vec<ValidatorEvaluation> = ctx.evaluations.values().cloned().collect();
 
-        // Run Relative Consensus (Borda Count rank aggregation)
-        let consensus = RelativeConsensusEngine::aggregate(&eval_list, &revealed_miners)
-            .ok_or_else(|| anyhow::anyhow!("Failed to compute relative consensus"))?;
+            // Run Relative Consensus (Borda Count rank aggregation)
+            let consensus = RelativeConsensusEngine::aggregate(&eval_list, &revealed_miners)
+                .ok_or_else(|| anyhow::anyhow!("Failed to compute relative consensus"))?;
 
-        let winner = consensus.winner.clone();
-        let winning_adapter_cid = ctx
-            .reveals
-            .get(&winner)
-            .map(|r| r.adapter_cid.clone())
-            .unwrap_or_default();
+            let winner = consensus.winner.clone();
+            let winning_adapter_cid = ctx
+                .reveals
+                .get(&winner)
+                .map(|r| r.adapter_cid.clone())
+                .unwrap_or_default();
 
-        ctx.consensus = Some(consensus.clone());
-        ctx.phase = RoundPhase::Completed;
+            let base_model_cid = ctx.base_model_cid.clone();
+            ctx.consensus = Some(consensus.clone());
+            ctx.phase = RoundPhase::Completed;
+
+            (
+                revealed_miners,
+                eval_list,
+                base_model_cid,
+                winner,
+                winning_adapter_cid,
+                consensus,
+            )
+        };
 
         // Payout bounty reward according to the task's configured RewardDistribution strategy
         let task_reward_dist = self
@@ -736,13 +823,28 @@ impl AppChainState {
         let mut validator_rewards: Vec<(AccountId, u128)> = Vec::new();
         let mut node_rewards: Vec<(AccountId, u128)> = Vec::new();
         let mut burned_bounty: u128 = 0;
-        let total_available_bounty = if let Some(escrow) = self.escrows.get_mut(&task_id) {
-            let amount = if round_bounty > 0 {
-                round_bounty.min(*escrow)
-            } else {
-                *escrow
-            };
-            *escrow -= amount;
+        // Weapon 4: Emergency Circuit Breaker (Safe Mode)
+        // If Safe Mode is active, halt round bounty payouts immediately
+        if self.circuit_breaker_active {
+            anyhow::bail!(
+                "Emergency Safe Mode is ACTIVE! Circuit breaker triggered at block #{:?}. Round finalization payouts halted.",
+                self.circuit_breaker_triggered_at_block
+            );
+        }
+
+        let escrow_val = self.escrows.get(&task_id).copied().unwrap_or(0);
+        let amount = if round_bounty > 0 {
+            round_bounty.min(escrow_val)
+        } else {
+            escrow_val
+        };
+
+        let total_available_bounty = if amount > 0 {
+            // Verify rolling window payout velocity cap before deducting from escrow
+            self.check_and_record_payout(amount)?;
+            if let Some(escrow) = self.escrows.get_mut(&task_id) {
+                *escrow -= amount;
+            }
             amount
         } else {
             0
@@ -899,7 +1001,7 @@ impl AppChainState {
 
         let summary = RoundSummary {
             round_number: round,
-            base_model_cid: ctx.base_model_cid.clone(),
+            base_model_cid,
             evolved_model_cid,
             winning_miner: winner,
             winning_adapter_cid,
@@ -912,6 +1014,8 @@ impl AppChainState {
             validator_rewards,
             node_rewards,
             burned_bounty,
+            heterogeneous_tee_quorum: consensus.heterogeneous_quorum_achieved,
+            tee_diversity_count: consensus.tee_diversity_count,
         };
 
         const MAX_ROUND_HISTORY: usize = 1000;

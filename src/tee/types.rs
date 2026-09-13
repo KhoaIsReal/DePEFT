@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256, Sha512};
 use std::fmt;
 
 /// Supported Trusted Execution Environment (TEE) hardware platforms.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum TeeType {
     IntelSgxDcap = 0,

@@ -3112,3 +3112,197 @@ fn test_token_transfer_transaction() {
     };
     assert!(chain.apply_transaction(excessive_tx, &alice).is_err());
 }
+
+#[test]
+fn test_weapon_1_heterogeneous_tee_quorum() {
+    use DePEFT::blockchain::relative_consensus::RelativeConsensusEngine;
+    use DePEFT::blockchain::types::{AccountId, ValidatorEvaluation};
+    use DePEFT::tee::{AttestationQuote, EnclaveMeasurement, TeeSecurityFlags, TeeType};
+
+    let m1 = AccountId::new("miner-alpha");
+    let m2 = AccountId::new("miner-beta");
+    let candidates = vec![m1.clone(), m2.clone()];
+
+    let val_intel = AccountId::new("validator-sgx");
+    let val_amd = AccountId::new("validator-sev");
+    let ranking = vec![m1.clone(), m2.clone()];
+
+    let quote_intel = AttestationQuote {
+        tee_type: TeeType::IntelSgxDcap,
+        measurement: EnclaveMeasurement {
+            mrenclave: [0x11; 32],
+            mrsigner: [0x22; 32],
+            isv_prod_id: 1,
+            isv_svn: 1,
+        },
+        report_data: AttestationQuote::compute_report_data(1, 1, &ranking),
+        platform_public_key: [0x33; 32],
+        quote_signature: vec![0x44; 64],
+        timestamp: 1000,
+        security_flags: TeeSecurityFlags::genuine_production(),
+    };
+
+    let quote_amd = AttestationQuote {
+        tee_type: TeeType::AmdSevSnp,
+        measurement: EnclaveMeasurement {
+            mrenclave: [0x55; 32],
+            mrsigner: [0x66; 32],
+            isv_prod_id: 1,
+            isv_svn: 1,
+        },
+        report_data: AttestationQuote::compute_report_data(1, 1, &ranking),
+        platform_public_key: [0x77; 32],
+        quote_signature: vec![0x88; 64],
+        timestamp: 1000,
+        security_flags: TeeSecurityFlags::genuine_production(),
+    };
+
+    let eval_intel = ValidatorEvaluation {
+        validator_address: val_intel,
+        ranking: ranking.clone(),
+        loss_scores: vec![(m1.clone(), 0.2), (m2.clone(), 0.8)],
+        accuracy_scores: vec![(m1.clone(), 0.8), (m2.clone(), 0.2)],
+        hardware_info: "Intel Xeon / SGX DCAP".to_string(),
+        attestation_quote: Some(quote_intel),
+    };
+
+    let eval_amd = ValidatorEvaluation {
+        validator_address: val_amd,
+        ranking: ranking.clone(),
+        loss_scores: vec![(m1.clone(), 0.21), (m2.clone(), 0.79)],
+        accuracy_scores: vec![(m1.clone(), 0.8), (m2.clone(), 0.2)],
+        hardware_info: "AMD EPYC / SEV-SNP".to_string(),
+        attestation_quote: Some(quote_amd),
+    };
+
+    // Scenario 1: Heterogeneous multi-vendor evaluation quorum achieved
+    let res = RelativeConsensusEngine::aggregate(&[eval_intel.clone(), eval_amd], &candidates).unwrap();
+    assert_eq!(res.winner, m1);
+    assert_eq!(res.tee_diversity_count, 2, "Intel + AMD diversity count is 2");
+    assert!(res.heterogeneous_quorum_achieved, "Heterogeneous quorum is true with >= 2 distinct TEEs");
+    assert!(res.verified_tee_types.contains(&TeeType::IntelSgxDcap));
+    assert!(res.verified_tee_types.contains(&TeeType::AmdSevSnp));
+
+    // Scenario 2: Single vendor quote lacks heterogeneous quorum
+    let res_single = RelativeConsensusEngine::aggregate(&[eval_intel], &candidates).unwrap();
+    assert_eq!(res_single.tee_diversity_count, 1);
+    assert!(!res_single.heterogeneous_quorum_achieved, "Single TEE vendor cannot satisfy heterogeneous quorum");
+}
+
+#[test]
+fn test_weapon_2_adversarial_perturbation_noise_invariance() {
+    use DePEFT::candle_peft::evaluator::CandleValidatorEvaluator;
+    use DePEFT::candle_peft::transformer::{CandleTransformerConfig, CandleTransformerLM};
+    use candle_core::Device;
+
+    let device = Device::Cpu;
+    let config = CandleTransformerConfig {
+        vocab_size: 256,
+        hidden_size: 32,
+        intermediate_size: 64,
+        num_hidden_layers: 2,
+        num_attention_heads: 2,
+        max_position_embeddings: 64,
+        lora_rank: 4,
+        lora_alpha: 8.0,
+    };
+    let model = CandleTransformerLM::new(config, device).unwrap();
+
+    let clean_samples = vec![
+        "The quick brown fox jumps over the lazy dog".to_string(),
+        "Parameter efficient fine tuning on decentralized network".to_string(),
+    ];
+
+    let perturbed = CandleValidatorEvaluator::generate_perturbed_samples(&clean_samples);
+    assert_eq!(perturbed.len(), clean_samples.len());
+    assert_ne!(perturbed[0], clean_samples[0], "Perturbed sample must have character perturbation");
+
+    // Standard uncorrupted model should pass adversarial robustness check
+    let is_robust = CandleValidatorEvaluator::verify_adversarial_robustness(&model, &clean_samples, 35.0).unwrap();
+    assert!(is_robust, "Benign model should pass adversarial perturbation noise test");
+
+    // Extreme threshold check (e.g. 0.00001 threshold should fail since perturbations do produce slight loss change)
+    let too_strict = CandleValidatorEvaluator::verify_adversarial_robustness(&model, &clean_samples, 0.00001).unwrap();
+    assert!(!too_strict, "Unreasonably strict threshold correctly flags loss divergence");
+}
+
+#[test]
+fn test_weapon_3_p2p_anti_eclipse_subnet_diversity_and_reputation() {
+    use DePEFT::blockchain::AccountId;
+    use DePEFT::p2p::swarm::{P2pSwarm, SubnetKey};
+    use DePEFT::p2p::types::PeerId;
+    use std::net::{IpAddr, SocketAddr};
+
+    let local_pid = PeerId::from_account(&AccountId::new("0xlocal_node"));
+    let listen_addr: SocketAddr = "127.0.0.1:9001".parse().unwrap();
+    let (swarm, _, _) = P2pSwarm::new(local_pid, listen_addr);
+
+    // 1. Subnet key extraction
+    let ip1: IpAddr = "192.168.1.5".parse().unwrap();
+    let ip2: IpAddr = "192.168.200.99".parse().unwrap();
+    let ip3: IpAddr = "10.0.0.1".parse().unwrap();
+    let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+
+    let sub1 = SubnetKey::from_ip(ip1);
+    let sub2 = SubnetKey::from_ip(ip2);
+    let sub3 = SubnetKey::from_ip(ip3);
+    let sub_loop = SubnetKey::from_ip(loopback);
+
+    assert_eq!(sub1, SubnetKey::Ipv4([192, 168]));
+    assert_eq!(sub2, SubnetKey::Ipv4([192, 168]));
+    assert_eq!(sub1, sub2, "Both belong to the same 192.168.0.0/16 subnet");
+    assert_ne!(sub1, sub3, "Belongs to a different subnet");
+    assert_eq!(sub_loop, SubnetKey::Loopback, "Loopback is exempt");
+
+    // 2. IP reputation and dynamic blacklisting
+    let attacker_ip: IpAddr = "203.0.113.42".parse().unwrap();
+    assert!(!swarm.is_ip_banned(&attacker_ip));
+    assert_eq!(swarm.get_peer_reputation(&attacker_ip), 100);
+
+    // Penalize attacker for sending invalid / forged signatures
+    swarm.penalize_ip(&attacker_ip, 30);
+    assert_eq!(swarm.get_peer_reputation(&attacker_ip), 70);
+    assert!(!swarm.is_ip_banned(&attacker_ip));
+
+    // Exceed ban threshold (-50)
+    swarm.penalize_ip(&attacker_ip, 130);
+    assert!(swarm.get_peer_reputation(&attacker_ip) <= -50);
+    assert!(swarm.is_ip_banned(&attacker_ip), "IP must be banned when reputation drops below threshold");
+
+    // Unban functionality
+    swarm.unban_ip(&attacker_ip);
+    assert!(!swarm.is_ip_banned(&attacker_ip), "IP unbanned");
+}
+
+#[test]
+fn test_weapon_4_on_chain_circuit_breaker_emergency_safe_mode() {
+    use DePEFT::blockchain::state::AppChainState;
+
+    let mut state = AppChainState::new();
+    state.set_circuit_breaker_velocity_limit(50_000);
+    assert!(!state.circuit_breaker_active);
+
+    // Initial payout of 20,000 succeeds (20,000 <= 50,000)
+    assert!(state.check_and_record_payout(20_000).is_ok());
+    assert!(!state.circuit_breaker_active);
+
+    // Second payout of 25,000 succeeds (45,000 <= 50,000)
+    assert!(state.check_and_record_payout(25_000).is_ok());
+    assert!(!state.circuit_breaker_active);
+
+    // Third sudden payout of 10,000 exceeds velocity cap (55,000 > 50,000)
+    let res = state.check_and_record_payout(10_000);
+    assert!(res.is_err(), "Must trigger circuit breaker when velocity cap is exceeded");
+    assert!(state.circuit_breaker_active, "Emergency Safe Mode must be active");
+    assert_eq!(state.circuit_breaker_triggered_at_block, Some(1));
+
+    // Subsequent payout attempt is immediately blocked by Safe Mode
+    let blocked_res = state.check_and_record_payout(1_000);
+    assert!(blocked_res.is_err());
+    assert!(blocked_res.unwrap_err().to_string().contains("Emergency Safe Mode is ACTIVE"));
+
+    // Reset circuit breaker
+    state.reset_circuit_breaker();
+    assert!(!state.circuit_breaker_active);
+    assert!(state.check_and_record_payout(5_000).is_ok(), "Payouts resume normally after reset");
+}
