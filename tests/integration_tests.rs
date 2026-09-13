@@ -2790,3 +2790,292 @@ fn test_tournament_engine_with_outer_optimizer() {
     assert_eq!(summary_r2.round_number, 2);
     assert_eq!(engine.outer_optimizer_state.step_count, 2);
 }
+
+#[test]
+fn test_mainnet_anti_fraud_validator_slashed_on_fake_tee() {
+    use DePEFT::blockchain::types::{MergeStrategy, RewardDistribution};
+    use DePEFT::tee::HardwareTeeEnclave;
+
+    let mut chain = AppChainState::new();
+    // On mainnet, simulation is strictly disallowed
+    chain.tee_verifier.set_allow_simulation(false);
+    chain.tee_verifier.enforce_attestation = true;
+
+    let client = AccountId::new("client_mainnet");
+    let val_fraud = AccountId::new("val_fraudulent");
+    let miner = AccountId::new("miner_honest");
+
+    chain.mint(client.clone(), 50_000);
+    chain.mint(val_fraud.clone(), 10_000);
+
+    // 1. Create task
+    let task_tx = Transaction::CreateTask {
+        client: client.clone(),
+        nonce: chain.nonce_of(&client),
+        base_model_id: b"Qwen/Qwen2.5-0.5B".to_vec(),
+        base_model_hash: [1u8; 32],
+        dataset_cid: b"bafy_dataset".to_vec(),
+        peft_method: PeftType::LoRA,
+        max_rank: 16,
+        target_modules: vec![b"q_proj".to_vec()],
+        bounty_pool: 20_000,
+        epoch_blocks: 10,
+        reward_distribution: RewardDistribution::WinnerTakesAll,
+        merge_strategy: MergeStrategy::EnsembleWeighted { top_k: 1 },
+    };
+    chain.apply_transaction(task_tx, &client).unwrap();
+    let task_id = 1;
+    let round = 1;
+
+    // 2. Miner commits & reveals
+    let salt = b"miner_salt_123".to_vec();
+    let adapter_hash = [5u8; 32];
+    let commit_hash = AppChainState::compute_commit_hash(&adapter_hash, &salt);
+    chain
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id,
+                round,
+                miner: miner.clone(),
+                nonce: chain.nonce_of(&miner),
+                commit_hash,
+            },
+            &miner,
+        )
+        .unwrap();
+
+    chain
+        .set_round_phase(task_id, round, DePEFT::blockchain::RoundPhase::RevealPhase)
+        .unwrap();
+    chain
+        .apply_transaction(
+            Transaction::RevealAdapter {
+                task_id,
+                round,
+                miner: miner.clone(),
+                nonce: chain.nonce_of(&miner),
+                adapter_cid: "bafy_miner_adapter".to_string(),
+                salt,
+                adapter_hash,
+            },
+            &miner,
+        )
+        .unwrap();
+
+    // 3. Move to evaluation
+    chain
+        .set_round_phase(
+            task_id,
+            round,
+            DePEFT::blockchain::RoundPhase::EvaluationPhase,
+        )
+        .unwrap();
+
+    // Validator crafts a simulation quote (e.g. running in QEMU software sim)
+    let enclave = HardwareTeeEnclave::new_with_flags(
+        DePEFT::tee::TeeType::IntelSgxDcap,
+        "sim_enclave",
+        DePEFT::tee::TeeSecurityFlags::simulation(),
+    );
+    let fake_quote = enclave
+        .generate_quote(task_id, round, std::slice::from_ref(&miner))
+        .unwrap();
+
+    let eval = ValidatorEvaluation {
+        validator_address: val_fraud.clone(),
+        ranking: vec![miner.clone()],
+        loss_scores: vec![(miner.clone(), 0.1)],
+        accuracy_scores: vec![(miner.clone(), 0.95)],
+        hardware_info: "Fake Simulator".to_string(),
+        attestation_quote: Some(fake_quote),
+    };
+
+    // 4. Submit evaluation with simulation quote: MUST BE REJECTED & SLASHED
+    let eval_tx = Transaction::SubmitEvaluation {
+        task_id,
+        round,
+        nonce: chain.nonce_of(&val_fraud),
+        evaluation: eval,
+    };
+    let res = chain.apply_transaction(eval_tx, &val_fraud);
+    assert!(res.is_err(), "Simulation TEE quote must be rejected on mainnet");
+
+    // 5. Verify validator is slashed and balance burned
+    assert!(chain.is_slashed(&val_fraud), "Fraudulent validator must be slashed");
+    assert_eq!(chain.balance_of(&val_fraud), 0, "Slashed validator balance must be burned to 0");
+    assert_eq!(chain.total_burned, 10_000, "Slashed 10,000 tokens must be recorded in total_burned");
+
+    // 6. Slashed validator tries to submit any subsequent transaction -> REJECTED
+    let spam_tx = Transaction::CommitAdapter {
+        task_id,
+        round: 2,
+        miner: val_fraud.clone(),
+        nonce: chain.nonce_of(&val_fraud),
+        commit_hash: [7u8; 32],
+    };
+    let spam_res = chain.apply_transaction(spam_tx, &val_fraud);
+    assert!(spam_res.is_err(), "Slashed account must be permanently banned from sending transactions");
+}
+
+#[test]
+fn test_miner_anti_plagiarism_rejection() {
+    use DePEFT::blockchain::types::{MergeStrategy, RewardDistribution};
+
+    let mut chain = AppChainState::new();
+    let client = AccountId::new("client_plag");
+    let miner1 = AccountId::new("miner_original");
+    let miner2 = AccountId::new("miner_copycat");
+
+    chain.mint(client.clone(), 20_000);
+    chain
+        .apply_transaction(
+            Transaction::CreateTask {
+                client: client.clone(),
+                nonce: 0,
+                base_model_id: b"test_model".to_vec(),
+                base_model_hash: [0u8; 32],
+                dataset_cid: b"test_cid".to_vec(),
+                peft_method: PeftType::LoRA,
+                max_rank: 8,
+                target_modules: vec![b"w".to_vec()],
+                bounty_pool: 5000,
+                epoch_blocks: 10,
+                reward_distribution: RewardDistribution::WinnerTakesAll,
+                merge_strategy: MergeStrategy::SingleWinner,
+            },
+            &client,
+        )
+        .unwrap();
+
+    let shared_adapter_hash = [42u8; 32];
+    let salt1 = b"salt1".to_vec();
+    let salt2 = b"salt2".to_vec();
+
+    // Both commit
+    chain
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id: 1,
+                round: 1,
+                miner: miner1.clone(),
+                nonce: 0,
+                commit_hash: AppChainState::compute_commit_hash(&shared_adapter_hash, &salt1),
+            },
+            &miner1,
+        )
+        .unwrap();
+
+    chain
+        .apply_transaction(
+            Transaction::CommitAdapter {
+                task_id: 1,
+                round: 1,
+                miner: miner2.clone(),
+                nonce: 0,
+                commit_hash: AppChainState::compute_commit_hash(&shared_adapter_hash, &salt2),
+            },
+            &miner2,
+        )
+        .unwrap();
+
+    chain
+        .set_round_phase(1, 1, DePEFT::blockchain::RoundPhase::RevealPhase)
+        .unwrap();
+
+    // Miner 1 reveals first
+    chain
+        .apply_transaction(
+            Transaction::RevealAdapter {
+                task_id: 1,
+                round: 1,
+                miner: miner1.clone(),
+                nonce: 1,
+                adapter_cid: "bafy_adapter_1".to_string(),
+                salt: salt1,
+                adapter_hash: shared_adapter_hash,
+            },
+            &miner1,
+        )
+        .unwrap();
+
+    // Miner 2 reveals the exact same adapter hash -> REJECTED (Plagiarism)
+    let copycat_res = chain.apply_transaction(
+        Transaction::RevealAdapter {
+            task_id: 1,
+            round: 1,
+            miner: miner2.clone(),
+            nonce: 1,
+            adapter_cid: "bafy_adapter_2".to_string(),
+            salt: salt2,
+            adapter_hash: shared_adapter_hash,
+        },
+        &miner2,
+    );
+    assert!(copycat_res.is_err(), "Duplicate adapter hash must be rejected as plagiarism");
+}
+
+#[test]
+fn test_whistleblower_slashing_transaction() {
+    use DePEFT::consensus::{EquivocationEvidence, Vote, VoteType};
+    use DePEFT::crypto::AccountKeypair;
+
+    let mut chain = AppChainState::new();
+    let byzantine_kp = AccountKeypair::generate();
+    let whistleblower_kp = AccountKeypair::generate();
+
+    let byzantine_val = byzantine_kp.account_id();
+    let whistleblower = whistleblower_kp.account_id();
+
+    // Fund Byzantine validator
+    chain.mint(byzantine_val.clone(), 100_000);
+
+    // Byzantine validator signs two contradictory votes for the same block height and round
+    let sign_bytes_a = Vote::sign_bytes(VoteType::Precommit, 10, 0, Some([11u8; 32]));
+    let sig_a = byzantine_kp.sign_message(&sign_bytes_a);
+    let vote_a = Vote {
+        vote_type: VoteType::Precommit,
+        height: 10,
+        round: 0,
+        block_hash: Some([11u8; 32]),
+        validator: byzantine_val.clone(),
+        signature: sig_a,
+    };
+
+    let sign_bytes_b = Vote::sign_bytes(VoteType::Precommit, 10, 0, Some([22u8; 32]));
+    let sig_b = byzantine_kp.sign_message(&sign_bytes_b);
+    let vote_b = Vote {
+        vote_type: VoteType::Precommit,
+        height: 10,
+        round: 0,
+        block_hash: Some([22u8; 32]), // Different block hash!
+        validator: byzantine_val.clone(),
+        signature: sig_b,
+    };
+
+    let evidence = EquivocationEvidence {
+        validator: byzantine_val.clone(),
+        height: 10,
+        round: 0,
+        vote_type: VoteType::Precommit,
+        vote_a,
+        vote_b,
+    };
+
+    // Whistleblower submits proof of equivocation
+    let slash_tx = Transaction::SlashValidator {
+        reporter: whistleblower.clone(),
+        nonce: chain.nonce_of(&whistleblower),
+        evidence,
+    };
+
+    chain.apply_transaction(slash_tx, &whistleblower).unwrap();
+
+    // Verify validator is slashed
+    assert!(chain.is_slashed(&byzantine_val));
+    assert_eq!(chain.balance_of(&byzantine_val), 0);
+
+    // Verify whistleblower received 20% bounty and 80% was burned
+    let whistleblower_bal = chain.balance_of(&whistleblower);
+    assert_eq!(whistleblower_bal, 20_000, "Whistleblower receives 20% bounty");
+    assert_eq!(chain.total_burned, 80_000, "80% of slashed stake is burned");
+}

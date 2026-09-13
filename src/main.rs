@@ -192,6 +192,14 @@ enum IpfsCommands {
 enum NodeCommands {
     /// Start the live App-Chain Node server
     Start {
+        /// Run node in Mainnet production mode (strict anti-fraud, disallows simulation & faucet)
+        #[arg(long, default_value_t = false)]
+        mainnet: bool,
+
+        /// Path to persistent node operator private key file (generates and persists if missing)
+        #[arg(long)]
+        node_key: Option<PathBuf>,
+
         /// Port to bind the HTTP JSON-RPC server to
         #[arg(short, long, default_value_t = 8545)]
         port: u16,
@@ -1104,6 +1112,8 @@ async fn main() -> anyhow::Result<()> {
 
         Some(Commands::Node { subcommand }) => match subcommand {
             NodeCommands::Start {
+                mainnet,
+                node_key,
                 port,
                 p2p_port,
                 host,
@@ -1116,21 +1126,82 @@ async fn main() -> anyhow::Result<()> {
                 enable_operator_endpoints,
                 enable_faucet,
             } => {
+                if mainnet {
+                    if testnet_tee_sim {
+                        anyhow::bail!(
+                            "FATAL: --testnet-tee-sim cannot be used with --mainnet. Mainnet strictly forbids TEE simulation."
+                        );
+                    }
+                    if enable_faucet {
+                        anyhow::bail!(
+                            "FATAL: --enable-faucet cannot be used with --mainnet. Testnet faucet is strictly forbidden on Mainnet."
+                        );
+                    }
+                }
+
                 let storage_path = data_dir.unwrap_or_else(|| {
-                    dirs::home_dir()
-                        .unwrap_or_else(|| PathBuf::from("."))
-                        .join(".depeft")
-                        .join("storage")
+                    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+                    if mainnet {
+                        home.join(".depeft").join("mainnet")
+                    } else {
+                        home.join(".depeft").join("storage")
+                    }
                 });
+                std::fs::create_dir_all(&storage_path)?;
+
+                // Persistent node operator keypair
+                let key_file_path = node_key.unwrap_or_else(|| storage_path.join("node_key.json"));
+                let node_keypair = if key_file_path.exists() {
+                    let content = std::fs::read_to_string(&key_file_path)?;
+                    let json: serde_json::Value = serde_json::from_str(&content)?;
+                    let secret_hex = json["secret_key"]
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("Missing 'secret_key' in node key file"))?;
+                    let clean = secret_hex.trim().trim_start_matches("0x");
+                    let bytes = hex::decode(clean)?;
+                    let arr: [u8; 32] = bytes
+                        .try_into()
+                        .map_err(|_| anyhow::anyhow!("Invalid node secret key length: expected 32 bytes"))?;
+                    AccountKeypair::from_secret_bytes(&arr)
+                } else {
+                    let kp = AccountKeypair::generate();
+                    let json = serde_json::json!({
+                        "account_id": kp.account_id().to_string(),
+                        "secret_key": format!("0x{}", hex::encode(kp.secret_key_bytes())),
+                        "public_key": format!("0x{}", hex::encode(kp.public_key_bytes())),
+                    });
+                    std::fs::write(&key_file_path, serde_json::to_string_pretty(&json)?)?;
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = std::fs::set_permissions(&key_file_path, std::fs::Permissions::from_mode(0o600));
+                    }
+                    kp
+                };
+                let local_peer_id = DePEFT::p2p::PeerId::from_account(&node_keypair.account_id());
+
                 let storage = Arc::new(DiskIpfsStorage::new(&storage_path)?);
                 let chain_store = Arc::new(Mutex::new(ChainStore::open(
                     storage_path.join("chain.sqlite"),
                 )?));
+
+                let is_genesis = chain_store.lock().unwrap().load()?.is_none();
                 let mut loaded_state = chain_store
                     .lock()
                     .unwrap()
                     .load()?
                     .unwrap_or_else(AppChainState::new);
+
+                if mainnet {
+                    loaded_state.tee_verifier.set_allow_simulation(false);
+                    loaded_state.tee_verifier.enforce_attestation = true;
+                    if is_genesis {
+                        // Mint initial genesis allocation for bootstrap node operator and storage gateway
+                        loaded_state.mint(node_keypair.account_id(), 1_000_000);
+                        loaded_state.mint(AccountId::storage_gateway(), 500_000);
+                        let _ = chain_store.lock().unwrap().save(&loaded_state);
+                    }
+                }
 
                 // Register trusted TEE measurements and platform keys
                 let mut configured_roots = 0;
@@ -1191,10 +1262,6 @@ async fn main() -> anyhow::Result<()> {
                 let chain = Arc::new(RwLock::new(loaded_state));
                 let vector_db = Arc::new(EmbeddedVectorDb::new(64));
 
-                // Generate ephemeral node account/peer identity
-                let node_keypair = AccountKeypair::generate();
-                let local_peer_id = DePEFT::p2p::PeerId::from_account(&node_keypair.account_id());
-
                 // Parse IPv4 or IPv6 (Dual-Stack) socket address
                 let p2p_addr: SocketAddr = if host.contains(':') && !host.starts_with('[') {
                     format!("[{}]:{}", host, p2p_port).parse()?
@@ -1209,7 +1276,7 @@ async fn main() -> anyhow::Result<()> {
                 swarm.clone().start_listener().await?;
 
                 // Connect to bootnodes if provided
-                if let Some(nodes) = bootnodes {
+                if let Some(nodes) = bootnodes.as_ref() {
                     for peer_addr in nodes.split(',') {
                         let trimmed = peer_addr.trim();
                         if !trimmed.is_empty() {
@@ -1259,10 +1326,40 @@ async fn main() -> anyhow::Result<()> {
                     }
                 });
 
+                let tee_status = DePEFT::tee::detect_host_tee();
+                let tee_desc = match &tee_status {
+                    DePEFT::tee::HostTeeStatus::HardwareAvailable {
+                        tee_type,
+                        device_path,
+                    } => format!("Hardware Active: {:?} ({})", tee_type, device_path).bright_green(),
+                    DePEFT::tee::HostTeeStatus::SimulationOnly { reason } => {
+                        if mainnet {
+                            format!("No Hardware TEE: {} (Genuine TEE required for evaluations)", reason).bright_yellow()
+                        } else {
+                            format!("Simulation Mode Available: {}", reason).bright_yellow()
+                        }
+                    }
+                };
+
                 let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
                 println!("{}", "================================================================================".bright_blue());
-                println!("{}", "                 DePEFT App-Chain Live Node Daemon Starting                      ".bright_cyan().bold());
+                if mainnet {
+                    if is_genesis {
+                        println!("{}", "                 DePEFT Mainnet Genesis Node #1 Starting                        ".bright_green().bold());
+                    } else {
+                        println!("{}", "                 DePEFT Mainnet Node Daemon Starting                            ".bright_cyan().bold());
+                    }
+                } else {
+                    println!("{}", "                 DePEFT App-Chain Live Node Daemon Starting                      ".bright_cyan().bold());
+                }
                 println!("{}", "================================================================================".bright_blue());
+                if mainnet {
+                    println!("Network:          {}", "MAINNET (depeft-mainnet-1)".bright_green().bold());
+                    println!("Operator Account: {}", node_keypair.account_id().to_string().bright_yellow());
+                    if is_genesis {
+                        println!("Genesis Balance:  {}", "1,000,000 $DEPEFT".bright_green());
+                    }
+                }
                 println!(
                     "Node Peer ID:     {}",
                     local_peer_id.to_string().bright_green()
@@ -1270,17 +1367,36 @@ async fn main() -> anyhow::Result<()> {
                 println!("Storage CAS Path: {:?}", storage.path());
                 println!("HTTP JSON-RPC:    http://{}", addr);
                 println!("P2P Overlay TCP:  tcp://{}", p2p_addr);
+                println!("Host TEE Status:  {}", tee_desc);
                 println!(
                     "TEE Trust Roots:  {} custom measurements/keys loaded",
                     configured_roots
                 );
+                if mainnet {
+                    println!("Security Policy:  {}", "STRICT PRODUCTION ANTI-FRAUD ACTIVE".bright_green().bold());
+                    println!("  ├─ TEE Simulation:    {}", "STRICTLY FORBIDDEN".bright_red().bold());
+                    println!("  ├─ Testnet Faucet:    {}", "DISABLED".bright_red().bold());
+                    println!("  ├─ Auto-Slashing:     {}", "ACTIVE (Equivocation & Fake TEE)".bright_green());
+                    println!("  ├─ Anti-Plagiarism:   {}", "ACTIVE (Unique Safetensors Check)".bright_green());
+                    println!("  └─ Replay Guard:      {}", "ACTIVE (Nonce Enforced)".bright_green());
+                    if bootnodes.is_none() {
+                        println!("Node Role:        {}", "Genesis / Bootstrap Node (Awaiting peers)".bright_yellow().bold());
+                    }
+                }
 
-                let production = std::env::var("DEPEFT_ENV")
-                    .map(|value| value.eq_ignore_ascii_case("production"))
-                    .unwrap_or(true);
-                let security = DePEFT::node::NodeSecurityConfig {
-                    enable_operator_endpoints: enable_operator_endpoints || !production,
-                    enable_testnet_faucet: enable_faucet || !production,
+                let security = if mainnet {
+                    DePEFT::node::NodeSecurityConfig {
+                        enable_operator_endpoints,
+                        enable_testnet_faucet: false,
+                    }
+                } else {
+                    let production = std::env::var("DEPEFT_ENV")
+                        .map(|value| value.eq_ignore_ascii_case("production"))
+                        .unwrap_or(true);
+                    DePEFT::node::NodeSecurityConfig {
+                        enable_operator_endpoints: enable_operator_endpoints || !production,
+                        enable_testnet_faucet: enable_faucet || !production,
+                    }
                 };
 
                 DePEFT::node::start_node_server_with_security(

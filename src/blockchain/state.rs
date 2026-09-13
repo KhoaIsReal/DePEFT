@@ -6,7 +6,7 @@ use crate::blockchain::types::{
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Runtime state of a specific tournament round.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +54,8 @@ pub struct AppChainState {
     pub round_history: Vec<RoundSummary>,
     #[serde(default)]
     pub total_burned: u128,
+    #[serde(default)]
+    pub slashed_validators: HashSet<AccountId>,
     #[serde(skip)]
     pub tee_verifier: OnChainTeeVerifier,
 }
@@ -80,8 +82,27 @@ impl AppChainState {
             round_contexts: HashMap::new(),
             round_history: Vec::new(),
             total_burned: 0,
+            slashed_validators: HashSet::new(),
             tee_verifier: OnChainTeeVerifier::default(),
         }
+    }
+
+    /// Slash and permanently ban a Byzantine or fraudulent validator/account.
+    pub fn slash_validator(&mut self, validator: &AccountId, reason: &str) {
+        self.slashed_validators.insert(validator.clone());
+        if let Some(bal) = self.balances.get_mut(validator) {
+            self.total_burned += *bal;
+            *bal = 0;
+        }
+        eprintln!(
+            "[SLASHED] Account {} has been slashed and permanently banned. Reason: {}",
+            validator, reason
+        );
+    }
+
+    /// Check if an account has been slashed.
+    pub fn is_slashed(&self, account: &AccountId) -> bool {
+        self.slashed_validators.contains(account)
     }
 
     /// Deposit native tokens to an account balance.
@@ -250,6 +271,13 @@ impl AppChainState {
 
     /// Process an on-chain transaction deterministically.
     pub fn apply_transaction(&mut self, tx: Transaction, sender: &AccountId) -> Result<()> {
+        // Banned/Slashed account verification: Reject any transactions from slashed accounts
+        ensure!(
+            !self.slashed_validators.contains(sender),
+            "Transaction rejected: Sender {} has been slashed and permanently banned from the network",
+            sender
+        );
+
         // Anti-Replay Attack verification: verify transaction nonce matches expected sender nonce
         let expected_nonce = self.nonce_of(sender);
         ensure!(
@@ -279,6 +307,11 @@ impl AppChainState {
                     &client == sender,
                     "Unauthorized: Transaction sender {} does not match client address {}",
                     sender,
+                    client
+                );
+                ensure!(
+                    !self.slashed_validators.contains(&client),
+                    "CreateTask rejected: Client {} is banned",
                     client
                 );
                 ensure!(bounty_pool > 0, "Bounty pool must be greater than 0 tokens");
@@ -356,6 +389,15 @@ impl AppChainState {
                     sender,
                     miner
                 );
+                ensure!(
+                    !self.slashed_validators.contains(&miner),
+                    "Commit rejected: Miner {} is banned",
+                    miner
+                );
+                ensure!(
+                    commit_hash != [0u8; 32],
+                    "Commit rejected: commit hash cannot be all zeros"
+                );
 
                 // Auto initialize round context if not yet started
                 if !self.round_contexts.contains_key(&(task_id, round)) {
@@ -412,6 +454,15 @@ impl AppChainState {
                     sender,
                     miner
                 );
+                ensure!(
+                    !self.slashed_validators.contains(&miner),
+                    "Reveal rejected: Miner {} is banned",
+                    miner
+                );
+                ensure!(
+                    adapter_hash != [0u8; 32],
+                    "Reveal rejected: adapter hash cannot be all zeros"
+                );
                 let ctx = self
                     .round_contexts
                     .get_mut(&(task_id, round))
@@ -439,6 +490,12 @@ impl AppChainState {
                     "Reveal already submitted by miner {} for round {}",
                     miner,
                     round
+                );
+
+                // Anti-Plagiarism check: reject if another miner already revealed the identical adapter hash or CID
+                ensure!(
+                    !ctx.reveals.values().any(|r| r.adapter_hash == adapter_hash || r.adapter_cid == adapter_cid),
+                    "Reveal rejected: duplicate adapter hash or CID detected from another miner in this round (plagiarism rejected)"
                 );
 
                 let commit = ctx
@@ -477,6 +534,11 @@ impl AppChainState {
                     sender,
                     evaluation.validator_address
                 );
+                ensure!(
+                    !self.slashed_validators.contains(&evaluation.validator_address),
+                    "SubmitEvaluation rejected: Validator {} has been slashed and permanently banned",
+                    evaluation.validator_address
+                );
                 let ctx = self
                     .round_contexts
                     .get_mut(&(task_id, round))
@@ -499,11 +561,17 @@ impl AppChainState {
 
                 // Cryptographically verify Hardware TEE Attestation Quote if present
                 if let Some(quote) = &evaluation.attestation_quote {
-                    self.tee_verifier
-                        .verify_quote(quote, task_id, round, &evaluation.ranking)
-                        .map_err(|e| {
-                            anyhow::anyhow!("On-Chain TEE Attestation verification rejected: {}", e)
-                        })?;
+                    if let Err(e) = self.tee_verifier.verify_quote(quote, task_id, round, &evaluation.ranking) {
+                        // Anti-Fraud: On production/mainnet (simulation disallowed),
+                        // any fraudulent or spoofed quote immediately slashes the validator!
+                        if !self.tee_verifier.allow_simulation {
+                            self.slash_validator(
+                                &evaluation.validator_address,
+                                &format!("Fraudulent TEE attestation quote rejected: {}", e),
+                            );
+                        }
+                        anyhow::bail!("On-Chain TEE Attestation verification rejected (validator slashed): {}", e);
+                    }
                 } else if self.tee_verifier.enforce_attestation {
                     anyhow::bail!(
                         "On-Chain TEE Attestation rejected: missing required hardware quote"
@@ -512,6 +580,66 @@ impl AppChainState {
 
                 ctx.evaluations
                     .insert(evaluation.validator_address.clone(), evaluation);
+            }
+
+            Transaction::SlashValidator {
+                reporter,
+                nonce: _,
+                evidence,
+            } => {
+                ensure!(
+                    &reporter == sender,
+                    "Unauthorized: Transaction sender {} does not match reporter address {}",
+                    sender,
+                    reporter
+                );
+                ensure!(
+                    evidence.vote_a.validator == evidence.validator
+                        && evidence.vote_b.validator == evidence.validator,
+                    "Invalid equivocation evidence: vote validator mismatch"
+                );
+                ensure!(
+                    evidence.vote_a.height == evidence.height
+                        && evidence.vote_b.height == evidence.height
+                        && evidence.vote_a.round == evidence.round
+                        && evidence.vote_b.round == evidence.round
+                        && evidence.vote_a.vote_type == evidence.vote_type
+                        && evidence.vote_b.vote_type == evidence.vote_type,
+                    "Invalid equivocation evidence: height, round, or vote_type mismatch"
+                );
+                ensure!(
+                    evidence.vote_a.block_hash != evidence.vote_b.block_hash,
+                    "Invalid equivocation evidence: votes have identical block hashes (not double voting)"
+                );
+                evidence
+                    .vote_a
+                    .verify_signature()
+                    .map_err(|e| anyhow::anyhow!("Invalid signature on vote A in equivocation evidence: {}", e))?;
+                evidence
+                    .vote_b
+                    .verify_signature()
+                    .map_err(|e| anyhow::anyhow!("Invalid signature on vote B in equivocation evidence: {}", e))?;
+
+                let target = evidence.validator.clone();
+                ensure!(
+                    !self.slashed_validators.contains(&target),
+                    "Validator {} is already slashed and banned",
+                    target
+                );
+
+                let target_bal = self.balance_of(&target);
+                self.slashed_validators.insert(target.clone());
+
+                // Whistleblower reward: 80% burned, 20% whistleblower bounty to reporter
+                if target_bal > 0 {
+                    let bounty = (target_bal as f64 * 0.20).round() as u128;
+                    let burned = target_bal.saturating_sub(bounty);
+                    if let Some(bal) = self.balances.get_mut(&target) {
+                        *bal = 0;
+                    }
+                    self.total_burned += burned;
+                    *self.balances.entry(reporter).or_insert(0) += bounty;
+                }
             }
         }
 

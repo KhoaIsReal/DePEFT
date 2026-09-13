@@ -1,6 +1,7 @@
 use crate::blockchain::types::{
     AccountId, MergeStrategy, PeftType, RewardDistribution, ValidatorEvaluation,
 };
+use crate::consensus::EquivocationEvidence;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,6 +48,12 @@ pub enum Transaction {
         nonce: u64,
         evaluation: ValidatorEvaluation,
     },
+    /// Whistleblower submits proof of validator equivocation (double-voting) to slash stake and ban validator.
+    SlashValidator {
+        reporter: AccountId,
+        nonce: u64,
+        evidence: EquivocationEvidence,
+    },
 }
 
 impl Transaction {
@@ -57,6 +64,7 @@ impl Transaction {
             Transaction::CommitAdapter { miner, .. } => miner,
             Transaction::RevealAdapter { miner, .. } => miner,
             Transaction::SubmitEvaluation { evaluation, .. } => &evaluation.validator_address,
+            Transaction::SlashValidator { reporter, .. } => reporter,
         }
     }
 
@@ -67,6 +75,7 @@ impl Transaction {
             Transaction::CommitAdapter { nonce, .. } => *nonce,
             Transaction::RevealAdapter { nonce, .. } => *nonce,
             Transaction::SubmitEvaluation { nonce, .. } => *nonce,
+            Transaction::SlashValidator { nonce, .. } => *nonce,
         }
     }
 }

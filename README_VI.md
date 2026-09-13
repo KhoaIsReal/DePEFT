@@ -151,6 +151,28 @@ Các cờ quan trọng:
 - **Node 2 (Ngang hàng)**: `http://127.0.0.1:8546` (P2P: `9001`)
 - **Giao diện Web Explorer**: Mở ngay `http://127.0.0.1:8545` trên trình duyệt!
 
+#### Lựa chọn C: Khởi chạy Node Production trên Mainnet (Genesis Node & Chống Gian Lận Tuyệt Đối)
+Để mở Node đầu tiên (Genesis Node) hoặc Node Production trên mạng Mainnet với cơ chế nghiêm ngặt (cấm TEE giả lập/debug, cấm faucet, kích hoạt tự động phạt chém/burn ví khi validator hoặc miner gian lận):
+
+**Script All-in-One Bash (Linux / macOS):**
+```bash
+bash scripts/start_mainnet_node.sh --daemon
+```
+
+**Script All-in-One PowerShell (Windows):**
+```powershell
+.\scripts\start_mainnet_node.ps1 -Daemon
+```
+
+**Chạy thủ công qua Cargo CLI:**
+```bash
+cargo run --release -- node start \
+  --mainnet \
+  --port 8545 \
+  --p2p-port 9000 \
+  --data-dir ~/.depeft/mainnet
+```
+
 ---
 
 ### Bước 4: Nhận Token Thử Nghiệm Miễn Phí (Faucet)

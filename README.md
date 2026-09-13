@@ -152,6 +152,28 @@ To test a real multi-node network with 2 connected peers:
 - **Node 2 (Peer)**: `http://127.0.0.1:8546` (P2P: `9001`)
 - **Web Dashboard**: Open `http://127.0.0.1:8545` in your browser!
 
+#### Option C: Start a Production Node on Mainnet (Genesis Bootstrap & Strict Anti-Fraud)
+To launch a production Mainnet node with strict anti-fraud rules (TEE simulations, debug enclaves, and faucets strictly banned; auto-slashing active for equivocation and fake/spoofed quotes):
+
+**All-in-One Bash Script (Linux / macOS):**
+```bash
+bash scripts/start_mainnet_node.sh --daemon
+```
+
+**All-in-One PowerShell Script (Windows):**
+```powershell
+.\scripts\start_mainnet_node.ps1 -Daemon
+```
+
+**Manual CLI Launch:**
+```bash
+cargo run --release -- node start \
+  --mainnet \
+  --port 8545 \
+  --p2p-port 9000 \
+  --data-dir ~/.depeft/mainnet
+```
+
 ---
 
 ### Step 4: Claim Free Testnet Tokens (Faucet)
