@@ -81,6 +81,7 @@ struct NodeStatusResponse {
     tasks_count: usize,
     storage_objects_count: usize,
     connected_peers_count: usize,
+    circuit_breaker_active: bool,
     version: &'static str,
 }
 
@@ -128,6 +129,7 @@ async fn get_status(State(ctx): State<NodeContext>) -> Json<NodeStatusResponse> 
         tasks_count: chain.tasks.len(),
         storage_objects_count: ctx.storage.count(),
         connected_peers_count: peers_count,
+        circuit_breaker_active: chain.circuit_breaker_active,
         version: "0.1.0-depeft",
     })
 }

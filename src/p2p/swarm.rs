@@ -480,6 +480,9 @@ impl P2pSwarm {
                                         swarm_clone.peer_ips.read().unwrap().get(&pid_clone)
                                     {
                                         swarm_clone.penalize_ip(&ip, 30);
+                                        if swarm_clone.is_ip_banned(&ip) {
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -520,6 +523,15 @@ impl P2pSwarm {
                                 {
                                     let _ = sender.send(pong);
                                 }
+                            }
+                            P2pMessage::Pong(nonce) => {
+                                // Point-to-point keepalive response; deliver locally but DO NOT regossip to swarm
+                                let _ = swarm_clone
+                                    .incoming_msg_sender
+                                    .send((pid_clone.clone(), P2pMessage::Pong(*nonce)));
+                            }
+                            P2pMessage::Handshake { .. } | P2pMessage::HandshakeAck { .. } => {
+                                // Mid-stream duplicate handshake messages must be dropped and never regossiped
                             }
                             _ => {
                                 let _ = swarm_clone

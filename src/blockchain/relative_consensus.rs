@@ -63,10 +63,10 @@ impl RelativeConsensusEngine {
 
         // Collect each unique validator's ordinal position for each miner
         for eval in &unique_evaluations {
-            // Deduplicate ranking items from this validator to prevent ranking inflation
+            // Deduplicate ranking items from this validator and retain only valid candidate miners
             let mut unique_ranking: Vec<AccountId> = Vec::new();
             for miner in &eval.ranking {
-                if !unique_ranking.contains(miner) {
+                if miner_ranks.contains_key(miner) && !unique_ranking.contains(miner) {
                     unique_ranking.push(miner.clone());
                 }
             }
@@ -123,7 +123,7 @@ impl RelativeConsensusEngine {
         // Calculate consensus agreement rate over authentic unique validators
         let mut winner_votes = 0;
         for eval in &unique_evaluations {
-            if let Some(first) = eval.ranking.first() {
+            if let Some(first) = eval.ranking.iter().find(|m| candidate_miners.contains(m)) {
                 if first == &winner {
                     winner_votes += 1;
                 }

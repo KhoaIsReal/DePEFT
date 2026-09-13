@@ -3492,3 +3492,136 @@ fn test_security_unicode_perturbation_vietnamese() {
     let is_robust = CandleValidatorEvaluator::verify_adversarial_robustness(&model, &vietnamese_samples, 40.0).unwrap();
     assert!(is_robust, "Vietnamese unicode samples pass adversarial robustness check");
 }
+
+#[test]
+fn test_security_slashed_validator_cannot_report_whistleblower() {
+    use DePEFT::consensus::{EquivocationEvidence, Vote, VoteType};
+    use DePEFT::crypto::AccountKeypair;
+
+    let mut chain = AppChainState::new();
+    let kp_reporter = AccountKeypair::generate();
+    let kp_target = AccountKeypair::generate();
+
+    // Slashed reporter attempt
+    chain.mint(kp_reporter.account_id(), 10_000);
+    chain.mint(kp_target.account_id(), 50_000);
+
+    // First slash the reporter for bad behavior
+    chain.slash_validator(&kp_reporter.account_id(), "Prior Byzantine misconduct");
+    assert!(chain.is_slashed(&kp_reporter.account_id()));
+
+    // Create valid equivocation evidence against kp_target
+    let vote_a = Vote {
+        vote_type: VoteType::Prevote,
+        height: 10,
+        round: 0,
+        block_hash: Some([0x11; 32]),
+        validator: kp_target.account_id(),
+        signature: kp_target.sign_message(&Vote::sign_bytes(VoteType::Prevote, 10, 0, Some([0x11; 32]))),
+    };
+    let vote_b = Vote {
+        vote_type: VoteType::Prevote,
+        height: 10,
+        round: 0,
+        block_hash: Some([0x22; 32]),
+        validator: kp_target.account_id(),
+        signature: kp_target.sign_message(&Vote::sign_bytes(VoteType::Prevote, 10, 0, Some([0x22; 32]))),
+    };
+    let evidence = EquivocationEvidence {
+        validator: kp_target.account_id(),
+        height: 10,
+        round: 0,
+        vote_type: VoteType::Prevote,
+        vote_a,
+        vote_b,
+    };
+
+    let tx = Transaction::SlashValidator {
+        reporter: kp_reporter.account_id(),
+        nonce: chain.nonce_of(&kp_reporter.account_id()),
+        evidence,
+    };
+
+    let res = chain.apply_transaction(tx, &kp_reporter.account_id());
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("has been slashed and permanently banned"));
+}
+
+#[test]
+fn test_security_alias_self_transfer_rejected() {
+    let mut chain = AppChainState::new();
+    let gateway_alias = AccountId::new("ipfs-storage-gateway");
+    let gateway_canon = AccountId::storage_gateway();
+
+    chain.mint(gateway_canon.clone(), 10_000);
+    assert_eq!(chain.balance_of(&gateway_alias), 10_000);
+
+    let transfer_tx = Transaction::Transfer {
+        from: gateway_alias.clone(),
+        to: gateway_canon.clone(),
+        amount: 500,
+        nonce: chain.nonce_of(&gateway_alias),
+    };
+
+    let res = chain.apply_transaction(transfer_tx, &gateway_alias);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("cannot transfer tokens to oneself"));
+}
+
+#[test]
+fn test_security_relative_consensus_filters_unregistered_miners() {
+    use DePEFT::blockchain::RelativeConsensusEngine;
+    use DePEFT::blockchain::types::ValidatorEvaluation;
+
+    let real_miner_a = AccountId::new("0xminerA");
+    let real_miner_b = AccountId::new("0xminerB");
+    let fake_miner = AccountId::new("0xfakeMiner");
+    let val = AccountId::new("0xvalidator");
+
+    let eval = ValidatorEvaluation {
+        validator_address: val.clone(),
+        ranking: vec![fake_miner.clone(), real_miner_a.clone(), real_miner_b.clone()],
+        loss_scores: vec![(fake_miner, 0.05), (real_miner_a.clone(), 0.10), (real_miner_b.clone(), 0.20)],
+        accuracy_scores: vec![],
+        hardware_info: "TEE".to_string(),
+        attestation_quote: None,
+    };
+
+    let candidate_miners = vec![real_miner_a.clone(), real_miner_b.clone()];
+    let res = RelativeConsensusEngine::aggregate(&[eval], &candidate_miners).unwrap();
+
+    // real_miner_a must win and have top rank despite the validator putting fake_miner ahead of it
+    assert_eq!(res.winner, real_miner_a);
+    assert_eq!(res.consensus_ranking[0], real_miner_a);
+    assert_eq!(res.consensus_ranking[1], real_miner_b);
+    assert_eq!(res.agreement_rate, 1.0);
+}
+
+#[test]
+fn test_security_fedadam_numerical_stability_edge_cases() {
+    use DePEFT::ml::model::{DePEFTModel, OuterOptimizerState};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    let mut rng = StdRng::seed_from_u64(42);
+    let mut model = DePEFTModel::new("test-model", 4, 8, 2, 2, DePEFT::blockchain::PeftType::LoRA, &mut rng);
+    let pkg = model.export_adapters(0);
+
+    let mut outer_state = OuterOptimizerState::default();
+    let packages = vec![(&pkg, 1.0f32)];
+
+    // Test extreme parameters: beta1=1.0, beta2=1.0, eps=0.0
+    let res = model.merge_and_evolve_outer_optimizer(
+        &packages,
+        &mut outer_state,
+        0.01,
+        1.0, // beta1
+        1.0, // beta2
+        0.0, // eps
+        &mut rng,
+    );
+
+    assert!(res.is_ok(), "Outer optimizer must not panic or divide by zero on edge case parameters");
+    assert!(outer_state.step_count == 1);
+}
+

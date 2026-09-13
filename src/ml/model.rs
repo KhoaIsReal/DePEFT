@@ -159,7 +159,9 @@ impl DePEFTModel {
                 }
             }
 
-            total_loss += sample_loss / sample.target.len() as f64;
+            if !sample.target.is_empty() {
+                total_loss += sample_loss / sample.target.len() as f64;
+            }
             if sample_close {
                 correct += 1;
             }
@@ -393,8 +395,9 @@ impl DePEFTModel {
 
         outer_state.step_count += 1;
         let t = outer_state.step_count as f32;
-        let bias_c1 = 1.0 - beta1.powf(t);
-        let bias_c2 = 1.0 - beta2.powf(t);
+        let bias_c1 = (1.0 - beta1.powf(t)).max(1e-8);
+        let bias_c2 = (1.0 - beta2.powf(t)).max(1e-8);
+        let safe_eps = eps.max(1e-8);
 
         // Helper to compute outer Adam/DiLoCo step for a module
         let compute_effective_step = |pseudo_grad: &Matrix,
@@ -414,8 +417,8 @@ impl DePEFTModel {
                 let v_hat = v.data[i] / bias_c2;
 
                 // Conflicting coordinates have high variance v_hat, dampening the effective update.
-                let update = outer_lr * m_hat / (v_hat.sqrt() + eps);
-                step_data.push(update);
+                let update = outer_lr * m_hat / (v_hat.max(0.0).sqrt() + safe_eps);
+                step_data.push(if update.is_finite() { update } else { 0.0 });
             }
             Matrix::new(pseudo_grad.rows, pseudo_grad.cols, step_data)
         };

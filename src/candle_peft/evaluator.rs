@@ -213,8 +213,12 @@ impl CandleValidatorEvaluator {
             scores.push((miner_id.clone(), loss));
         }
 
-        // Sort ascending by loss (lowest loss is top rank)
-        scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort ascending by loss (lowest loss is top rank). Deterministic tie-breaker by AccountId.
+        scores.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.0.cmp(&b.0.0))
+        });
 
         let ranking: Vec<AccountId> = scores.iter().map(|(m, _)| m.clone()).collect();
         let loss_scores: Vec<(AccountId, f64)> =

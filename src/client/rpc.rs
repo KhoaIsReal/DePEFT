@@ -27,11 +27,15 @@ struct GenericResponse {
     message: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct NodeStatus {
     pub block_height: u32,
     pub tasks_count: usize,
     pub storage_objects_count: usize,
+    #[serde(default)]
+    pub connected_peers_count: usize,
+    #[serde(default)]
+    pub circuit_breaker_active: bool,
     pub version: String,
 }
 

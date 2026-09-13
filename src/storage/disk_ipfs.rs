@@ -71,18 +71,17 @@ impl DiskIpfsStorage {
         }
         let file_path = self.root_dir.join(cid);
         // Verify canonical path resides strictly inside root_dir
-        if let Ok(canonical) = file_path.canonicalize() {
-            if let Ok(root_canonical) = self.root_dir.canonicalize() {
-                if !canonical.starts_with(root_canonical) {
-                    return None;
-                }
+        let canonical = file_path.canonicalize().ok()?;
+        if let Ok(root_canonical) = self.root_dir.canonicalize() {
+            if !canonical.starts_with(root_canonical) {
+                return None;
             }
         }
-        let metadata = fs::metadata(&file_path).ok()?;
+        let metadata = fs::metadata(&canonical).ok()?;
         if !metadata.is_file() {
             return None;
         }
-        let bytes = fs::read(file_path).ok()?;
+        let bytes = fs::read(canonical).ok()?;
         if Self::is_depeft_cid(cid) && Self::compute_cid(&bytes) != cid {
             return None;
         }
@@ -100,10 +99,13 @@ impl DiskIpfsStorage {
             .unwrap_or(false)
     }
 
-    /// Count total stored objects.
+    /// Count total stored objects (regular files only).
     pub fn count(&self) -> usize {
         if let Ok(entries) = fs::read_dir(&self.root_dir) {
-            entries.filter_map(Result::ok).count()
+            entries
+                .filter_map(Result::ok)
+                .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+                .count()
         } else {
             0
         }

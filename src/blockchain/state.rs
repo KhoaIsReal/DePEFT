@@ -111,13 +111,22 @@ impl AppChainState {
         }
     }
 
+    /// Resolve an account identifier to its canonical representation (e.g. storage gateway aliases).
+    pub fn canonical_account(account: &AccountId) -> AccountId {
+        if account.0 == "ipfs-storage-gateway" {
+            AccountId::storage_gateway()
+        } else {
+            account.clone()
+        }
+    }
+
     /// Slash and permanently ban a Byzantine or fraudulent validator/account.
     pub fn slash_validator(&mut self, validator: &AccountId, reason: &str) {
+        let canonical = Self::canonical_account(validator);
         self.slashed_validators.insert(validator.clone());
-        if let Some(bal) = self.balances.get_mut(validator) {
-            self.total_burned += *bal;
-            *bal = 0;
-        }
+        self.slashed_validators.insert(canonical.clone());
+        let bal = self.balances.remove(&canonical).unwrap_or(0);
+        self.total_burned += bal;
         eprintln!(
             "[SLASHED] Account {} has been slashed and permanently banned. Reason: {}",
             validator, reason
@@ -126,7 +135,8 @@ impl AppChainState {
 
     /// Check if an account has been slashed.
     pub fn is_slashed(&self, account: &AccountId) -> bool {
-        self.slashed_validators.contains(account)
+        let canonical = Self::canonical_account(account);
+        self.slashed_validators.contains(account) || self.slashed_validators.contains(&canonical)
     }
 
     /// Check and record a proposed bounty payout against the rolling window velocity cap.
@@ -180,23 +190,34 @@ impl AppChainState {
         self.max_payout_velocity_per_window = limit;
     }
 
+    /// Credit native tokens to an account balance.
+    pub fn credit(&mut self, account: &AccountId, amount: u128) {
+        let canonical = Self::canonical_account(account);
+        *self.balances.entry(canonical).or_insert(0) += amount;
+    }
+
+    /// Debit tokens from an account balance with overflow and underflow protection.
+    pub fn debit(&mut self, account: &AccountId, amount: u128) -> Result<()> {
+        let canonical = Self::canonical_account(account);
+        let cur = self.balances.entry(canonical).or_insert(0);
+        ensure!(
+            *cur >= amount,
+            "Insufficient balance: have {}, need {}",
+            *cur,
+            amount
+        );
+        *cur -= amount;
+        Ok(())
+    }
+
     /// Deposit native tokens to an account balance.
     pub fn mint(&mut self, account: AccountId, amount: u128) {
-        let canonical = if account.0 == "ipfs-storage-gateway" {
-            AccountId::storage_gateway()
-        } else {
-            account
-        };
-        *self.balances.entry(canonical).or_insert(0) += amount;
+        self.credit(&account, amount);
     }
 
     /// Get current balance of an account.
     pub fn balance_of(&self, account: &AccountId) -> u128 {
-        let canonical = if account.0 == "ipfs-storage-gateway" {
-            AccountId::storage_gateway()
-        } else {
-            account.clone()
-        };
+        let canonical = Self::canonical_account(account);
         self.balances.get(&canonical).copied().unwrap_or(0)
     }
 
@@ -358,7 +379,7 @@ impl AppChainState {
     pub fn apply_transaction(&mut self, tx: Transaction, sender: &AccountId) -> Result<()> {
         // Banned/Slashed account verification: Reject any transactions from slashed accounts
         ensure!(
-            !self.slashed_validators.contains(sender),
+            !self.is_slashed(sender),
             "Transaction rejected: Sender {} has been slashed and permanently banned from the network",
             sender
         );
@@ -432,16 +453,8 @@ impl AppChainState {
                     "Each target module name must be 1-64 bytes"
                 );
 
-                let client_bal = self.balance_of(&client);
-                ensure!(
-                    client_bal >= bounty_pool,
-                    "Client balance insufficient for bounty escrow"
-                );
-
                 // Deduct from client balance and lock into escrow
-                if let Some(bal) = self.balances.get_mut(&client) {
-                    *bal = bal.saturating_sub(bounty_pool);
-                }
+                self.debit(&client, bounty_pool)?;
                 let task_id = self.next_task_id;
                 self.next_task_id += 1;
 
@@ -731,23 +744,27 @@ impl AppChainState {
                     "SlashValidator rejected: validator cannot report themselves to claim whistleblower bounty"
                 );
                 ensure!(
-                    !self.slashed_validators.contains(&target),
+                    !self.is_slashed(&reporter),
+                    "SlashValidator rejected: reporter is slashed and permanently banned"
+                );
+                ensure!(
+                    !self.is_slashed(&target),
                     "Validator {} is already slashed and banned",
                     target
                 );
 
+                let target_canon = Self::canonical_account(&target);
                 let target_bal = self.balance_of(&target);
                 self.slashed_validators.insert(target.clone());
+                self.slashed_validators.insert(target_canon.clone());
 
                 // Whistleblower reward: 80% burned, 20% whistleblower bounty to reporter
                 if target_bal > 0 {
                     let bounty = (target_bal as f64 * 0.20).round() as u128;
                     let burned = target_bal.saturating_sub(bounty);
-                    if let Some(bal) = self.balances.get_mut(&target) {
-                        *bal = 0;
-                    }
+                    self.balances.remove(&target_canon);
                     self.total_burned += burned;
-                    *self.balances.entry(reporter).or_insert(0) += bounty;
+                    self.credit(&reporter, bounty);
                 }
             }
 
@@ -768,28 +785,25 @@ impl AppChainState {
                     "Transfer rejected: Emergency Safe Mode is ACTIVE! Circuit breaker triggered at block #{:?}",
                     self.circuit_breaker_triggered_at_block
                 );
+                let from_canon = Self::canonical_account(&from);
+                let to_canon = Self::canonical_account(&to);
                 ensure!(
-                    from != to,
+                    from_canon != to_canon,
                     "Transfer rejected: cannot transfer tokens to oneself"
                 );
                 ensure!(
-                    !self.slashed_validators.contains(&to),
+                    !self.is_slashed(&from),
+                    "Transfer rejected: Sender {} has been slashed and banned",
+                    from
+                );
+                ensure!(
+                    !self.is_slashed(&to),
                     "Transfer rejected: Recipient {} has been slashed and banned",
                     to
                 );
                 ensure!(amount > 0, "Transfer amount must be greater than 0");
-                let sender_bal = self.balance_of(&from);
-                ensure!(
-                    sender_bal >= amount,
-                    "Insufficient balance for transfer: available {}, required {}",
-                    sender_bal,
-                    amount
-                );
-
-                if let Some(bal) = self.balances.get_mut(&from) {
-                    *bal = bal.saturating_sub(amount);
-                }
-                *self.balances.entry(to).or_insert(0) += amount;
+                self.debit(&from, amount)?;
+                self.credit(&to, amount);
             }
         }
 
@@ -943,7 +957,7 @@ impl AppChainState {
             // 1. Distribute Storage & Network Node Rewards
             if node_pool > 0 {
                 let storage_node = AccountId::storage_gateway();
-                *self.balances.entry(storage_node.clone()).or_insert(0) += node_pool;
+                self.credit(&storage_node, node_pool);
                 node_rewards.push((storage_node, node_pool));
             }
 
@@ -958,10 +972,7 @@ impl AppChainState {
                         per_val_reward.min(remaining_val_pool)
                     };
                     remaining_val_pool = remaining_val_pool.saturating_sub(amount);
-                    *self
-                        .balances
-                        .entry(val_eval.validator_address.clone())
-                        .or_insert(0) += amount;
+                    self.credit(&val_eval.validator_address, amount);
                     validator_rewards.push((val_eval.validator_address.clone(), amount));
                 }
             }
@@ -970,7 +981,7 @@ impl AppChainState {
             if miner_pool > 0 {
                 match task_reward_dist {
                     crate::blockchain::types::RewardDistribution::WinnerTakesAll => {
-                        *self.balances.entry(winner.clone()).or_insert(0) += miner_pool;
+                        self.credit(&winner, miner_pool);
                         reward_distributions.push((winner.clone(), miner_pool));
                     }
                     crate::blockchain::types::RewardDistribution::TopKDecay {
@@ -1004,7 +1015,7 @@ impl AppChainState {
                             };
                             remaining_to_distribute =
                                 remaining_to_distribute.saturating_sub(amount);
-                            *self.balances.entry(miner_id.clone()).or_insert(0) += amount;
+                            self.credit(miner_id, amount);
                             reward_distributions.push((miner_id.clone(), amount));
                         }
                     }
@@ -1028,11 +1039,11 @@ impl AppChainState {
                                 };
                                 remaining_to_distribute =
                                     remaining_to_distribute.saturating_sub(amount);
-                                *self.balances.entry(miner_id.clone()).or_insert(0) += amount;
+                                self.credit(miner_id, amount);
                                 reward_distributions.push((miner_id.clone(), amount));
                             }
                         } else {
-                            *self.balances.entry(winner.clone()).or_insert(0) += miner_pool;
+                            self.credit(&winner, miner_pool);
                             reward_distributions.push((winner.clone(), miner_pool));
                         }
                     }
