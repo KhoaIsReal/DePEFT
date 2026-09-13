@@ -73,7 +73,7 @@ Instead of full model retraining (which costs millions of dollars), DePEFT uses 
 2. **Commit-Reveal Tournament**:
    - **Commit Phase**: Miners download the base weights, train a QLoRA adapter locally, and post a cryptographic hash `SHA256(adapter || salt)`. No one can copy their work before deadline.
    - **Reveal Phase**: Miners upload their `.safetensors` adapter file to IPFS / Content-Addressable Storage (CAS) and reveal the salt.
-3. **TEE Private Evaluation**: Validators load the candidate adapters into secure hardware enclaves (Intel SGX or AMD SEV-SNP) and score them on a **private test set** that no miner can see.
+3. **TEE Private Evaluation**: Validators load the candidate adapters into secure hardware enclaves (Intel SGX, Intel TDX, or AMD SEV-SNP) and score them on a **private test set** that no miner can see.
 4. **Borda Count Consensus**: Validators rank miners from best to worst. Because different GPUs produce minor floating-point precision drifts (BF16 vs FP16), the App-Chain aggregates **ordinal rankings** (Borda Count) rather than raw loss floats.
 5. **ReLoRA Fusion**: The winning adapter is permanently fused into the base model weights, the winner receives the bounty from escrow, and the next round begins on the newly evolved model ($W_1, W_2, ...$).
 
@@ -86,7 +86,7 @@ Instead of full model retraining (which costs millions of dollars), DePEFT uses 
 | **Node Operator** | Runs the blockchain daemon, stores state in SQLite, relays P2P transactions, hosts Web Dashboard | 2 vCPU, 4GB RAM | `depeft node start` |
 | **Client / Task Creator** | Funds tasks with bounties, provides datasets & target base model | Any machine | `depeft task create` |
 | **Miner** | Downloads base models, trains low-rank adapters, earns bounties | GPU (CUDA/ROCm) or CPU | `depeft miner run` |
-| **TEE Validator** | Evaluates candidate adapters inside hardware enclave, signs attestation quotes | Intel SGX / AMD SEV / AWS Nitro (or Sim mode) | `depeft validator run` |
+| **TEE Validator** | Evaluates candidate adapters inside hardware enclave, signs attestation quotes | Intel SGX / Intel TDX / AMD SEV / AWS Nitro (or Sim mode) | `depeft validator run` |
 
 ---
 
@@ -332,9 +332,13 @@ cargo run -- bft-demo --validators 4 --blocks 5
 ```
 
 ### 4. Hardware TEE Remote Attestation Quote Demo
-Generates a real hardware attestation quote inside Intel SGX DCAP / AMD SEV-SNP and verifies it against the on-chain state machine:
+Generates a real hardware attestation quote inside Intel SGX DCAP / Intel TDX / AMD SEV-SNP and verifies it against the on-chain state machine:
 ```bash
+# Intel SGX (Default)
 cargo run -- tee-quote
+
+# Intel TDX (Trust Domain Extensions)
+cargo run -- tee-quote --tee tdx
 ```
 
 ### 5. PEFT Quantization Compression Benchmark

@@ -940,6 +940,83 @@ fn test_hardware_tee_remote_attestation_and_on_chain_verification() {
     );
 }
 
+#[test]
+fn test_intel_tdx_remote_attestation_and_on_chain_verification() {
+    use DePEFT::blockchain::types::AccountId;
+    use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeType};
+
+    // Verify TeeType display and string parsing
+    assert_eq!(TeeType::IntelTdx.to_string(), "Intel TDX");
+    assert_eq!("tdx".parse::<TeeType>().unwrap(), TeeType::IntelTdx);
+    assert_eq!("intel-tdx".parse::<TeeType>().unwrap(), TeeType::IntelTdx);
+    assert_eq!("intel_tdx".parse::<TeeType>().unwrap(), TeeType::IntelTdx);
+
+    let m1 = AccountId::new("miner-alpha-tdx");
+    let m2 = AccountId::new("miner-beta-tdx");
+    let ranking = vec![m1.clone(), m2.clone()];
+
+    // 1. Official Intel TDX Validator Enclave generates quote
+    let tdx_enclave = HardwareTeeEnclave::official(TeeType::IntelTdx);
+    assert_eq!(tdx_enclave.tee_type, TeeType::IntelTdx);
+
+    // Check MRTD and RTMR0 measurement format
+    let mrtd = tdx_enclave.measurement.mrtd_hex();
+    let rtmr0 = tdx_enclave.measurement.rtmr0_hex();
+    assert!(mrtd.starts_with("0x") && mrtd.len() == 66);
+    assert!(rtmr0.starts_with("0x") && rtmr0.len() == 66);
+    assert_eq!(mrtd, tdx_enclave.measurement.mrenclave_hex());
+    assert_eq!(rtmr0, tdx_enclave.measurement.mrsigner_hex());
+
+    let task_id = 101;
+    let round = 1;
+    let quote = tdx_enclave
+        .generate_quote(task_id, round, &ranking)
+        .expect("Intel TDX quote generation must succeed");
+
+    assert_eq!(quote.tee_type, TeeType::IntelTdx);
+    assert!(quote.verify_report_data(task_id, round, &ranking));
+
+    // 2. Production verifier fails closed until trust root is registered
+    let mut verifier = OnChainTeeVerifier::default();
+    assert!(
+        verifier.verify_quote(&quote, task_id, round, &ranking).is_err(),
+        "TDX quote must fail closed without provisioned trust root"
+    );
+
+    // 3. Register TDX MRTD and platform public key as root of trust
+    verifier.trust_quote_source(
+        tdx_enclave.measurement.mrenclave,
+        tdx_enclave.platform_public_key(),
+    );
+    assert!(
+        verifier.verify_quote(&quote, task_id, round, &ranking).is_ok(),
+        "Intel TDX quote must pass on-chain verification once MRTD is registered"
+    );
+
+    // 4. Tampered ranking must be rejected
+    let tampered_ranking = vec![m2.clone(), m1.clone()];
+    assert!(
+        verifier.verify_quote(&quote, task_id, round, &tampered_ranking).is_err(),
+        "Tampered ranking must fail report_data check on TDX"
+    );
+
+    // 5. Rogue TDX enclave with unauthorized MRTD must be rejected
+    let rogue_tdx = HardwareTeeEnclave::new(TeeType::IntelTdx, "malicious-unapproved-tdx-vm");
+    let rogue_quote = rogue_tdx.generate_quote(task_id, round, &ranking).unwrap();
+    assert!(
+        verifier.verify_quote(&rogue_quote, task_id, round, &ranking).is_err(),
+        "Unauthorized MRTD must be rejected on-chain"
+    );
+
+    // 6. Forged signature must fail
+    let mut forged_quote = quote;
+    forged_quote.quote_signature[0] ^= 0xaa;
+    assert!(
+        verifier.verify_quote(&forged_quote, task_id, round, &ranking).is_err(),
+        "Forged TDX signature must fail cryptographic check"
+    );
+}
+
 #[tokio::test]
 async fn test_hybrid_storage_and_ipfs_cas_caching() {
     use DePEFT::storage::{DiskIpfsStorage, HybridStorageManager, IpfsKuboClient};

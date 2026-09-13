@@ -73,7 +73,7 @@ Thay vì huấn luyện lại toàn bộ mô hình (tốn hàng triệu USD), De
 2. **Giải đấu 2 Pha Commit-Reveal**:
    - **Pha Commit**: Các miner tải mô hình gốc về, huấn luyện thêm trên GPU/CPU, sau đó chỉ nộp lên blockchain mã băm ẩn `SHA256(adapter || salt)`. Việc này đảm bảo các miner khác không thể nhìn trộm hay copy trọng số của nhau trước giờ chót.
    - **Pha Reveal**: Khi chuyển pha, miner tải file trọng số `.safetensors` lên kho lưu trữ và công khai chuỗi salt để chuỗi xác thực.
-3. **Chấm điểm Kín trong Phần cứng TEE**: Validator đưa các adapter của miner vào môi trường phần cứng cách ly (Intel SGX hoặc AMD SEV-SNP) và chấm điểm trên **tập kiểm thử kín (Private Test Set)** mà miner không thể tiếp cận để học vẹt.
+3. **Chấm điểm Kín trong Phần cứng TEE**: Validator đưa các adapter của miner vào môi trường phần cứng cách ly (Intel SGX, Intel TDX, hoặc AMD SEV-SNP) và chấm điểm trên **tập kiểm thử kín (Private Test Set)** mà miner không thể tiếp cận để học vẹt.
 4. **Đồng thuận Thứ hạng Borda Count**: Các dòng card (NVIDIA, AMD, CPU) khi chạy số thực thường có sai lệch thập phân nhỏ (floating-point drift). DePEFT giải quyết việc này bằng cách cho validator xếp hạng thứ bậc (1, 2, 3...) thay vì so sánh trực tiếp số điểm thập phân.
 5. **Tiến hóa Trọng số ReLoRA**: Adapter chiến thắng được hòa nhập vĩnh viễn vào mô hình gốc ($W_1 = W_0 + \Delta W$). Miner thắng cuộc nhận tiền thưởng, và vòng thi đấu tiếp theo sẽ diễn ra trên nền mô hình mới đã thông minh hơn.
 
@@ -86,7 +86,7 @@ Thay vì huấn luyện lại toàn bộ mô hình (tốn hàng triệu USD), De
 | **Node Operator** | Vận hành node blockchain, lưu trữ dữ liệu, chuyển tiếp giao dịch P2P, mở Web Explorer | 2 vCPU, 4GB RAM | `depeft node start` |
 | **Client (Khách hàng)** | Nạp tiền thưởng, đăng ký mô hình và dữ liệu huấn luyện | Máy tính thông thường | `depeft task create` |
 | **Miner (Thợ đào AI)** | Tải mô hình, huấn luyện ma trận adapter, nhận thưởng token | GPU (CUDA/ROCm) hoặc CPU | `depeft miner run` |
-| **Validator (Kiểm định)** | Tải adapter, kiểm tra trong vùng bảo mật TEE, ký chứng thực phần cứng | Intel SGX / AMD SEV (hoặc cờ Sim) | `depeft validator run` |
+| **Validator (Kiểm định)** | Tải adapter, kiểm tra trong vùng bảo mật TEE, ký chứng thực phần cứng | Intel SGX / Intel TDX / AMD SEV (hoặc cờ Sim) | `depeft validator run` |
 
 ---
 
@@ -329,9 +329,13 @@ cargo run -- bft-demo --validators 4 --blocks 5
 ```
 
 ### 4. Kiểm tra Chữ ký Chứng thực Phần cứng TEE
-Tạo quote chứng thực bên trong Intel SGX / AMD SEV và kiểm tra việc xác thực tính hợp lệ trên chuỗi:
+Tạo quote chứng thực bên trong Intel SGX / Intel TDX / AMD SEV và kiểm tra việc xác thực tính hợp lệ trên chuỗi:
 ```bash
+# Mặc định (Intel SGX)
 cargo run -- tee-quote
+
+# Intel TDX (Trust Domain Extensions)
+cargo run -- tee-quote --tee tdx
 ```
 
 ### 5. Đo lường Hiệu Quả Lượng Tử Hóa (Benchmark)

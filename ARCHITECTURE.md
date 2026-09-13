@@ -23,7 +23,7 @@ graph TD
     end
 
     subgraph Layer3["Layer 3: Validator Off-Chain Workers"]
-        TeeEnclave["Hardware TEE Sandbox (Intel SGX / AMD SEV)"]
+        TeeEnclave["Hardware TEE Sandbox (Intel SGX / TDX / AMD SEV)"]
         Evaluator["CandleValidatorEvaluator (Cross-Entropy & PPL)"]
         VectorDB["Embedded Vector DB (Plagiarism Detection)"]
     end
@@ -93,7 +93,7 @@ The adapter matrices are subsequently re-initialized ($A \leftarrow \mathcal{N}(
 
 ## 3️⃣ Layer 3: Validator Off-Chain Workers & TEE Remote Attestation
 
-### 3.1 Hardware TEE Security Model (Intel SGX / AMD SEV-SNP)
+### 3.1 Hardware TEE Security Model (Intel SGX / Intel TDX / AMD SEV-SNP)
 Validators evaluate candidate models inside protected hardware enclaves against private validation datasets. To ensure the integrity of evaluations, enclaves produce cryptographic **Remote Attestation Quotes**:
 
 ```text
@@ -101,7 +101,7 @@ report_data = SHA512(task_id || round || SHA256(ranking))
 ```
 
 The App-Chain on-chain verifier enforces:
-1. `MRENCLAVE` matches an approved measurement registered in the on-chain governance whitelist.
+1. `MRENCLAVE` (or `MRTD` for Intel TDX) matches an approved measurement registered in the on-chain governance whitelist.
 2. `report_data` cryptographically matches the exact task, round, and submitted ranking.
 3. The platform Quoting Enclave (QE) signature verifies against the hardware root key.
 

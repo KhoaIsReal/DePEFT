@@ -93,6 +93,31 @@ impl CandleValidatorEvaluator {
         task_id: u64,
         round: usize,
     ) -> Result<ValidatorEvaluation> {
+        Self::evaluate_miners_with_tee(
+            base_model,
+            test_samples,
+            candidate_adapters,
+            validator_address,
+            hardware_info,
+            float_drift,
+            task_id,
+            round,
+            crate::tee::TeeType::IntelSgxDcap,
+        )
+    }
+
+    /// Evaluate candidate miners using a specific TEE hardware type (e.g. Intel SGX, Intel TDX, AMD SEV-SNP).
+    pub fn evaluate_miners_with_tee(
+        base_model: &CandleTransformerLM,
+        test_samples: &[String],
+        candidate_adapters: &[(AccountId, Vec<u8>)],
+        validator_address: AccountId,
+        hardware_info: &str,
+        float_drift: f32,
+        task_id: u64,
+        round: usize,
+        tee_type: crate::tee::TeeType,
+    ) -> Result<ValidatorEvaluation> {
         let mut scores = Vec::new();
 
         for (miner_id, safetensors_bytes) in candidate_adapters {
@@ -144,7 +169,7 @@ impl CandleValidatorEvaluator {
             .map(|(m, l)| (m.clone(), (1.0 / (1.0 + (*l as f64).max(0.0)))))
             .collect();
 
-        let enclave = crate::tee::HardwareTeeEnclave::official(crate::tee::TeeType::IntelSgxDcap);
+        let enclave = crate::tee::HardwareTeeEnclave::official(tee_type);
         let quote = enclave.generate_quote(task_id, round, &ranking).ok();
 
         Ok(ValidatorEvaluation {

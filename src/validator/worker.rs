@@ -28,7 +28,25 @@ impl ValidatorNode {
         tee_sandbox: TeeSandbox,
         vector_db: Option<EmbeddedVectorDb>,
     ) -> Self {
-        let enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
+        Self::with_tee(
+            account_id,
+            hardware_info,
+            hardware_drift,
+            tee_sandbox,
+            vector_db,
+            TeeType::IntelSgxDcap,
+        )
+    }
+
+    pub fn with_tee(
+        account_id: impl Into<String>,
+        hardware_info: impl Into<String>,
+        hardware_drift: f32,
+        tee_sandbox: TeeSandbox,
+        vector_db: Option<EmbeddedVectorDb>,
+        tee_type: TeeType,
+    ) -> Self {
+        let enclave = HardwareTeeEnclave::official(tee_type);
         Self {
             account_id: AccountId::new(account_id),
             hardware_info: hardware_info.into(),

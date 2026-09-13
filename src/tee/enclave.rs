@@ -21,12 +21,18 @@ impl HardwareTeeEnclave {
 
         // Deterministic measurement based on enclave code hash / name
         let mut mrenclave_hasher = Sha256::new();
-        mrenclave_hasher.update(b"depeft_tee_validator_evaluator_v1.0.0");
+        match tee_type {
+            TeeType::IntelTdx => mrenclave_hasher.update(b"depeft_intel_tdx_mrtd_evaluator_v1.0.0"),
+            _ => mrenclave_hasher.update(b"depeft_tee_validator_evaluator_v1.0.0"),
+        }
         mrenclave_hasher.update(name.as_bytes());
         let mrenclave: [u8; 32] = mrenclave_hasher.finalize().into();
 
         let mut mrsigner_hasher = Sha256::new();
-        mrsigner_hasher.update(b"depeft_foundation_enclave_authority_root_key");
+        match tee_type {
+            TeeType::IntelTdx => mrsigner_hasher.update(b"depeft_intel_tdx_rtmr0_authority_root_key"),
+            _ => mrsigner_hasher.update(b"depeft_foundation_enclave_authority_root_key"),
+        }
         let mrsigner: [u8; 32] = mrsigner_hasher.finalize().into();
 
         let measurement = EnclaveMeasurement {

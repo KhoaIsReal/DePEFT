@@ -134,8 +134,12 @@ enum Commands {
         blocks: usize,
     },
 
-    /// Generate and verify a Hardware TEE Attestation Quote (Intel SGX / AMD SEV)
-    TeeQuote,
+    /// Generate and verify a Hardware TEE Attestation Quote (Intel SGX / Intel TDX / AMD SEV)
+    TeeQuote {
+        /// Hardware TEE platform: sgx, tdx, sev, nitro (default: sgx)
+        #[arg(long, default_value = "sgx")]
+        tee: String,
+    },
 
     /// Benchmark PEFT quantization algorithms (NF4 vs INT4 vs FP32)
     Benchmark,
@@ -350,6 +354,10 @@ enum ValidatorCommands {
         /// Hardware profile description
         #[arg(long, default_value = "Auto-Detect")]
         hardware: String,
+
+        /// Hardware TEE platform: sgx, tdx, sev, nitro (default: sgx)
+        #[arg(long, default_value = "sgx")]
+        tee: String,
 
         /// Preferred device target: auto, cuda, rocm, wgpu, cpu
         #[arg(long, default_value = "auto")]
@@ -1165,13 +1173,18 @@ async fn main() -> anyhow::Result<()> {
                         sgx_enclave.measurement.mrenclave,
                         sgx_enclave.platform_public_key(),
                     );
+                    let tdx_enclave = HardwareTeeEnclave::official(TeeType::IntelTdx);
+                    loaded_state.tee_verifier.trust_quote_source(
+                        tdx_enclave.measurement.mrenclave,
+                        tdx_enclave.platform_public_key(),
+                    );
                     let sev_enclave = HardwareTeeEnclave::official(TeeType::AmdSevSnp);
                     loaded_state.tee_verifier.trust_quote_source(
                         sev_enclave.measurement.mrenclave,
                         sev_enclave.platform_public_key(),
                     );
                     println!(
-                        "[*] Testnet TEE Simulator Root of Trust enabled (Intel SGX + AMD SEV)"
+                        "[*] Testnet TEE Simulator Root of Trust enabled (Intel SGX + TDX + AMD SEV)"
                     );
                 }
 
@@ -1629,6 +1642,7 @@ async fn main() -> anyhow::Result<()> {
                 secret_key,
                 task_id,
                 hardware,
+                tee,
                 device,
             } => {
                 use DePEFT::candle_peft::DeviceManager;
@@ -1649,6 +1663,9 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     hardware
                 };
+
+                let parsed_tee: DePEFT::tee::TeeType =
+                    tee.parse().unwrap_or(DePEFT::tee::TeeType::IntelSgxDcap);
 
                 let keypair = match secret_key {
                     Some(sk) => {
@@ -1683,7 +1700,10 @@ async fn main() -> anyhow::Result<()> {
 
                 println!("    ├─ Connected to Node: {}", node_url);
                 println!("    ├─ Hardware Profile: {}", detected_hw.bright_yellow());
-                println!("    └─ TEE Enclave: Initialized (Private Test Set Protected)");
+                println!(
+                    "    └─ TEE Platform:     {} (Private Test Set Protected)",
+                    parsed_tee.to_string().bright_green()
+                );
 
                 let mut rng = StdRng::seed_from_u64(999);
                 let private_test_set = Dataset::generate_synthetic_task(30, 8, 4, 1.5, &mut rng);
@@ -1754,7 +1774,7 @@ async fn main() -> anyhow::Result<()> {
                 let accuracy_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, _, a)| (m.clone(), *a)).collect();
 
                 let enclave =
-                    DePEFT::tee::HardwareTeeEnclave::official(DePEFT::tee::TeeType::IntelSgxDcap);
+                    DePEFT::tee::HardwareTeeEnclave::official(parsed_tee);
                 let quote = enclave.generate_quote(task_id, 1, &actual_ranking)?;
 
                 let eval = ValidatorEvaluation {
@@ -1793,8 +1813,8 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::BftDemo { validators, blocks }) => {
             run_bft_demo(validators, blocks);
         }
-        Some(Commands::TeeQuote) => {
-            run_tee_quote_demo();
+        Some(Commands::TeeQuote { tee }) => {
+            run_tee_quote_demo(&tee);
         }
         Some(Commands::Demo {
             rounds,
@@ -1976,7 +1996,8 @@ fn run_bft_demo(num_validators: usize, num_blocks: usize) {
     println!("Consensus Integrity:  100% (Zero Forks, Strict 2/3+ BFT Finality Guarantee)\n");
 }
 
-fn run_tee_quote_demo() {
+fn run_tee_quote_demo(tee_str: &str) {
+    use DePEFT::blockchain::types::AccountId;
     use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeType};
 
     println!(
@@ -1995,23 +2016,52 @@ fn run_tee_quote_demo() {
         "================================================================================"
             .bright_blue()
     );
-    println!("Hardware Enclave: Intel SGX (DCAP) / AMD SEV-SNP");
-    println!("Security Model:   MRENCLAVE / MRSIGNER Code Attestation & Cryptographic Quote\n");
 
-    let enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
+    let tee_type: TeeType = tee_str.parse().unwrap_or(TeeType::IntelSgxDcap);
+    match tee_type {
+        TeeType::IntelTdx => {
+            println!("Hardware Enclave: Intel TDX (Trust Domain Extensions)");
+            println!("Security Model:   MRTD / RTMR0 Confidential VM Attestation & Quote\n");
+        }
+        TeeType::IntelSgxDcap => {
+            println!("Hardware Enclave: Intel SGX (DCAP)");
+            println!("Security Model:   MRENCLAVE / MRSIGNER Code Attestation & Quote\n");
+        }
+        TeeType::AmdSevSnp => {
+            println!("Hardware Enclave: AMD SEV-SNP");
+            println!("Security Model:   Launch Digest / VCEK Platform Attestation & Quote\n");
+        }
+        TeeType::AwsNitroEnclave => {
+            println!("Hardware Enclave: AWS Nitro Enclave");
+            println!("Security Model:   PCR0 / PCR4 Cryptographic Enclave Attestation & Quote\n");
+        }
+    }
+
+    let enclave = HardwareTeeEnclave::official(tee_type);
     println!("[*] Validator TEE Enclave Initialized:");
     println!(
         "    ├─ Enclave Type: {}",
         enclave.tee_type.to_string().bright_green()
     );
-    println!(
-        "    ├─ MRENCLAVE:    {}",
-        enclave.measurement.mrenclave_hex().bright_yellow()
-    );
-    println!(
-        "    ├─ MRSIGNER:     {}",
-        enclave.measurement.mrsigner_hex().bright_cyan()
-    );
+    if tee_type == TeeType::IntelTdx {
+        println!(
+            "    ├─ MRTD:         {}",
+            enclave.measurement.mrtd_hex().bright_yellow()
+        );
+        println!(
+            "    ├─ RTMR0:        {}",
+            enclave.measurement.rtmr0_hex().bright_cyan()
+        );
+    } else {
+        println!(
+            "    ├─ MRENCLAVE:    {}",
+            enclave.measurement.mrenclave_hex().bright_yellow()
+        );
+        println!(
+            "    ├─ MRSIGNER:     {}",
+            enclave.measurement.mrsigner_hex().bright_cyan()
+        );
+    }
     println!("    ├─ ISV Prod ID:  {}", enclave.measurement.isv_prod_id);
     println!("    └─ ISV SVN:      {}", enclave.measurement.isv_svn);
 

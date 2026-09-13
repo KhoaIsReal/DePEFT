@@ -57,7 +57,7 @@ Furthermore, **validators must stake collateral** to participate, locking substa
 
 ### Q5: How do you stop malicious validators from favoring their own miner friends?
 **A:** Multiple independent cryptographic and algorithmic safeguards exist:
-1. **Hardware TEE Remote Attestation:** Evaluations run inside an isolated enclave (Intel SGX / AMD SEV-SNP). The processor's Quoting Enclave cryptographically signs an `AttestationQuote` binding the MRENCLAVE measurement and evaluation ranking hash (`report_data`).
+1. **Hardware TEE Remote Attestation:** Evaluations run inside an isolated enclave or confidential VM (Intel SGX / Intel TDX / AMD SEV-SNP). The processor's Quoting Enclave cryptographically signs an `AttestationQuote` binding the MRENCLAVE / MRTD measurement and evaluation ranking hash (`report_data`).
 2. **Relative Consensus (Borda Count Aggregation):** Rather than trusting raw floating-point loss (which varies across GPU architectures), the chain aggregates ordinal rankings across independent validators.
 3. **Byzantine Slashing Engine:** Any validator committing equivocation (signing contradictory votes or quotes at the same height) is slashed on-chain immediately.
 

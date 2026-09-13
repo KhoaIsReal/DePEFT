@@ -57,7 +57,7 @@ Ngoài ra, **các Validator bắt buộc phải stake (khóa) token** làm tài 
 
 ### Q5: Ngăn chặn Validator thông đồng buff điểm cho thợ đào "sân sau" bằng cách nào?
 **A:** Hệ thống được bảo vệ bằng nhiều lớp phòng thủ mật mã độc lập:
-1. **Xác thực Phần cứng TEE Từ xa (Remote Attestation):** Quá trình đánh giá chạy bên trong "hộp đen phần cứng" (Intel SGX / AMD SEV-SNP). Chip xử lý ký số một `AttestationQuote` ràng buộc trực tiếp mã đo đạc MRENCLAVE với bảng xếp hạng (`report_data`).
+1. **Xác thực Phần cứng TEE Từ xa (Remote Attestation):** Quá trình đánh giá chạy bên trong "hộp đen phần cứng" hoặc máy ảo bí mật (Intel SGX / Intel TDX / AMD SEV-SNP). Chip xử lý ký số một `AttestationQuote` ràng buộc trực tiếp mã đo đạc MRENCLAVE / MRTD với bảng xếp hạng (`report_data`).
 2. **Đồng thuận Thứ hạng Tương đối (Borda Count):** Thay vì tin vào điểm loss số thực (vốn có sai số trôi dạt giữa các dòng GPU), chuỗi khối tổng hợp thứ tự xếp hạng tương đối của nhiều validator độc lập.
 3. **Cơ chế Phạt Chém Stake (Slashing Engine):** Bất kỳ validator nào ký hai phiếu bầu xung đột hoặc gian lận chữ ký sẽ bị chém cọc và tước quyền biểu quyết ngay lập tức.
 

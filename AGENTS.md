@@ -28,7 +28,7 @@ graph TD
 |---|---|---|---|
 | **Client Agent** | Creates tasks, specifies base model & target modules, deposits bounty escrow | CPU / Lightweight | Signs `CreateTask` via Ed25519 |
 | **Miner Agent** | Downloads base model, runs QLoRA autograd, commits/reveals adapters | GPU (CUDA/ROCm) / High-perf CPU | Signs `CommitAdapter` & `RevealAdapter` |
-| **Validator Agent** | Runs evaluation in hardware TEE sandbox, benchmarks candidate models, ranks miners | Intel SGX / AMD SEV-SNP / AWS Nitro | Generates `AttestationQuote` & signs `SubmitEvaluation` |
+| **Validator Agent** | Runs evaluation in hardware TEE sandbox, benchmarks candidate models, ranks miners | Intel SGX / Intel TDX / AMD SEV-SNP / AWS Nitro | Generates `AttestationQuote` & signs `SubmitEvaluation` |
 | **Consensus Validator** | Proposes blocks, votes in 2-phase BFT commit, verifies TEE quotes | High-availability Node | Signs `PREVOTE` & `PRECOMMIT` |
 | **Storage Gateway** | Pins datasets and `.safetensors` model weights to global IPFS network | IPFS Kubo Daemon / Filecoin | Resolves Content Identifiers (CIDs) |
 

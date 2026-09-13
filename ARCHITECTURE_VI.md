@@ -23,7 +23,7 @@ graph TD
     end
 
     subgraph Layer3["Tầng 3: Bộ phận Đánh giá & TEE"]
-        TeeEnclave["Môi trường bảo mật TEE phần cứng (Intel SGX / AMD SEV)"]
+        TeeEnclave["Môi trường bảo mật TEE phần cứng (Intel SGX / TDX / AMD SEV)"]
         Evaluator["Đo lường điểm loss và perplexity"]
         VectorDB["Cơ sở dữ liệu Vector chống đạo văn"]
     end
@@ -95,15 +95,15 @@ Sau đó, hai ma trận $A$ và $B$ được tạo mới để tiếp tục vòn
 
 ## 3. Tầng 3: Đánh giá Mô hình & Bảo mật TEE
 
-### 3.1 Môi trường Bảo mật Phần cứng TEE (Intel SGX / AMD SEV)
-Validator chạy việc kiểm tra mô hình bên trong một vùng an toàn của chip phần cứng (TEE Enclave) cùng tập dữ liệu bí mật. Sau khi chấm điểm, chip sẽ tạo một chứng chỉ mật mã:
+### 3.1 Môi trường Bảo mật Phần cứng TEE (Intel SGX / Intel TDX / AMD SEV)
+Validator chạy việc kiểm tra mô hình bên trong một vùng an toàn của chip phần cứng (TEE Enclave hoặc Confidential VM như Intel TDX) cùng tập dữ liệu bí mật. Sau khi chấm điểm, chip sẽ tạo một chứng chỉ mật mã:
 
 ```text
 report_data = SHA512(task_id || round || SHA256(ranking))
 ```
 
 Hệ thống trên chuỗi sẽ kiểm tra:
-1. Giá trị `MRENCLAVE` có nằm trong danh sách phần mềm an toàn đã duyệt hay không.
+1. Giá trị `MRENCLAVE` (hoặc `MRTD` với Intel TDX) có nằm trong danh sách phần mềm an toàn đã duyệt hay không.
 2. Mã `report_data` có khớp đúng với task, vòng đấu và bảng xếp hạng đã nộp hay không.
 3. Chữ ký phần cứng của chip có hợp lệ hay không.
 

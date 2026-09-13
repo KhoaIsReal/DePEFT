@@ -5,28 +5,54 @@ use std::fmt;
 
 /// Supported Trusted Execution Environment (TEE) hardware platforms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
 pub enum TeeType {
-    IntelSgxDcap,
-    AmdSevSnp,
-    AwsNitroEnclave,
+    IntelSgxDcap = 0,
+    IntelTdx = 1,
+    AmdSevSnp = 2,
+    AwsNitroEnclave = 3,
 }
 
 impl fmt::Display for TeeType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TeeType::IntelSgxDcap => write!(f, "Intel SGX (DCAP)"),
+            TeeType::IntelTdx => write!(f, "Intel TDX"),
             TeeType::AmdSevSnp => write!(f, "AMD SEV-SNP"),
             TeeType::AwsNitroEnclave => write!(f, "AWS Nitro Enclave"),
         }
     }
 }
 
-/// Hardware enclave code and author measurements (e.g. MRENCLAVE / MRSIGNER).
+impl std::str::FromStr for TeeType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().replace('-', "_").as_str() {
+            "sgx" | "intelsgx" | "intelsgxdcap" | "intel_sgx" | "intel_sgx_dcap" => {
+                Ok(TeeType::IntelSgxDcap)
+            }
+            "tdx" | "inteltdx" | "intel_tdx" => Ok(TeeType::IntelTdx),
+            "sev" | "amdsev" | "amdsevsnp" | "amd_sev" | "amd_sev_snp" => {
+                Ok(TeeType::AmdSevSnp)
+            }
+            "nitro" | "awsnitro" | "awsnitroenclave" | "aws_nitro" | "aws_nitro_enclave" => {
+                Ok(TeeType::AwsNitroEnclave)
+            }
+            _ => Err(format!(
+                "Unknown TEE type: '{}'. Supported types: sgx, tdx, sev, nitro",
+                s
+            )),
+        }
+    }
+}
+
+/// Hardware enclave code and author measurements (e.g. MRENCLAVE / MRSIGNER, or MRTD / RTMR for Intel TDX).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnclaveMeasurement {
-    /// SHA-256 hash of the enclave memory layout and code at initialization
+    /// SHA-256 hash of the enclave memory layout and code at initialization (MRTD for TDX)
     pub mrenclave: [u8; 32],
-    /// SHA-256 hash of the enclave author release signing key
+    /// SHA-256 hash of the enclave author release signing key (RTMR0 for TDX)
     pub mrsigner: [u8; 32],
     pub isv_prod_id: u16,
     pub isv_svn: u16,
@@ -39,6 +65,16 @@ impl EnclaveMeasurement {
 
     pub fn mrsigner_hex(&self) -> String {
         format!("0x{}", hex::encode(self.mrsigner))
+    }
+
+    /// For Intel TDX: Alias for MRTD (Measurement of Initial Trust Domain).
+    pub fn mrtd_hex(&self) -> String {
+        self.mrenclave_hex()
+    }
+
+    /// For Intel TDX: Alias for RTMR0 (Runtime Measurement Register 0).
+    pub fn rtmr0_hex(&self) -> String {
+        self.mrsigner_hex()
     }
 }
 
