@@ -13,6 +13,7 @@ impl OffChainEvaluator {
     /// Download revealed adapters from IPFS, evaluate in TEE Sandbox, index in Vector DB,
     /// and generate ranked evaluation vector with floating-point drift simulation.
     pub fn evaluate_candidates(
+        ipfs: &IpfsStorage,
         validator_address: &AccountId,
         hardware_info: &str,
         hardware_drift: f32,
@@ -27,17 +28,22 @@ impl OffChainEvaluator {
 
         for (miner, cid) in reveals {
             // Fetch .safetensors from IPFS CAS
-            let ipfs = IpfsStorage::new(); // or passed in
             let bytes = match ipfs.get(cid) {
                 Some(b) => b,
                 None => {
                     // Fallback to error loss if file not accessible
-                    scores.push((miner.clone(), 999.0, 0.0));
+                    scores.push((miner.clone(), 9999.0, 0.0));
                     continue;
                 }
             };
 
-            let adapter_pkg = deserialize_safetensors(&bytes)?;
+            let adapter_pkg = match deserialize_safetensors(&bytes) {
+                Ok(pkg) => pkg,
+                Err(_) => {
+                    scores.push((miner.clone(), 9999.0, 0.0));
+                    continue;
+                }
+            };
 
             // Index adapter signature into Vector DB for similarity / plagiarism tracking
             if let Some(vdb) = vector_db {

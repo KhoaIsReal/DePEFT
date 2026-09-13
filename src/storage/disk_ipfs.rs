@@ -32,6 +32,11 @@ impl DiskIpfsStorage {
         format!("bafy{}", hex::encode(hash))
     }
 
+    /// Returns true if the CID matches the DePEFT internal naming format: "bafy" followed by 64 hex characters.
+    pub fn is_depeft_cid(cid: &str) -> bool {
+        cid.starts_with("bafy") && cid.len() == 68 && cid[4..].chars().all(|c| c.is_ascii_hexdigit())
+    }
+
     /// Validate CID to prevent Path Traversal attacks (e.g. `../../etc/passwd`).
     fn validate_cid(cid: &str) -> bool {
         if cid.is_empty() || cid.len() > 128 {
@@ -45,9 +50,18 @@ impl DiskIpfsStorage {
     /// Store binary data on disk and return its CID.
     pub fn put(&self, data: &[u8]) -> Result<String> {
         let cid = Self::compute_cid(data);
-        let file_path = self.root_dir.join(&cid);
-        fs::write(file_path, data)?;
+        self.put_named(&cid, data)?;
         Ok(cid)
+    }
+
+    /// Store binary data on disk under a specific CID/identifier.
+    pub fn put_named(&self, cid: &str, data: &[u8]) -> Result<()> {
+        if !Self::validate_cid(cid) {
+            anyhow::bail!("Invalid CID for storage: {}", cid);
+        }
+        let file_path = self.root_dir.join(cid);
+        fs::write(file_path, data)?;
+        Ok(())
     }
 
     /// Retrieve binary data by CID with path traversal protection.
@@ -69,7 +83,7 @@ impl DiskIpfsStorage {
             return None;
         }
         let bytes = fs::read(file_path).ok()?;
-        if cid.starts_with("bafy") && Self::compute_cid(&bytes) != cid {
+        if Self::is_depeft_cid(cid) && Self::compute_cid(&bytes) != cid {
             return None;
         }
         Some(bytes)

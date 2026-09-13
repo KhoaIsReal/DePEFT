@@ -73,6 +73,16 @@ impl CandleAttentionBlock {
         let h = config.hidden_size;
         let rank = config.lora_rank;
         let alpha = config.lora_alpha;
+        if config.num_attention_heads == 0 {
+            anyhow::bail!("num_attention_heads must be greater than 0");
+        }
+        if !h.is_multiple_of(config.num_attention_heads) {
+            anyhow::bail!(
+                "hidden_size ({}) must be divisible by num_attention_heads ({})",
+                h,
+                config.num_attention_heads
+            );
+        }
         let head_dim = h / config.num_attention_heads;
 
         let q_w = Tensor::randn(0f32, 1.0 / (h as f32).sqrt(), (h, h), device)?;
@@ -293,6 +303,61 @@ impl CandleTransformerLM {
             layer.mlp.down_proj.merge_and_reset()?;
         }
         self.lm_head.merge_and_reset()?;
+        Ok(())
+    }
+
+    /// Load external adapter tensors across all layers.
+    pub fn load_adapter_tensors(&mut self, tensor_map: &HashMap<String, Tensor>) -> Result<()> {
+        for (i, layer) in self.layers.iter_mut().enumerate() {
+            if let (Some(a), Some(b)) = (
+                tensor_map.get(&format!("model.layers.{}.self_attn.q_proj.lora_a.weight", i)),
+                tensor_map.get(&format!("model.layers.{}.self_attn.q_proj.lora_b.weight", i)),
+            ) {
+                layer.self_attn.q_proj.load_adapter(a, b)?;
+            }
+            if let (Some(a), Some(b)) = (
+                tensor_map.get(&format!("model.layers.{}.self_attn.k_proj.lora_a.weight", i)),
+                tensor_map.get(&format!("model.layers.{}.self_attn.k_proj.lora_b.weight", i)),
+            ) {
+                layer.self_attn.k_proj.load_adapter(a, b)?;
+            }
+            if let (Some(a), Some(b)) = (
+                tensor_map.get(&format!("model.layers.{}.self_attn.v_proj.lora_a.weight", i)),
+                tensor_map.get(&format!("model.layers.{}.self_attn.v_proj.lora_b.weight", i)),
+            ) {
+                layer.self_attn.v_proj.load_adapter(a, b)?;
+            }
+            if let (Some(a), Some(b)) = (
+                tensor_map.get(&format!("model.layers.{}.self_attn.o_proj.lora_a.weight", i)),
+                tensor_map.get(&format!("model.layers.{}.self_attn.o_proj.lora_b.weight", i)),
+            ) {
+                layer.self_attn.o_proj.load_adapter(a, b)?;
+            }
+            if let (Some(a), Some(b)) = (
+                tensor_map.get(&format!("model.layers.{}.mlp.gate_proj.lora_a.weight", i)),
+                tensor_map.get(&format!("model.layers.{}.mlp.gate_proj.lora_b.weight", i)),
+            ) {
+                layer.mlp.gate_proj.load_adapter(a, b)?;
+            }
+            if let (Some(a), Some(b)) = (
+                tensor_map.get(&format!("model.layers.{}.mlp.up_proj.lora_a.weight", i)),
+                tensor_map.get(&format!("model.layers.{}.mlp.up_proj.lora_b.weight", i)),
+            ) {
+                layer.mlp.up_proj.load_adapter(a, b)?;
+            }
+            if let (Some(a), Some(b)) = (
+                tensor_map.get(&format!("model.layers.{}.mlp.down_proj.lora_a.weight", i)),
+                tensor_map.get(&format!("model.layers.{}.mlp.down_proj.lora_b.weight", i)),
+            ) {
+                layer.mlp.down_proj.load_adapter(a, b)?;
+            }
+        }
+        if let (Some(a), Some(b)) = (
+            tensor_map.get("lm_head.lora_a.weight"),
+            tensor_map.get("lm_head.lora_b.weight"),
+        ) {
+            self.lm_head.load_adapter(a, b)?;
+        }
         Ok(())
     }
 

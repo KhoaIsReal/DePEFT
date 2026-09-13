@@ -15,6 +15,8 @@ pub struct RoundContext {
     pub round_number: usize,
     pub phase: RoundPhase,
     pub base_model_cid: String,
+    #[serde(default)]
+    pub epoch_end_block: u32,
     pub commits: HashMap<AccountId, CommitRecord>,
     pub reveals: HashMap<AccountId, RevealRecord>,
     pub evaluations: HashMap<AccountId, ValidatorEvaluation>,
@@ -22,12 +24,13 @@ pub struct RoundContext {
 }
 
 impl RoundContext {
-    pub fn new(task_id: u64, round_number: usize, base_model_cid: String) -> Self {
+    pub fn new(task_id: u64, round_number: usize, base_model_cid: String, epoch_end_block: u32) -> Self {
         Self {
             task_id,
             round_number,
             phase: RoundPhase::CommitPhase,
             base_model_cid,
+            epoch_end_block,
             commits: HashMap::new(),
             reveals: HashMap::new(),
             evaluations: HashMap::new(),
@@ -107,20 +110,26 @@ impl AppChainState {
     pub fn tick_round_phases(&mut self) {
         let current_block = self.block_height;
         for ((task_id, _round_num), ctx) in self.round_contexts.iter_mut() {
-            if let Some(task) = self.tasks.get(task_id) {
-                // Determine phase progression intervals
-                // 1. In CommitPhase: move to RevealPhase only when epoch deadline is reached
-                if ctx.phase == RoundPhase::CommitPhase && !ctx.commits.is_empty() {
-                    if current_block >= task.epoch_end_block {
-                        ctx.phase = RoundPhase::RevealPhase;
-                    }
+            let deadline = if ctx.epoch_end_block > 0 {
+                ctx.epoch_end_block
+            } else if let Some(task) = self.tasks.get(task_id) {
+                task.epoch_end_block
+            } else {
+                0
+            };
+
+            // Determine phase progression intervals
+            // 1. In CommitPhase: move to RevealPhase only when epoch deadline is reached
+            if ctx.phase == RoundPhase::CommitPhase && !ctx.commits.is_empty() {
+                if current_block >= deadline {
+                    ctx.phase = RoundPhase::RevealPhase;
                 }
-                // 2. In RevealPhase: if all committed miners revealed, or time elapsed, move to EvaluationPhase
-                else if ctx.phase == RoundPhase::RevealPhase && !ctx.reveals.is_empty() {
-                    let all_revealed = ctx.commits.keys().all(|m| ctx.reveals.contains_key(m));
-                    if all_revealed || current_block >= task.epoch_end_block + 2 {
-                        ctx.phase = RoundPhase::EvaluationPhase;
-                    }
+            }
+            // 2. In RevealPhase: if all committed miners revealed, or time elapsed, move to EvaluationPhase
+            else if ctx.phase == RoundPhase::RevealPhase && !ctx.reveals.is_empty() {
+                let all_revealed = ctx.commits.keys().all(|m| ctx.reveals.contains_key(m));
+                if all_revealed || current_block >= deadline + 2 {
+                    ctx.phase = RoundPhase::EvaluationPhase;
                 }
             }
         }
@@ -207,14 +216,19 @@ impl AppChainState {
         round_number: usize,
         base_model_cid: String,
     ) -> Result<()> {
-        ensure!(self.tasks.contains_key(&task_id), "Task ID does not exist");
+        let task = self
+            .tasks
+            .get_mut(&task_id)
+            .ok_or_else(|| anyhow::anyhow!("Task ID does not exist"))?;
         ensure!(
             !self.round_contexts.contains_key(&(task_id, round_number)),
             "Round {} already initialized for task {}",
             round_number,
             task_id
         );
-        let context = RoundContext::new(task_id, round_number, base_model_cid);
+        let epoch_end_block = self.block_height + task.epoch_blocks;
+        task.epoch_end_block = epoch_end_block;
+        let context = RoundContext::new(task_id, round_number, base_model_cid, epoch_end_block);
         self.round_contexts.insert((task_id, round_number), context);
         Ok(())
     }
@@ -320,6 +334,7 @@ impl AppChainState {
                     max_rank,
                     target_modules,
                     bounty_pool,
+                    epoch_blocks,
                     epoch_end_block: self.block_height + epoch_blocks,
                     reward_distribution,
                     merge_strategy,
@@ -344,10 +359,12 @@ impl AppChainState {
 
                 // Auto initialize round context if not yet started
                 if !self.round_contexts.contains_key(&(task_id, round)) {
-                    if let Some(task) = self.tasks.get(&task_id) {
+                    if let Some(task) = self.tasks.get_mut(&task_id) {
+                        let epoch_end_block = self.block_height + task.epoch_blocks;
+                        task.epoch_end_block = epoch_end_block;
                         let base_model_cid_str = task.base_model_id_str();
                         let context =
-                            RoundContext::new(task_id, round, base_model_cid_str.to_string());
+                            RoundContext::new(task_id, round, base_model_cid_str.to_string(), epoch_end_block);
                         self.round_contexts.insert((task_id, round), context);
                     }
                 }
@@ -620,8 +637,10 @@ impl AppChainState {
 
             // 1. Distribute Storage & Network Node Rewards
             if node_pool > 0 {
-                let storage_node = AccountId::new("ipfs-storage-gateway");
+                let storage_node = AccountId::storage_gateway();
                 *self.balances.entry(storage_node.clone()).or_insert(0) += node_pool;
+                // Also mirror to legacy alias for backward compatibility
+                *self.balances.entry(AccountId::new("ipfs-storage-gateway")).or_insert(0) += node_pool;
                 node_rewards.push((storage_node, node_pool));
             }
 

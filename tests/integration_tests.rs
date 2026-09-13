@@ -24,6 +24,7 @@ fn test_task_spec_data_structure() {
         max_rank: 64,
         target_modules: vec![b"q_proj".to_vec(), b"v_proj".to_vec()],
         bounty_pool: 25_000,
+        epoch_blocks: 50,
         epoch_end_block: 500,
         reward_distribution: DePEFT::blockchain::types::RewardDistribution::TopKDecay {
             top_k: 5,

@@ -31,19 +31,29 @@ impl RelativeConsensusEngine {
             return None;
         }
 
-        let num_validators = evaluations.len();
+        // Deduplicate validator submissions upfront to prevent Sybil collusion and metric distortion
+        let mut seen_validators = std::collections::HashSet::new();
+        let mut unique_evaluations = Vec::new();
+        for eval in evaluations {
+            if seen_validators.insert(&eval.validator_address) {
+                unique_evaluations.push(eval);
+            }
+        }
+
+        if unique_evaluations.is_empty() {
+            return None;
+        }
+
+        let num_validators = unique_evaluations.len();
         let mut miner_ranks: HashMap<AccountId, Vec<usize>> = HashMap::new();
         for miner in candidate_miners {
             miner_ranks.insert(miner.clone(), Vec::new());
         }
 
-        // Collect each validator's ordinal position for each miner with deduplication
-        let mut seen_validators = std::collections::HashSet::new();
-        for eval in evaluations {
-            if !seen_validators.insert(&eval.validator_address) {
-                continue; // Ignore duplicate submissions from the same validator address
-            }
+        let m = candidate_miners.len();
 
+        // Collect each unique validator's ordinal position for each miner
+        for eval in &unique_evaluations {
             // Deduplicate ranking items from this validator to prevent ranking inflation
             let mut unique_ranking: Vec<AccountId> = Vec::new();
             for miner in &eval.ranking {
@@ -52,13 +62,12 @@ impl RelativeConsensusEngine {
                 }
             }
 
-            let m = unique_ranking.len();
             for (rank_idx, miner) in unique_ranking.iter().enumerate() {
                 if let Some(ranks) = miner_ranks.get_mut(miner) {
                     ranks.push(rank_idx);
                 }
             }
-            // For any candidate not ranked in evaluation, assign worst rank
+            // For any candidate not ranked in evaluation, assign worst possible rank (m)
             for miner in candidate_miners {
                 if !unique_ranking.contains(miner) {
                     if let Some(ranks) = miner_ranks.get_mut(miner) {
@@ -68,12 +77,7 @@ impl RelativeConsensusEngine {
             }
         }
 
-        if seen_validators.is_empty() {
-            return None;
-        }
-
         let mut score_map: HashMap<AccountId, usize> = HashMap::new();
-        let m = candidate_miners.len();
 
         for (miner, mut ranks) in miner_ranks {
             ranks.sort_unstable();
@@ -107,9 +111,9 @@ impl RelativeConsensusEngine {
             borda_scores.iter().map(|(m, _)| m.clone()).collect();
         let winner = consensus_ranking[0].clone();
 
-        // Calculate consensus agreement rate
+        // Calculate consensus agreement rate over authentic unique validators
         let mut winner_votes = 0;
-        for eval in evaluations {
+        for eval in &unique_evaluations {
             if let Some(first) = eval.ranking.first() {
                 if first == &winner {
                     winner_votes += 1;

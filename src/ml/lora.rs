@@ -16,7 +16,7 @@ pub struct ModuleAdapter {
 impl ModuleAdapter {
     /// Compute the full weight delta matrix: $\Delta W = \frac{\alpha}{r} (B \times A)$
     pub fn compute_delta_w(&self) -> Matrix {
-        let scaling = self.alpha / self.rank as f32;
+        let scaling = self.alpha / self.rank.max(1) as f32;
         let ba = self.lora_b.matmul(&self.lora_a);
         ba.scale(scaling)
     }
@@ -81,7 +81,7 @@ impl QLoRALinear {
         let base_out = w.matmul(&input_mat);
 
         // LoRA output: scaling * B * (A * X)
-        let scaling = self.alpha / self.rank as f32;
+        let scaling = self.alpha / self.rank.max(1) as f32;
         let ax = self.lora_a.matmul(&input_mat); // (rank, 1)
         let bax = self.lora_b.matmul(&ax); // (out_features, 1)
 
@@ -104,7 +104,7 @@ impl QLoRALinear {
             );
         }
 
-        let scaling = self.alpha / self.rank as f32;
+        let scaling = self.alpha / self.rank.max(1) as f32;
         let input_mat = Matrix::new(self.in_features, 1, input.to_vec());
         let grad_out_mat = Matrix::new(self.out_features, 1, grad_out.to_vec());
 
@@ -191,7 +191,7 @@ impl QLoRALinear {
     /// and reset LoRA A and B for next ReLoRA round.
     pub fn merge_and_reset(&mut self, rng: &mut impl Rng) {
         let delta_w = {
-            let scaling = self.alpha / self.rank as f32;
+            let scaling = self.alpha / self.rank.max(1) as f32;
             let ba = self.lora_b.matmul(&self.lora_a);
             ba.scale(scaling)
         };

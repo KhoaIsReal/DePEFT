@@ -59,6 +59,24 @@ class DePeftClient:
         resp.raise_for_status()
         return resp.content
 
+    def get_account(self, account_id: str) -> Dict[str, Any]:
+        """Query account details (balance and nonce)."""
+        resp = requests.get(f"{self.node_url}/api/v1/accounts/{account_id}/balance", timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_round_context(self, task_id: int, round_number: int) -> Dict[str, Any]:
+        """Retrieve the round context, phase, reveals, and evaluations for a task."""
+        resp = requests.get(f"{self.node_url}/api/v1/tasks/{task_id}/rounds/{round_number}", timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+
+    def submit_transaction(self, signed_tx: Dict[str, Any]) -> Dict[str, Any]:
+        """Broadcast a cryptographically signed transaction to the network."""
+        resp = requests.post(f"{self.node_url}/api/v1/tx", json=signed_tx, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
     def get_peers(self) -> List[str]:
         """List all connected P2P overlay swarm peers."""
         resp = requests.get(f"{self.node_url}/api/v1/p2p/peers", timeout=5)

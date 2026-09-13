@@ -10,6 +10,12 @@ impl AccountId {
         Self(id.into())
     }
 
+    pub fn storage_gateway() -> Self {
+        use sha2::Digest;
+        let hash = sha2::Sha256::digest(b"ipfs-storage-gateway");
+        Self(format!("0x{}", hex::encode(hash)))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -94,11 +100,17 @@ pub struct TaskSpec {
 
     // Economic & Tournament policy
     pub bounty_pool: u128,    // Total token reward for this epoch
+    #[serde(default = "default_epoch_blocks")]
+    pub epoch_blocks: u32,    // Duration of each epoch in blocks
     pub epoch_end_block: u32, // Block closing adapter submission
     #[serde(default)]
     pub reward_distribution: RewardDistribution, // Configurable bounty sharing strategy
     #[serde(default)]
     pub merge_strategy: MergeStrategy, // Configurable adapter merge strategy
+}
+
+fn default_epoch_blocks() -> u32 {
+    50
 }
 
 impl TaskSpec {

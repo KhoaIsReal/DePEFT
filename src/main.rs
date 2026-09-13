@@ -306,9 +306,9 @@ enum MinerCommands {
         #[arg(long, default_value = "http://127.0.0.1:8545")]
         node_url: String,
 
-        /// Miner secret key in hex
+        /// Miner secret key in hex (auto-generates ephemeral key if omitted)
         #[arg(short, long)]
-        secret_key: String,
+        secret_key: Option<String>,
 
         /// Target task ID
         #[arg(short, long, default_value_t = 1)]
@@ -339,9 +339,9 @@ enum ValidatorCommands {
         #[arg(long, default_value = "http://127.0.0.1:8545")]
         node_url: String,
 
-        /// Validator secret key in hex
+        /// Validator secret key in hex (auto-generates ephemeral key if omitted)
         #[arg(short, long)]
-        secret_key: String,
+        secret_key: Option<String>,
 
         /// Target task ID
         #[arg(short, long, default_value_t = 1)]
@@ -964,6 +964,7 @@ fn print_spec() {
             b"o_proj".to_vec(),
         ],
         bounty_pool: 50_000,
+        epoch_blocks: 50,
         epoch_end_block: 1200,
         reward_distribution: DePEFT::blockchain::types::RewardDistribution::TopKDecay {
             top_k: 5,
@@ -1498,11 +1499,23 @@ async fn main() -> anyhow::Result<()> {
                     hardware
                 };
 
-                let clean_hex = secret_key.trim_start_matches("0x");
-                let bytes = hex::decode(clean_hex)?;
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&bytes);
-                let keypair = AccountKeypair::from_secret_bytes(&arr);
+                let keypair = match secret_key {
+                    Some(sk) => {
+                        let clean_hex = sk.trim_start_matches("0x");
+                        let bytes = hex::decode(clean_hex)?;
+                        let mut arr = [0u8; 32];
+                        arr.copy_from_slice(&bytes);
+                        AccountKeypair::from_secret_bytes(&arr)
+                    }
+                    None => {
+                        let kp = AccountKeypair::generate();
+                        println!(
+                            "    [*] Generated Ephemeral Miner Keypair: {}",
+                            kp.account_id().to_string().bright_green()
+                        );
+                        kp
+                    }
+                };
 
                 println!(
                     "{}",
@@ -1628,11 +1641,23 @@ async fn main() -> anyhow::Result<()> {
                     hardware
                 };
 
-                let clean_hex = secret_key.trim_start_matches("0x");
-                let bytes = hex::decode(clean_hex)?;
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&bytes);
-                let keypair = AccountKeypair::from_secret_bytes(&arr);
+                let keypair = match secret_key {
+                    Some(sk) => {
+                        let clean_hex = sk.trim_start_matches("0x");
+                        let bytes = hex::decode(clean_hex)?;
+                        let mut arr = [0u8; 32];
+                        arr.copy_from_slice(&bytes);
+                        AccountKeypair::from_secret_bytes(&arr)
+                    }
+                    None => {
+                        let kp = AccountKeypair::generate();
+                        println!(
+                            "[*] Generated ephemeral validator keypair: Account ID {}",
+                            kp.account_id()
+                        );
+                        kp
+                    }
+                };
 
                 println!(
                     "{}",
@@ -1653,8 +1678,8 @@ async fn main() -> anyhow::Result<()> {
 
                 let mut rng = StdRng::seed_from_u64(999);
                 let private_test_set = Dataset::generate_synthetic_task(30, 8, 4, 1.5, &mut rng);
-                let _tee = TeeSandbox::new(private_test_set, "sgx-enclave-live-1");
-                let _base_model =
+                let tee = TeeSandbox::new(private_test_set, "sgx-enclave-live-1");
+                let base_model =
                     DePEFTModel::new("BaseModel", 8, 16, 4, 4, task.peft_method, &mut rng);
 
                 // In a live round, wait for EvaluationPhase and evaluate actual revealed miners
@@ -1690,11 +1715,34 @@ async fn main() -> anyhow::Result<()> {
                     "[*] Evaluating {} revealed adapters inside secure TEE Sandbox Enclave...",
                     round_ctx.reveals.len()
                 );
-                let actual_ranking: Vec<AccountId> = round_ctx.reveals.keys().cloned().collect();
-                let loss_scores: Vec<(AccountId, f64)> =
-                    actual_ranking.iter().map(|m| (m.clone(), 0.185)).collect();
-                let accuracy_scores: Vec<(AccountId, f64)> =
-                    actual_ranking.iter().map(|m| (m.clone(), 0.96)).collect();
+                let mut scores: Vec<(AccountId, f64, f64)> = Vec::new();
+                for (miner, reveal_record) in &round_ctx.reveals {
+                    let eval_res = match client.download_storage(&reveal_record.adapter_cid).await {
+                        Ok(bytes) => match deserialize_safetensors(&bytes) {
+                            Ok(pkg) => tee.evaluate_adapter(&base_model, &pkg, 0.001),
+                            Err(e) => {
+                                eprintln!("    [!] Failed to deserialize adapter for miner {}: {}", miner, e);
+                                (9999.0, 0.0)
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("    [!] Failed to download adapter for miner {}: {}", miner, e);
+                            (9999.0, 0.0)
+                        }
+                    };
+                    scores.push((miner.clone(), eval_res.0, eval_res.1));
+                }
+
+                // Sort candidates by Loss (ascending: lowest loss is 1st place). NaN / Inf to bottom.
+                scores.sort_by(|a, b| {
+                    let la = if a.1.is_finite() { a.1 } else { 9999.0 };
+                    let lb = if b.1.is_finite() { b.1 } else { 9999.0 };
+                    la.partial_cmp(&lb).unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                let actual_ranking: Vec<AccountId> = scores.iter().map(|(m, _, _)| m.clone()).collect();
+                let loss_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, l, _)| (m.clone(), *l)).collect();
+                let accuracy_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, _, a)| (m.clone(), *a)).collect();
 
                 let enclave =
                     DePEFT::tee::HardwareTeeEnclave::official(DePEFT::tee::TeeType::IntelSgxDcap);

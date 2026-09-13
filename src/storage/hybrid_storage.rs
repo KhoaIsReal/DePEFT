@@ -27,6 +27,8 @@ impl HybridStorageManager {
         if let Some(kubo) = &self.kubo_client {
             if let Ok(ipfs_cid) = kubo.add_bytes(data, filename).await {
                 let _ = kubo.pin_add(&ipfs_cid).await;
+                // Also cache locally under the IPFS CID to ensure immediate local cache hits
+                let _ = self.local_cas.put_named(&ipfs_cid, data);
                 return Ok(ipfs_cid);
             }
         }
@@ -44,8 +46,8 @@ impl HybridStorageManager {
         // 2. Fetch from live IPFS network if configured
         if let Some(kubo) = &self.kubo_client {
             if let Ok(bytes) = kubo.cat_bytes(cid).await {
-                // Content-Integrity Verification: ensure returned bytes hash matches requested CID
-                if cid.starts_with("bafy") {
+                // Content-Integrity Verification: ensure returned bytes hash matches requested CID for DePEFT CIDs
+                if DiskIpfsStorage::is_depeft_cid(cid) {
                     let computed = DiskIpfsStorage::compute_cid(&bytes);
                     if computed != cid {
                         anyhow::bail!(
@@ -57,6 +59,7 @@ impl HybridStorageManager {
                 }
 
                 // Cache into local CAS for subsequent zero-latency reads
+                let _ = self.local_cas.put_named(cid, &bytes);
                 let _ = self.local_cas.put(&bytes);
                 return Ok(Some(bytes));
             }

@@ -15,6 +15,9 @@ pub struct CandleLoraLinear {
 impl CandleLoraLinear {
     /// Initialize a new CandleLoraLinear attached to a base weight tensor.
     pub fn new(base_weight: Tensor, rank: usize, alpha: f64, device: &Device) -> Result<Self> {
+        if rank == 0 {
+            anyhow::bail!("LoRA rank must be greater than 0");
+        }
         let (d_out, d_in) = base_weight.dims2()?;
         let scale = alpha / (rank as f64);
 

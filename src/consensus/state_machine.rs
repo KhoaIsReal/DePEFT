@@ -390,4 +390,23 @@ impl BftEngine {
 
         Ok(None)
     }
+
+    /// Advance to the next consensus round at the current height (e.g. upon round timeout or offline proposer).
+    /// Preserves Proof-of-Lock (locked_block and locked_round) across rounds within the same height.
+    pub fn advance_round(&mut self) {
+        self.current_round += 1;
+        let locked_block = self.round_state.locked_block.clone();
+        let locked_round = self.round_state.locked_round;
+
+        let mut new_round_state = BftRoundState::new(self.current_height, self.current_round);
+        new_round_state.locked_block = locked_block;
+        new_round_state.locked_round = locked_round;
+        if new_round_state.locked_block.is_some() {
+            new_round_state.step = BftStep::Prevote;
+        } else {
+            new_round_state.step = BftStep::Propose;
+        }
+
+        self.round_state = new_round_state;
+    }
 }
