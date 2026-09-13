@@ -18,8 +18,13 @@ pub enum HostTeeStatus {
 /// Detect whether the host machine is running inside a genuine hardware TEE
 /// (Intel SGX, Intel TDX, AMD SEV-SNP, or AWS Nitro) or a software environment.
 pub fn detect_host_tee() -> HostTeeStatus {
-    // 1. Check for Intel TDX (Trust Domain Extensions) guest devices
-    for dev in &["/dev/tdx_guest", "/dev/tdx-guest", "/dev/tdx_attest"] {
+    // 1. Check for Intel TDX (Trust Domain Extensions) guest devices (QEMU / KVM)
+    for dev in &[
+        "/dev/tdx_guest",
+        "/dev/tdx-guest",
+        "/dev/tdx_attest",
+        "/sys/devices/virtual/misc/tdx_guest",
+    ] {
         if Path::new(dev).exists() {
             return HostTeeStatus::HardwareAvailable {
                 tee_type: TeeType::IntelTdx,
@@ -44,8 +49,12 @@ pub fn detect_host_tee() -> HostTeeStatus {
         }
     }
 
-    // 3. Check for AMD SEV-SNP (Secure Encrypted Virtualization) guest devices
-    for dev in &["/dev/sev-guest", "/dev/sev"] {
+    // 3. Check for AMD SEV-SNP (Secure Encrypted Virtualization) guest devices (QEMU / KVM)
+    for dev in &[
+        "/dev/sev-guest",
+        "/dev/sev",
+        "/sys/devices/virtual/misc/sev-guest",
+    ] {
         if Path::new(dev).exists() {
             return HostTeeStatus::HardwareAvailable {
                 tee_type: TeeType::AmdSevSnp,
