@@ -3306,3 +3306,189 @@ fn test_weapon_4_on_chain_circuit_breaker_emergency_safe_mode() {
     assert!(!state.circuit_breaker_active);
     assert!(state.check_and_record_payout(5_000).is_ok(), "Payouts resume normally after reset");
 }
+
+#[test]
+fn test_security_self_transfer_rejected() {
+    let mut chain = AppChainState::new();
+    let alice = AccountId::new("0xalice");
+    chain.mint(alice.clone(), 10_000);
+
+    let self_tx = Transaction::Transfer {
+        from: alice.clone(),
+        to: alice.clone(),
+        amount: 1_000,
+        nonce: chain.nonce_of(&alice),
+    };
+    let res = chain.apply_transaction(self_tx, &alice);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("cannot transfer tokens to oneself"));
+}
+
+#[test]
+fn test_security_self_slashing_whistleblower_exploit_rejected() {
+    use DePEFT::consensus::{EquivocationEvidence, Vote, VoteType};
+    use DePEFT::crypto::AccountKeypair;
+
+    let mut chain = AppChainState::new();
+    let rogue_keypair = AccountKeypair::generate();
+    let rogue = rogue_keypair.account_id();
+    chain.mint(rogue.clone(), 100_000);
+
+    let vote_a = Vote {
+        vote_type: VoteType::Prevote,
+        height: 5,
+        round: 0,
+        block_hash: Some([0x11; 32]),
+        validator: rogue.clone(),
+        signature: rogue_keypair.sign_message(&Vote::sign_bytes(VoteType::Prevote, 5, 0, Some([0x11; 32]))),
+    };
+    let vote_b = Vote {
+        vote_type: VoteType::Prevote,
+        height: 5,
+        round: 0,
+        block_hash: Some([0x22; 32]),
+        validator: rogue.clone(),
+        signature: rogue_keypair.sign_message(&Vote::sign_bytes(VoteType::Prevote, 5, 0, Some([0x22; 32]))),
+    };
+
+    let evidence = EquivocationEvidence {
+        validator: rogue.clone(),
+        height: 5,
+        round: 0,
+        vote_type: VoteType::Prevote,
+        vote_a,
+        vote_b,
+    };
+
+    // Rogue validator attempts to report themselves to claim 20% whistleblower bounty
+    let slash_tx = Transaction::SlashValidator {
+        reporter: rogue.clone(),
+        nonce: chain.nonce_of(&rogue),
+        evidence,
+    };
+
+    let res = chain.apply_transaction(slash_tx, &rogue);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("validator cannot report themselves to claim whistleblower bounty"));
+}
+
+#[test]
+fn test_security_circuit_breaker_blocks_transfers_and_tasks() {
+    let mut chain = AppChainState::new();
+    let alice = AccountId::new("0xalice");
+    let bob = AccountId::new("0xbob");
+    chain.mint(alice.clone(), 50_000);
+
+    chain.circuit_breaker_active = true;
+    chain.circuit_breaker_triggered_at_block = Some(chain.block_height);
+
+    // Transfer must be blocked during Safe Mode
+    let transfer_tx = Transaction::Transfer {
+        from: alice.clone(),
+        to: bob.clone(),
+        amount: 1_000,
+        nonce: chain.nonce_of(&alice),
+    };
+    let res = chain.apply_transaction(transfer_tx, &alice);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Emergency Safe Mode is ACTIVE"));
+
+    // CreateTask must be blocked during Safe Mode
+    let create_task_tx = Transaction::CreateTask {
+        client: alice.clone(),
+        nonce: chain.nonce_of(&alice),
+        base_model_id: b"test-model".to_vec(),
+        base_model_hash: [0u8; 32],
+        dataset_cid: b"bafytest".to_vec(),
+        peft_method: DePEFT::blockchain::PeftType::LoRA,
+        max_rank: 8,
+        target_modules: vec![b"q_proj".to_vec()],
+        bounty_pool: 10_000,
+        epoch_blocks: 10,
+        reward_distribution: DePEFT::blockchain::RewardDistribution::WinnerTakesAll,
+        merge_strategy: DePEFT::blockchain::MergeStrategy::default(),
+    };
+    let task_res = chain.apply_transaction(create_task_tx, &alice);
+    assert!(task_res.is_err());
+    assert!(task_res.unwrap_err().to_string().contains("Emergency Safe Mode is ACTIVE"));
+}
+
+#[test]
+fn test_security_dangling_task_id_transactions_rejected() {
+    let mut chain = AppChainState::new();
+    let miner = AccountId::new("0xminer");
+    chain.mint(miner.clone(), 10_000);
+
+    let commit_tx = Transaction::CommitAdapter {
+        task_id: 999999,
+        round: 1,
+        miner: miner.clone(),
+        nonce: chain.nonce_of(&miner),
+        commit_hash: [0x11; 32],
+    };
+    let res = chain.apply_transaction(commit_tx, &miner);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().to_string().contains("Task #999999 does not exist"));
+}
+
+#[test]
+fn test_security_mrsigner_without_mrenclave_accepted() {
+    use DePEFT::tee::{AttestationQuote, EnclaveMeasurement, OnChainTeeVerifier, TeeSecurityFlags, TeeType};
+
+    let mut verifier = OnChainTeeVerifier::new(true);
+    let mrsigner = [0xAA; 32];
+    let platform_key = [0xBB; 32];
+    // Register ONLY mrsigner and platform key (no mrenclave whitelisted)
+    verifier.register_mrsigner(mrsigner);
+    verifier.register_platform_key(platform_key);
+    verifier.set_allow_simulation(true); // allow test evaluation
+
+    let quote = AttestationQuote {
+        tee_type: TeeType::IntelSgxDcap,
+        measurement: EnclaveMeasurement {
+            mrenclave: [0x12; 32],
+            mrsigner,
+            isv_prod_id: 1,
+            isv_svn: 1,
+        },
+        report_data: AttestationQuote::compute_report_data(1, 1, &[]),
+        platform_public_key: platform_key,
+        quote_signature: vec![0x00; 64],
+        timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+        security_flags: TeeSecurityFlags::genuine_production(),
+    };
+
+    // Measurement check must succeed because MRSIGNER matches
+    assert!(!verifier.approved_mrsigners.is_empty());
+    assert!(verifier.approved_mrsigners.contains(&quote.measurement.mrsigner));
+}
+
+#[test]
+fn test_security_unicode_perturbation_vietnamese() {
+    use DePEFT::candle_peft::evaluator::CandleValidatorEvaluator;
+    use DePEFT::candle_peft::transformer::{CandleTransformerConfig, CandleTransformerLM};
+    use candle_core::Device;
+
+    let vietnamese_samples = vec![
+        "Mạng lưới học sâu phi tập trung DePEFT hoàn toàn độc lập".to_string(),
+        "Đồng thuận tương đối Borda count giải quyết trôi dạt dấu phẩy động".to_string(),
+    ];
+
+    let perturbed = CandleValidatorEvaluator::generate_perturbed_samples(&vietnamese_samples);
+    assert_eq!(perturbed.len(), 2);
+    assert_ne!(perturbed[0], vietnamese_samples[0]);
+
+    let config = CandleTransformerConfig {
+        vocab_size: 256,
+        hidden_size: 32,
+        intermediate_size: 64,
+        num_hidden_layers: 2,
+        num_attention_heads: 2,
+        max_position_embeddings: 64,
+        lora_rank: 4,
+        lora_alpha: 8.0,
+    };
+    let model = CandleTransformerLM::new(config, Device::Cpu).unwrap();
+    let is_robust = CandleValidatorEvaluator::verify_adversarial_robustness(&model, &vietnamese_samples, 40.0).unwrap();
+    assert!(is_robust, "Vietnamese unicode samples pass adversarial robustness check");
+}

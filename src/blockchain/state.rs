@@ -182,12 +182,22 @@ impl AppChainState {
 
     /// Deposit native tokens to an account balance.
     pub fn mint(&mut self, account: AccountId, amount: u128) {
-        *self.balances.entry(account).or_insert(0) += amount;
+        let canonical = if account.0 == "ipfs-storage-gateway" {
+            AccountId::storage_gateway()
+        } else {
+            account
+        };
+        *self.balances.entry(canonical).or_insert(0) += amount;
     }
 
     /// Get current balance of an account.
     pub fn balance_of(&self, account: &AccountId) -> u128 {
-        self.balances.get(account).copied().unwrap_or(0)
+        let canonical = if account.0 == "ipfs-storage-gateway" {
+            AccountId::storage_gateway()
+        } else {
+            account.clone()
+        };
+        self.balances.get(&canonical).copied().unwrap_or(0)
     }
 
     /// Get next expected nonce of an account.
@@ -385,6 +395,11 @@ impl AppChainState {
                     client
                 );
                 ensure!(
+                    !self.circuit_breaker_active,
+                    "CreateTask rejected: Emergency Safe Mode is ACTIVE! Circuit breaker triggered at block #{:?}",
+                    self.circuit_breaker_triggered_at_block
+                );
+                ensure!(
                     !self.slashed_validators.contains(&client),
                     "CreateTask rejected: Client {} is banned",
                     client
@@ -473,6 +488,11 @@ impl AppChainState {
                     commit_hash != [0u8; 32],
                     "Commit rejected: commit hash cannot be all zeros"
                 );
+                ensure!(
+                    self.tasks.contains_key(&task_id),
+                    "Commit rejected: Task #{} does not exist",
+                    task_id
+                );
 
                 // Auto initialize round context if not yet started
                 if !self.round_contexts.contains_key(&(task_id, round)) {
@@ -537,6 +557,11 @@ impl AppChainState {
                 ensure!(
                     adapter_hash != [0u8; 32],
                     "Reveal rejected: adapter hash cannot be all zeros"
+                );
+                ensure!(
+                    self.tasks.contains_key(&task_id),
+                    "Reveal rejected: Task #{} does not exist",
+                    task_id
                 );
                 let ctx = self
                     .round_contexts
@@ -613,6 +638,11 @@ impl AppChainState {
                     !self.slashed_validators.contains(&evaluation.validator_address),
                     "SubmitEvaluation rejected: Validator {} has been slashed and permanently banned",
                     evaluation.validator_address
+                );
+                ensure!(
+                    self.tasks.contains_key(&task_id),
+                    "SubmitEvaluation rejected: Task #{} does not exist",
+                    task_id
                 );
                 let ctx = self
                     .round_contexts
@@ -697,6 +727,10 @@ impl AppChainState {
 
                 let target = evidence.validator.clone();
                 ensure!(
+                    reporter != target,
+                    "SlashValidator rejected: validator cannot report themselves to claim whistleblower bounty"
+                );
+                ensure!(
                     !self.slashed_validators.contains(&target),
                     "Validator {} is already slashed and banned",
                     target
@@ -728,6 +762,15 @@ impl AppChainState {
                     "Unauthorized: Transaction sender {} does not match from address {}",
                     sender,
                     from
+                );
+                ensure!(
+                    !self.circuit_breaker_active,
+                    "Transfer rejected: Emergency Safe Mode is ACTIVE! Circuit breaker triggered at block #{:?}",
+                    self.circuit_breaker_triggered_at_block
+                );
+                ensure!(
+                    from != to,
+                    "Transfer rejected: cannot transfer tokens to oneself"
                 );
                 ensure!(
                     !self.slashed_validators.contains(&to),
@@ -901,8 +944,6 @@ impl AppChainState {
             if node_pool > 0 {
                 let storage_node = AccountId::storage_gateway();
                 *self.balances.entry(storage_node.clone()).or_insert(0) += node_pool;
-                // Also mirror to legacy alias for backward compatibility
-                *self.balances.entry(AccountId::new("ipfs-storage-gateway")).or_insert(0) += node_pool;
                 node_rewards.push((storage_node, node_pool));
             }
 

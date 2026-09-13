@@ -375,6 +375,9 @@ impl BftEngine {
                             // Append block to finalized immutable blockchain
                             self.blockchain.push(proposal.clone());
 
+                            // Update consensus state root to latest finalized block's state root
+                            self.state_root = proposal.header.state_root;
+
                             // Advance consensus to next height
                             self.current_height += 1;
                             self.current_round = 0;

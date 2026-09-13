@@ -140,9 +140,12 @@ impl OnChainTeeVerifier {
         }
 
         // 3. Verify Enclave Measurement against on-chain whitelist
-        if self.enforce_attestation && self.approved_mrenclaves.is_empty() {
+        if self.enforce_attestation
+            && self.approved_mrenclaves.is_empty()
+            && self.approved_mrsigners.is_empty()
+        {
             bail!(
-                "TEE attestation is required but no enclave measurement trust root is configured"
+                "TEE attestation is required but no enclave measurement or signer trust root is configured"
             );
         }
         if !self

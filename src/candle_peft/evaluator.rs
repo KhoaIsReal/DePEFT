@@ -85,14 +85,11 @@ impl CandleValidatorEvaluator {
     pub fn generate_perturbed_samples(test_samples: &[String]) -> Vec<String> {
         let mut perturbed = Vec::new();
         for s in test_samples {
-            if s.len() >= 4 {
-                // Perturbation: swap two adjacent characters near the middle
-                let mid = s.len() / 2;
-                let mut chars: Vec<char> = s.chars().collect();
-                if mid + 1 < chars.len() {
-                    chars.swap(mid, mid + 1);
-                    perturbed.push(chars.into_iter().collect());
-                }
+            let mut chars: Vec<char> = s.chars().collect();
+            if chars.len() >= 2 {
+                let mid = chars.len() / 2;
+                chars.swap(mid - 1, mid);
+                perturbed.push(chars.into_iter().collect());
             } else {
                 perturbed.push(format!("{} ", s));
             }
