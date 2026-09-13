@@ -45,6 +45,7 @@ impl TournamentEngine {
         // TournamentEngine is an in-process simulation. It does not claim to
         // provide a vendor-attested TEE and must never be used by a public node.
         chain.tee_verifier.enforce_attestation = false;
+        chain.tee_verifier.allow_simulation = true;
         let ipfs = IpfsStorage::new();
         let vector_db = EmbeddedVectorDb::new(64);
 

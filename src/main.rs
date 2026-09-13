@@ -1169,17 +1169,17 @@ async fn main() -> anyhow::Result<()> {
                 if testnet_tee_sim {
                     use DePEFT::tee::{HardwareTeeEnclave, TeeType};
                     let sgx_enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
-                    loaded_state.tee_verifier.trust_quote_source(
+                    loaded_state.tee_verifier.trust_simulator_source(
                         sgx_enclave.measurement.mrenclave,
                         sgx_enclave.platform_public_key(),
                     );
                     let tdx_enclave = HardwareTeeEnclave::official(TeeType::IntelTdx);
-                    loaded_state.tee_verifier.trust_quote_source(
+                    loaded_state.tee_verifier.trust_simulator_source(
                         tdx_enclave.measurement.mrenclave,
                         tdx_enclave.platform_public_key(),
                     );
                     let sev_enclave = HardwareTeeEnclave::official(TeeType::AmdSevSnp);
-                    loaded_state.tee_verifier.trust_quote_source(
+                    loaded_state.tee_verifier.trust_simulator_source(
                         sev_enclave.measurement.mrenclave,
                         sev_enclave.platform_public_key(),
                     );
@@ -1701,8 +1701,17 @@ async fn main() -> anyhow::Result<()> {
                 println!("    ├─ Connected to Node: {}", node_url);
                 println!("    ├─ Hardware Profile: {}", detected_hw.bright_yellow());
                 println!(
-                    "    └─ TEE Platform:     {} (Private Test Set Protected)",
+                    "    ├─ TEE Platform:     {} (Private Test Set Protected)",
                     parsed_tee.to_string().bright_green()
+                );
+                let enclave = DePEFT::tee::HardwareTeeEnclave::detect_or_simulate(parsed_tee);
+                println!(
+                    "    └─ Enclave Mode:     {}",
+                    if enclave.security_flags.is_simulation {
+                        "Software Simulation (Testnet Mode)".bright_yellow().bold()
+                    } else {
+                        "Genuine Hardware Enclave (Production Mode)".bright_green().bold()
+                    }
                 );
 
                 let mut rng = StdRng::seed_from_u64(999);
@@ -1773,8 +1782,6 @@ async fn main() -> anyhow::Result<()> {
                 let loss_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, l, _)| (m.clone(), *l)).collect();
                 let accuracy_scores: Vec<(AccountId, f64)> = scores.iter().map(|(m, _, a)| (m.clone(), *a)).collect();
 
-                let enclave =
-                    DePEFT::tee::HardwareTeeEnclave::official(parsed_tee);
                 let quote = enclave.generate_quote(task_id, 1, &actual_ranking)?;
 
                 let eval = ValidatorEvaluation {
@@ -2037,33 +2044,64 @@ fn run_tee_quote_demo(tee_str: &str) {
         }
     }
 
-    let enclave = HardwareTeeEnclave::official(tee_type);
-    println!("[*] Validator TEE Enclave Initialized:");
+    // Probe host OS for genuine physical TEE character devices
+    let host_status = DePEFT::tee::detect_host_tee();
+    println!("[*] Host Machine Hardware TEE Probing:");
+    match &host_status {
+        DePEFT::tee::HostTeeStatus::HardwareAvailable {
+            tee_type: ht,
+            device_path,
+        } => {
+            println!(
+                "    ├─ Host Hardware:   {} ({})",
+                "Genuine Physical TEE Detected".bright_green().bold(),
+                format!("{} via {}", ht, device_path).bright_cyan()
+            );
+        }
+        DePEFT::tee::HostTeeStatus::SimulationOnly { reason } => {
+            println!(
+                "    ├─ Host Hardware:   {} ({})",
+                "No Physical TEE Device".bright_yellow().bold(),
+                reason
+            );
+        }
+    }
+
+    let enclave = HardwareTeeEnclave::detect_or_simulate(tee_type);
+    println!("\n[*] Validator TEE Enclave Initialized:");
     println!(
-        "    ├─ Enclave Type: {}",
+        "    ├─ Enclave Type:    {}",
         enclave.tee_type.to_string().bright_green()
+    );
+    println!(
+        "    ├─ Enclave Mode:    {}",
+        if enclave.security_flags.is_simulation {
+            "Software Simulation (Testnet Mode)".bright_yellow().bold()
+        } else {
+            "Genuine Hardware Enclave (Production Mode)".bright_green().bold()
+        }
     );
     if tee_type == TeeType::IntelTdx {
         println!(
-            "    ├─ MRTD:         {}",
+            "    ├─ MRTD:            {}",
             enclave.measurement.mrtd_hex().bright_yellow()
         );
         println!(
-            "    ├─ RTMR0:        {}",
+            "    ├─ RTMR0:           {}",
             enclave.measurement.rtmr0_hex().bright_cyan()
         );
     } else {
         println!(
-            "    ├─ MRENCLAVE:    {}",
+            "    ├─ MRENCLAVE:       {}",
             enclave.measurement.mrenclave_hex().bright_yellow()
         );
         println!(
-            "    ├─ MRSIGNER:     {}",
+            "    ├─ MRSIGNER:        {}",
             enclave.measurement.mrsigner_hex().bright_cyan()
         );
     }
-    println!("    ├─ ISV Prod ID:  {}", enclave.measurement.isv_prod_id);
-    println!("    └─ ISV SVN:      {}", enclave.measurement.isv_svn);
+    println!("    ├─ ISV Prod ID:     {}", enclave.measurement.isv_prod_id);
+    println!("    └─ ISV SVN:         {}", enclave.measurement.isv_svn);
 
     let ranking = vec![
         AccountId::new("0x_miner_alpha_cuda"),
@@ -2084,17 +2122,39 @@ fn run_tee_quote_demo(tee_str: &str) {
         hex::encode(quote.platform_public_key)
     );
     println!(
+        "    ├─ Security Flags:        Simulation={}, Debug={}, HwLevel={}",
+        quote.security_flags.is_simulation,
+        quote.security_flags.debug_mode,
+        quote.security_flags.hardware_level
+    );
+    println!(
         "    ├─ Quote Signature (64B): 0x{}...",
         hex::encode(&quote.quote_signature[0..16])
     );
     println!("    └─ Timestamp:             {}", quote.timestamp);
 
-    println!("\n[*] Submitting to On-Chain TEE Verifier (App-Chain State Machine)...");
+    println!("\n[*] Submitting to On-Chain TEE Verifier (Testnet Simulation Trust Root)...");
     let mut verifier = OnChainTeeVerifier::default();
-    verifier.trust_quote_source(enclave.measurement.mrenclave, enclave.platform_public_key());
+    verifier.trust_simulator_source(enclave.measurement.mrenclave, enclave.platform_public_key());
     match verifier.verify_quote(&quote, 1, 1, &ranking) {
-        Ok(_) => println!("{}", "[✓] On-Chain Attestation Verified: MRENCLAVE is whitelisted, report_data matches ranking, signature is valid!".bright_green().bold()),
+        Ok(_) => println!("{}", "[✓] On-Chain Attestation Verified: Whitelisted testnet simulator root, report_data matches ranking, signature is valid!".bright_green().bold()),
         Err(e) => println!("{} {}", "[✗] On-Chain Attestation Rejected:".bright_red().bold(), e),
+    }
+
+    println!(
+        "\n[*] Testing Anti-Spoofing Security (Strict Production Node with simulation disallowed):"
+    );
+    let mut prod_verifier = OnChainTeeVerifier::default();
+    prod_verifier.set_allow_simulation(false);
+    prod_verifier.register_mrenclave(enclave.measurement.mrenclave);
+    prod_verifier.register_platform_key(enclave.platform_public_key());
+    match prod_verifier.verify_quote(&quote, 1, 1, &ranking) {
+        Ok(_) => println!("[!] Unexpected acceptance: simulation quote bypassed production verifier"),
+        Err(e) => println!(
+            "{} Detected and rejected fake/simulation quote on production: {}",
+            "[✓] Anti-Spoofing Guard Active:".bright_green().bold(),
+            e.to_string().bright_yellow()
+        ),
     }
 
     println!(

@@ -1167,16 +1167,10 @@ fn test_security_tee_platform_key_spoofing_rejected() {
 
     // Attacker replaces platform public key with their own and re-signs
     spoofed_quote.platform_public_key = rogue_keypair.public_key_bytes();
-    let mut payload = Vec::new();
-    payload.push(spoofed_quote.tee_type as u8);
-    payload.extend_from_slice(&spoofed_quote.measurement.mrenclave);
-    payload.extend_from_slice(&spoofed_quote.measurement.mrsigner);
-    payload.extend_from_slice(&spoofed_quote.report_data);
-    payload.extend_from_slice(&spoofed_quote.timestamp.to_be_bytes());
-    spoofed_quote.quote_signature = rogue_keypair.sign_message(&payload);
+    spoofed_quote.quote_signature = rogue_keypair.sign_message(&spoofed_quote.payload());
 
     let mut verifier = OnChainTeeVerifier::default();
-    // Trust the simulator's measurement, but not the attacker-controlled key.
+    verifier.set_allow_simulation(true); // Allow simulation so whitelist check is tested
     verifier.register_mrenclave(enclave.measurement.mrenclave);
     verifier.register_platform_key(enclave.platform_public_key());
     let result = verifier.verify_quote(&spoofed_quote, 1, 1, &ranking);
@@ -1186,6 +1180,114 @@ fn test_security_tee_platform_key_spoofing_rejected() {
     );
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("Unauthorized TEE Platform Public Key"));
+}
+
+#[test]
+fn test_security_simulation_tee_rejected_on_strict_production() {
+    use DePEFT::blockchain::types::AccountId;
+    use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeType};
+
+    let ranking = vec![AccountId::new("miner-alpha")];
+    let sim_enclave = HardwareTeeEnclave::official(TeeType::IntelSgxDcap);
+    let quote = sim_enclave.generate_quote(1, 1, &ranking).unwrap();
+
+    // Default verifier has allow_simulation = false (strict production mode)
+    let mut prod_verifier = OnChainTeeVerifier::default();
+    prod_verifier.register_mrenclave(sim_enclave.measurement.mrenclave);
+    prod_verifier.register_platform_key(sim_enclave.platform_public_key());
+
+    let result = prod_verifier.verify_quote(&quote, 1, 1, &ranking);
+    assert!(
+        result.is_err(),
+        "Simulation quote must be rejected when allow_simulation is false"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("Simulation TEE quote rejected"));
+}
+
+#[test]
+fn test_security_spoofed_tee_simulation_measurement_detected() {
+    use DePEFT::blockchain::types::AccountId;
+    use DePEFT::crypto::AccountKeypair;
+    use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeSecurityFlags, TeeType};
+
+    let ranking = vec![AccountId::new("miner-alpha")];
+    // Attacker takes official simulator's measurement, but sets flags to pretend to be genuine hardware
+    let sim_enclave = HardwareTeeEnclave::official(TeeType::IntelTdx);
+    let attacker_keypair = AccountKeypair::generate();
+
+    // Attacker fabricates quote claiming genuine production hardware
+    let timestamp = 1_000_000_000;
+    let report_data =
+        DePEFT::tee::AttestationQuote::compute_report_data(1, 1, &ranking);
+    let fake_flags = TeeSecurityFlags::genuine_production();
+    let payload = DePEFT::tee::AttestationQuote::construct_quote_payload(
+        TeeType::IntelTdx,
+        &sim_enclave.measurement,
+        &report_data,
+        timestamp,
+        &fake_flags,
+    );
+    let sig = attacker_keypair.sign_message(&payload);
+
+    let spoofed_quote = DePEFT::tee::AttestationQuote {
+        tee_type: TeeType::IntelTdx,
+        measurement: sim_enclave.measurement.clone(),
+        report_data,
+        platform_public_key: attacker_keypair.public_key_bytes(),
+        quote_signature: sig,
+        timestamp,
+        security_flags: fake_flags,
+    };
+
+    let prod_verifier = OnChainTeeVerifier::default();
+    let result = prod_verifier.verify_quote(&spoofed_quote, 1, 1, &ranking);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("Spoofed TEE detected"),
+        "Verifier must detect simulator measurement fingerprint masquerading as real hardware"
+    );
+}
+
+#[test]
+fn test_security_debug_mode_tee_rejected() {
+    use DePEFT::blockchain::types::AccountId;
+    use DePEFT::tee::{HardwareTeeEnclave, OnChainTeeVerifier, TeeSecurityFlags, TeeType};
+
+    let ranking = vec![AccountId::new("miner-1")];
+    let mut flags = TeeSecurityFlags::genuine_production();
+    flags.debug_mode = true; // Insecure debug mode enabled
+
+    let enclave = HardwareTeeEnclave::new_with_flags(
+        TeeType::IntelSgxDcap,
+        "debug-enclave",
+        flags,
+    );
+    let quote = enclave.generate_quote(1, 1, &ranking).unwrap();
+
+    let prod_verifier = OnChainTeeVerifier::default();
+    let result = prod_verifier.verify_quote(&quote, 1, 1, &ranking);
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("Insecure TEE enclave rejected: debug mode is strictly forbidden"));
+}
+
+#[test]
+fn test_host_tee_detector() {
+    use DePEFT::tee::{detect_host_tee, is_hardware_tee_available, HostTeeStatus, TeeType};
+
+    let status = detect_host_tee();
+    match status {
+        HostTeeStatus::HardwareAvailable { tee_type, ref device_path } => {
+            assert!(!device_path.is_empty());
+            assert!(is_hardware_tee_available(tee_type));
+        }
+        HostTeeStatus::SimulationOnly { ref reason } => {
+            assert!(!reason.is_empty());
+            assert!(!is_hardware_tee_available(TeeType::IntelSgxDcap));
+        }
+    }
 }
 
 #[test]

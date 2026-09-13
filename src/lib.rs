@@ -56,7 +56,8 @@ pub use storage::{
     deserialize_safetensors, serialize_safetensors,
 };
 pub use tee::{
-    AttestationQuote, EnclaveMeasurement, HardwareTeeEnclave, OnChainTeeVerifier, TeeType,
+    detect_host_tee, is_hardware_tee_available, AttestationQuote, EnclaveMeasurement,
+    HardwareTeeEnclave, HostTeeStatus, OnChainTeeVerifier, TeeSecurityFlags, TeeType,
 };
 pub use tournament::TournamentEngine;
 pub use validator::{OffChainEvaluator, TeeSandbox, ValidatorNode};

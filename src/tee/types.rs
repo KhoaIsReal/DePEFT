@@ -78,6 +78,49 @@ impl EnclaveMeasurement {
     }
 }
 
+/// Hardware TEE Security Flags and Attestation Mode.
+/// Differentiates genuine production hardware from testnet software simulations,
+/// and detects insecure debug-mode enclaves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeeSecurityFlags {
+    /// True if quote was produced by a software simulator (valid on testnet with --testnet-tee-sim only)
+    pub is_simulation: bool,
+    /// Debug mode: if true, memory was inspectable via debugger (insecure for mainnet production)
+    pub debug_mode: bool,
+    /// Hardware assurance level (0 = pure software mock, 1 = simulated, 2 = genuine production hardware)
+    pub hardware_level: u8,
+}
+
+impl Default for TeeSecurityFlags {
+    fn default() -> Self {
+        Self {
+            is_simulation: false,
+            debug_mode: false,
+            hardware_level: 2,
+        }
+    }
+}
+
+impl TeeSecurityFlags {
+    /// Security flags for testnet software simulation mode
+    pub fn simulation() -> Self {
+        Self {
+            is_simulation: true,
+            debug_mode: true,
+            hardware_level: 0,
+        }
+    }
+
+    /// Security flags for genuine, production hardware TEE execution
+    pub fn genuine_production() -> Self {
+        Self {
+            is_simulation: false,
+            debug_mode: false,
+            hardware_level: 2,
+        }
+    }
+}
+
 /// Cryptographic Hardware Remote Attestation Quote.
 /// Proves to the App-Chain that private evaluation executed inside an untampered hardware TEE.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,12 +131,46 @@ pub struct AttestationQuote {
     pub report_data: Vec<u8>,
     /// Hardware platform identity public key (e.g. Intel Quoting Enclave / AMD Platform Key)
     pub platform_public_key: [u8; 32],
-    /// Hardware cryptographic signature over measurement and report_data
+    /// Hardware cryptographic signature over measurement, report_data, and security flags
     pub quote_signature: Vec<u8>,
     pub timestamp: u64,
+    /// Hardware assurance & simulation detection flags
+    pub security_flags: TeeSecurityFlags,
 }
 
 impl AttestationQuote {
+    /// Construct the canonical byte payload signed by the hardware quoting key.
+    /// Binds: tee_type || mrenclave || mrsigner || report_data || timestamp || is_simulation || debug_mode || hardware_level
+    pub fn construct_quote_payload(
+        tee_type: TeeType,
+        measurement: &EnclaveMeasurement,
+        report_data: &[u8],
+        timestamp: u64,
+        security_flags: &TeeSecurityFlags,
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.push(tee_type as u8);
+        payload.extend_from_slice(&measurement.mrenclave);
+        payload.extend_from_slice(&measurement.mrsigner);
+        payload.extend_from_slice(report_data);
+        payload.extend_from_slice(&timestamp.to_be_bytes());
+        payload.push(if security_flags.is_simulation { 1 } else { 0 });
+        payload.push(if security_flags.debug_mode { 1 } else { 0 });
+        payload.push(security_flags.hardware_level);
+        payload
+    }
+
+    /// Get the signed canonical payload for this quote.
+    pub fn payload(&self) -> Vec<u8> {
+        Self::construct_quote_payload(
+            self.tee_type,
+            &self.measurement,
+            &self.report_data,
+            self.timestamp,
+            &self.security_flags,
+        )
+    }
+
     /// Compute the deterministic 64-byte report data binding the quote to a specific round & ranking.
     /// report_data = SHA512(task_id || round || SHA256(ranking))
     pub fn compute_report_data(task_id: u64, round: usize, ranking: &[AccountId]) -> Vec<u8> {

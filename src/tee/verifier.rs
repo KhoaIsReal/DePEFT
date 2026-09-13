@@ -1,17 +1,24 @@
 use crate::blockchain::types::AccountId;
+use crate::tee::enclave::HardwareTeeEnclave;
 use crate::tee::types::AttestationQuote;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use std::collections::HashSet;
 
 /// On-Chain TEE Remote Attestation Verifier.
 /// Ensures all submitted validator rankings were produced inside genuine, authorized hardware enclaves.
+/// Proactively detects simulation quotes, debug-mode enclaves, and spoofed measurements.
 #[derive(Debug, Clone)]
 pub struct OnChainTeeVerifier {
     pub approved_mrenclaves: HashSet<[u8; 32]>,
     pub approved_mrsigners: HashSet<[u8; 32]>,
     pub approved_platform_keys: HashSet<[u8; 32]>,
+    /// Fingerprints of known software simulation enclaves used for anti-spoofing detection
+    pub known_simulator_mrenclaves: HashSet<[u8; 32]>,
+    pub known_simulator_keys: HashSet<[u8; 32]>,
     pub enforce_attestation: bool,
+    /// If false (default in production), software simulations and debug enclaves are rejected
+    pub allow_simulation: bool,
 }
 
 impl Default for OnChainTeeVerifier {
@@ -20,7 +27,10 @@ impl Default for OnChainTeeVerifier {
             approved_mrenclaves: HashSet::new(),
             approved_mrsigners: HashSet::new(),
             approved_platform_keys: HashSet::new(),
+            known_simulator_mrenclaves: HardwareTeeEnclave::known_simulator_measurements(),
+            known_simulator_keys: HashSet::new(),
             enforce_attestation: true,
+            allow_simulation: false, // Strict production default: simulation forbidden
         }
     }
 }
@@ -47,11 +57,25 @@ impl OnChainTeeVerifier {
         self.approved_platform_keys.insert(platform_key);
     }
 
-    /// Explicitly trust a quote source. This is intended for tests and local
-    /// simulators only; production roots must be provisioned outside source.
+    /// Explicitly trust a quote source for tests and local simulators.
     pub fn trust_quote_source(&mut self, mrenclave: [u8; 32], platform_key: [u8; 32]) {
+        self.allow_simulation = true;
         self.register_mrenclave(mrenclave);
         self.register_platform_key(platform_key);
+    }
+
+    /// Whitelist and register an official testnet simulator source
+    pub fn trust_simulator_source(&mut self, mrenclave: [u8; 32], platform_key: [u8; 32]) {
+        self.allow_simulation = true;
+        self.register_mrenclave(mrenclave);
+        self.register_platform_key(platform_key);
+        self.known_simulator_mrenclaves.insert(mrenclave);
+        self.known_simulator_keys.insert(platform_key);
+    }
+
+    /// Set whether software simulation quotes are accepted (testnet = true, mainnet = false)
+    pub fn set_allow_simulation(&mut self, allow: bool) {
+        self.allow_simulation = allow;
     }
 
     /// Verify an Attestation Quote on-chain before admitting a validator evaluation.
@@ -82,7 +106,40 @@ impl OnChainTeeVerifier {
             return Ok(());
         }
 
-        // 2. Verify Enclave Measurement against on-chain whitelist
+        // 2. Anti-Spoofing & Simulation Detection (enforced on production or when roots are configured)
+        if !self.allow_simulation {
+            if quote.security_flags.is_simulation {
+                bail!(
+                    "Simulation TEE quote rejected: node is running in strict production mode with simulation disallowed"
+                );
+            }
+            if quote.security_flags.debug_mode {
+                bail!(
+                    "Insecure TEE enclave rejected: debug mode is strictly forbidden on production network"
+                );
+            }
+            if quote.security_flags.hardware_level < 2 {
+                bail!(
+                    "Rejected TEE quote: insufficient hardware security level ({})",
+                    quote.security_flags.hardware_level
+                );
+            }
+            // Anti-spoofing check: quote claims to be genuine hardware, but its measurement matches a known simulation template!
+            if self.known_simulator_mrenclaves.contains(&quote.measurement.mrenclave) {
+                bail!(
+                    "Spoofed TEE detected: quote presented known simulator measurement {} as genuine hardware",
+                    quote.measurement.mrenclave_hex()
+                );
+            }
+            if self.known_simulator_keys.contains(&quote.platform_public_key) {
+                bail!(
+                    "Spoofed TEE detected: quote signed with known simulation platform key 0x{}",
+                    hex::encode(quote.platform_public_key)
+                );
+            }
+        }
+
+        // 3. Verify Enclave Measurement against on-chain whitelist
         if self.enforce_attestation && self.approved_mrenclaves.is_empty() {
             bail!(
                 "TEE attestation is required but no enclave measurement trust root is configured"
@@ -101,7 +158,7 @@ impl OnChainTeeVerifier {
             );
         }
 
-        // 3. Verify Hardware Platform Public Key against Root-of-Trust whitelist
+        // 4. Verify Hardware Platform Public Key against Root-of-Trust whitelist
         if self.enforce_attestation && self.approved_platform_keys.is_empty() {
             bail!("TEE attestation is required but no platform-key trust root is configured");
         }
@@ -115,7 +172,7 @@ impl OnChainTeeVerifier {
             );
         }
 
-        // 4. Verify Quote Timestamp Freshness and Future Drift
+        // 5. Verify Quote Timestamp Freshness and Future Drift
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -129,7 +186,7 @@ impl OnChainTeeVerifier {
             bail!("TEE Attestation Quote timestamp is in the future");
         }
 
-        // 5. Cryptographically verify Hardware Platform Quote Signature
+        // 6. Cryptographically verify Hardware Platform Quote Signature
         let verifying_key = VerifyingKey::from_bytes(&quote.platform_public_key)
             .map_err(|e| anyhow::anyhow!("Invalid TEE platform public key: {}", e))?;
 
@@ -140,13 +197,8 @@ impl OnChainTeeVerifier {
         let sig_bytes: [u8; 64] = quote.quote_signature.as_slice().try_into()?;
         let signature = Signature::from_bytes(&sig_bytes);
 
-        // Reconstruct signed payload
-        let mut quote_payload = Vec::new();
-        quote_payload.push(quote.tee_type as u8);
-        quote_payload.extend_from_slice(&quote.measurement.mrenclave);
-        quote_payload.extend_from_slice(&quote.measurement.mrsigner);
-        quote_payload.extend_from_slice(&quote.report_data);
-        quote_payload.extend_from_slice(&quote.timestamp.to_be_bytes());
+        // Reconstruct signed payload using canonical helper
+        let quote_payload = quote.payload();
 
         verifying_key
             .verify(&quote_payload, &signature)
