@@ -34,6 +34,8 @@ impl EmbeddedVectorDb {
         }
     }
 
+    const MAX_RECORDS: usize = 20_000;
+
     /// Insert an adapter signature into the vector database safely.
     pub fn insert(&self, record: AdapterVectorRecord) {
         if record.signature.len() != self.dimension {
@@ -44,6 +46,9 @@ impl EmbeddedVectorDb {
             return;
         }
         let mut recs = self.records.write().unwrap();
+        if recs.len() >= Self::MAX_RECORDS {
+            recs.remove(0);
+        }
         recs.push(record);
     }
 

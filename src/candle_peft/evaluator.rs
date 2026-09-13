@@ -108,7 +108,10 @@ impl CandleValidatorEvaluator {
             };
 
             // Attach adapter weights into model layers across all projections
-            let _ = model_clone.load_adapter_tensors(&tensor_map);
+            if model_clone.load_adapter_tensors(&tensor_map).is_err() {
+                scores.push((miner_id.clone(), 1e6));
+                continue;
+            }
 
             // First verify if model triggers backdoor / trojan on safety probes via autoregressive generation
             if let Ok(true) = Self::verify_backdoor_triggers(&model_clone, 16) {

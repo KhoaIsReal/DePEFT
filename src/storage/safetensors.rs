@@ -159,7 +159,10 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
                 }
                 data_a.push(val);
             }
-            if data_a.len() != meta_a.shape[0] * meta_a.shape[1] {
+            let expected_len_a = meta_a.shape[0]
+                .checked_mul(meta_a.shape[1])
+                .ok_or_else(|| anyhow::anyhow!("Tensor A dimensions overflow usize"))?;
+            if data_a.len() != expected_len_a {
                 bail!("Tensor A data length does not match specified shape");
             }
             let lora_a = Matrix::new(meta_a.shape[0], meta_a.shape[1], data_a);
@@ -185,7 +188,10 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
                 }
                 data_b.push(val);
             }
-            if data_b.len() != meta_b.shape[0] * meta_b.shape[1] {
+            let expected_len_b = meta_b.shape[0]
+                .checked_mul(meta_b.shape[1])
+                .ok_or_else(|| anyhow::anyhow!("Tensor B dimensions overflow usize"))?;
+            if data_b.len() != expected_len_b {
                 bail!("Tensor B data length does not match specified shape");
             }
             let lora_b = Matrix::new(meta_b.shape[0], meta_b.shape[1], data_b);
@@ -194,11 +200,13 @@ pub fn deserialize_safetensors(bytes: &[u8]) -> Result<AdapterPackage> {
                 .metadata
                 .get(&format!("{}.rank", module_name))
                 .and_then(|r| r.parse().ok())
-                .unwrap_or(meta_a.shape[0]);
+                .unwrap_or(meta_a.shape[0])
+                .max(1);
             let alpha = header
                 .metadata
                 .get(&format!("{}.alpha", module_name))
                 .and_then(|a| a.parse().ok())
+                .filter(|a: &f32| a.is_finite() && *a > 0.0)
                 .unwrap_or(16.0);
 
             modules.insert(

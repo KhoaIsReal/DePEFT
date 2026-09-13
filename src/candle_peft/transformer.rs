@@ -308,48 +308,56 @@ impl CandleTransformerLM {
 
     /// Load external adapter tensors across all layers.
     pub fn load_adapter_tensors(&mut self, tensor_map: &HashMap<String, Tensor>) -> Result<()> {
+        let mut loaded_count = 0;
         for (i, layer) in self.layers.iter_mut().enumerate() {
             if let (Some(a), Some(b)) = (
                 tensor_map.get(&format!("model.layers.{}.self_attn.q_proj.lora_a.weight", i)),
                 tensor_map.get(&format!("model.layers.{}.self_attn.q_proj.lora_b.weight", i)),
             ) {
                 layer.self_attn.q_proj.load_adapter(a, b)?;
+                loaded_count += 1;
             }
             if let (Some(a), Some(b)) = (
                 tensor_map.get(&format!("model.layers.{}.self_attn.k_proj.lora_a.weight", i)),
                 tensor_map.get(&format!("model.layers.{}.self_attn.k_proj.lora_b.weight", i)),
             ) {
                 layer.self_attn.k_proj.load_adapter(a, b)?;
+                loaded_count += 1;
             }
             if let (Some(a), Some(b)) = (
                 tensor_map.get(&format!("model.layers.{}.self_attn.v_proj.lora_a.weight", i)),
                 tensor_map.get(&format!("model.layers.{}.self_attn.v_proj.lora_b.weight", i)),
             ) {
                 layer.self_attn.v_proj.load_adapter(a, b)?;
+                loaded_count += 1;
             }
             if let (Some(a), Some(b)) = (
                 tensor_map.get(&format!("model.layers.{}.self_attn.o_proj.lora_a.weight", i)),
                 tensor_map.get(&format!("model.layers.{}.self_attn.o_proj.lora_b.weight", i)),
             ) {
                 layer.self_attn.o_proj.load_adapter(a, b)?;
+                loaded_count += 1;
             }
             if let (Some(a), Some(b)) = (
                 tensor_map.get(&format!("model.layers.{}.mlp.gate_proj.lora_a.weight", i)),
                 tensor_map.get(&format!("model.layers.{}.mlp.gate_proj.lora_b.weight", i)),
             ) {
                 layer.mlp.gate_proj.load_adapter(a, b)?;
+                loaded_count += 1;
             }
             if let (Some(a), Some(b)) = (
                 tensor_map.get(&format!("model.layers.{}.mlp.up_proj.lora_a.weight", i)),
                 tensor_map.get(&format!("model.layers.{}.mlp.up_proj.lora_b.weight", i)),
             ) {
                 layer.mlp.up_proj.load_adapter(a, b)?;
+                loaded_count += 1;
             }
             if let (Some(a), Some(b)) = (
                 tensor_map.get(&format!("model.layers.{}.mlp.down_proj.lora_a.weight", i)),
                 tensor_map.get(&format!("model.layers.{}.mlp.down_proj.lora_b.weight", i)),
             ) {
                 layer.mlp.down_proj.load_adapter(a, b)?;
+                loaded_count += 1;
             }
         }
         if let (Some(a), Some(b)) = (
@@ -357,6 +365,11 @@ impl CandleTransformerLM {
             tensor_map.get("lm_head.lora_b.weight"),
         ) {
             self.lm_head.load_adapter(a, b)?;
+            loaded_count += 1;
+        }
+
+        if loaded_count == 0 {
+            anyhow::bail!("No compatible adapter tensors found in safetensors map");
         }
         Ok(())
     }
