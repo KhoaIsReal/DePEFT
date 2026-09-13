@@ -418,10 +418,11 @@ cargo clippy --all-targets -- -D warnings
 
 ## 🤝 Community & Acknowledgments
 
-DePEFT is built with deep gratitude to the decentralized AI and open-source machine learning communities:
+DePEFT is built with deep gratitude to the decentralized AI, cryptography, and open-source machine learning communities:
+- **Open-Source Researchers & Developers**: Heartfelt thanks to all researchers, engineers, and community members across Reddit, GitHub, and Discord who have taken the time to audit our code, suggest algorithmic improvements, test our node implementations, or engage in constructive discussions.
 - **Hugging Face Candle Team**: For the ultra-fast, minimalist, and pure-Rust deep learning tensor runtime enabling native TEE enclave execution.
-- **Reddit & Open-Source AI/ML Engineers**: Special thanks to community members and researchers on Reddit who reviewed our codebase, pinpointed optimizer limitations under heterogeneous hardware drift, and proposed the integration of **DiLoCo (Distributed Low-Communication / DeepMind)** and **FedAdam (Federated Adam)** outer optimization fusion.
 - **CometBFT / Tendermint Community**: For pioneer work on deterministic 2-phase BFT state machines.
+- **Every Supporter & Contributor**: Every contribution matters immensely to this zero-budget initiative — whether it is an architectural code review, an edge-case bug report, constructive feedback, or simply giving this repository a ⭐ **star on GitHub**. You are all an integral part of building a genuinely decentralized, accessible AI future.
 
 ---
 
