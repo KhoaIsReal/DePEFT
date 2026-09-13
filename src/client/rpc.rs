@@ -190,6 +190,12 @@ impl DePeftClient {
         Ok(info.balance)
     }
 
+    /// Query account transaction nonce.
+    pub async fn get_nonce(&self, account_hex: &str) -> Result<u64> {
+        let info = self.get_account(account_hex).await?;
+        Ok(info.nonce)
+    }
+
     /// Query account info (balance and nonce).
     pub async fn get_account(&self, account_hex: &str) -> Result<AccountInfo> {
         let url = format!("{}/api/v1/accounts/{}/balance", self.base_url, account_hex);

@@ -274,6 +274,24 @@ enum KeyCommands {
         /// 32-byte secret key in hex format
         secret_hex: String,
     },
+
+    /// Transfer native $DEPEFT tokens to another account on-chain
+    Transfer {
+        #[arg(long, default_value = "http://127.0.0.1:8545")]
+        node_url: String,
+
+        /// Sender 32-byte secret key in hex
+        #[arg(short, long)]
+        secret_key: String,
+
+        /// Recipient account address (0x...)
+        #[arg(short, long)]
+        to: String,
+
+        /// Amount of tokens to transfer
+        #[arg(short, long)]
+        amount: u128,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -1106,6 +1124,54 @@ async fn main() -> anyhow::Result<()> {
                 println!(
                     "Public Key:     0x{}",
                     hex::encode(keypair.public_key_bytes())
+                );
+            }
+            KeyCommands::Transfer {
+                node_url,
+                secret_key,
+                to,
+                amount,
+            } => {
+                let clean_hex = secret_key.trim_start_matches("0x");
+                let bytes = hex::decode(clean_hex)?;
+                if bytes.len() != 32 {
+                    anyhow::bail!("Secret key must be exactly 32 bytes (64 hex characters)");
+                }
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                let keypair = AccountKeypair::from_secret_bytes(&arr);
+                let sender_addr = keypair.account_id();
+                let recipient_addr = AccountId::new(&to);
+
+                let client = DePeftClient::new(node_url);
+                let nonce = client.get_nonce(sender_addr.as_str()).await?;
+                let sender_bal = client.get_balance(sender_addr.as_str()).await?;
+
+                if sender_bal < amount {
+                    anyhow::bail!(
+                        "Insufficient funds: account {} has balance of {} $DEPEFT, cannot transfer {}",
+                        sender_addr,
+                        sender_bal,
+                        amount
+                    );
+                }
+
+                let tx = Transaction::Transfer {
+                    from: sender_addr.clone(),
+                    to: recipient_addr.clone(),
+                    amount,
+                    nonce,
+                };
+                let signed_tx = keypair.sign_transaction(tx)?;
+                println!(
+                    "[*] Broadcasting on-chain transfer of {} $DEPEFT: {} -> {}...",
+                    amount, sender_addr, recipient_addr
+                );
+                let res = client.submit_transaction(&signed_tx).await?;
+                println!(
+                    "{} Transfer submitted successfully! Result: {}",
+                    "[✓]".bright_green().bold(),
+                    res.bright_yellow()
                 );
             }
         },

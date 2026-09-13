@@ -641,6 +641,38 @@ impl AppChainState {
                     *self.balances.entry(reporter).or_insert(0) += bounty;
                 }
             }
+
+            Transaction::Transfer {
+                from,
+                to,
+                amount,
+                nonce: _,
+            } => {
+                ensure!(
+                    &from == sender,
+                    "Unauthorized: Transaction sender {} does not match from address {}",
+                    sender,
+                    from
+                );
+                ensure!(
+                    !self.slashed_validators.contains(&to),
+                    "Transfer rejected: Recipient {} has been slashed and banned",
+                    to
+                );
+                ensure!(amount > 0, "Transfer amount must be greater than 0");
+                let sender_bal = self.balance_of(&from);
+                ensure!(
+                    sender_bal >= amount,
+                    "Insufficient balance for transfer: available {}, required {}",
+                    sender_bal,
+                    amount
+                );
+
+                if let Some(bal) = self.balances.get_mut(&from) {
+                    *bal = bal.saturating_sub(amount);
+                }
+                *self.balances.entry(to).or_insert(0) += amount;
+            }
         }
 
         // Increment sender account nonce upon successful transaction application

@@ -3079,3 +3079,36 @@ fn test_whistleblower_slashing_transaction() {
     assert_eq!(whistleblower_bal, 20_000, "Whistleblower receives 20% bounty");
     assert_eq!(chain.total_burned, 80_000, "80% of slashed stake is burned");
 }
+
+#[test]
+fn test_token_transfer_transaction() {
+    let mut chain = AppChainState::new();
+    let alice = AccountId::new("0xalice");
+    let bob = AccountId::new("0xbob");
+
+    chain.mint(alice.clone(), 50_000);
+    assert_eq!(chain.balance_of(&alice), 50_000);
+    assert_eq!(chain.balance_of(&bob), 0);
+
+    let transfer_tx = Transaction::Transfer {
+        from: alice.clone(),
+        to: bob.clone(),
+        amount: 15_000,
+        nonce: chain.nonce_of(&alice),
+    };
+
+    chain.apply_transaction(transfer_tx, &alice).unwrap();
+
+    assert_eq!(chain.balance_of(&alice), 35_000);
+    assert_eq!(chain.balance_of(&bob), 15_000);
+    assert_eq!(chain.nonce_of(&alice), 1);
+
+    // Cannot transfer more than balance
+    let excessive_tx = Transaction::Transfer {
+        from: alice.clone(),
+        to: bob.clone(),
+        amount: 40_000,
+        nonce: chain.nonce_of(&alice),
+    };
+    assert!(chain.apply_transaction(excessive_tx, &alice).is_err());
+}

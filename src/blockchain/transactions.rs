@@ -54,6 +54,13 @@ pub enum Transaction {
         nonce: u64,
         evidence: EquivocationEvidence,
     },
+    /// Native token transfer between accounts.
+    Transfer {
+        from: AccountId,
+        to: AccountId,
+        amount: u128,
+        nonce: u64,
+    },
 }
 
 impl Transaction {
@@ -65,6 +72,7 @@ impl Transaction {
             Transaction::RevealAdapter { miner, .. } => miner,
             Transaction::SubmitEvaluation { evaluation, .. } => &evaluation.validator_address,
             Transaction::SlashValidator { reporter, .. } => reporter,
+            Transaction::Transfer { from, .. } => from,
         }
     }
 
@@ -76,6 +84,7 @@ impl Transaction {
             Transaction::RevealAdapter { nonce, .. } => *nonce,
             Transaction::SubmitEvaluation { nonce, .. } => *nonce,
             Transaction::SlashValidator { nonce, .. } => *nonce,
+            Transaction::Transfer { nonce, .. } => *nonce,
         }
     }
 }
