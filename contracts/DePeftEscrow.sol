@@ -139,7 +139,10 @@ contract DePeftEscrow {
     function refundTask(uint256 taskId) external {
         TaskEscrow storage task = tasks[taskId];
         require(task.isActive, "Task is not active");
-        require(msg.sender == task.client || msg.sender == owner, "Unauthorized refund request");
+        require(
+            msg.sender == owner || (msg.sender == task.client && task.completedRounds == 0),
+            "Client can only cancel task before rounds are completed; contact coordinator"
+        );
 
         uint256 refundAmount = task.remainingBounty;
         task.remainingBounty = 0;

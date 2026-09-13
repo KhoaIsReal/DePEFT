@@ -1574,26 +1574,35 @@ async fn main() -> anyhow::Result<()> {
                 let commit_res = client.submit_transaction(&signed_commit).await?;
                 println!("[✓] Commit Submitted: {}", commit_res.bright_green());
 
-                // 2. Upload .safetensors to CAS Storage
-                println!("[*] Uploading .safetensors artifact to Node CAS...");
-                let adapter_cid = client.upload_storage(&artifact.safetensors_bytes).await?;
-                println!("    └─ Adapter CID: {}", adapter_cid.bright_yellow());
-
-                // 3. Wait for round to transition to RevealPhase before revealing
+                // 2. Wait for round to transition to RevealPhase before uploading & revealing
                 println!("[*] Waiting for Round Phase to transition to RevealPhase...");
+                let mut entered_reveal = false;
                 let mut attempts = 0;
-                while attempts < 30 {
+                while attempts < 40 {
                     if let Ok(ctx) = client.get_round_context(task_id, 1).await {
                         let is_reveal_phase =
                             ctx.phase == DePEFT::blockchain::types::RoundPhase::RevealPhase;
                         if is_reveal_phase {
                             println!("[*] Round #1 entered RevealPhase!");
+                            entered_reveal = true;
                             break;
                         }
                     }
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     attempts += 1;
                 }
+
+                if !entered_reveal {
+                    println!(
+                        "[!] Round did not transition to RevealPhase in time. Aborting reveal."
+                    );
+                    return Ok(());
+                }
+
+                // 3. Upload .safetensors to CAS Storage (safe to publish once commit phase is closed)
+                println!("[*] Uploading .safetensors artifact to Node CAS...");
+                let adapter_cid = client.upload_storage(&artifact.safetensors_bytes).await?;
+                println!("    └─ Adapter CID: {}", adapter_cid.bright_yellow());
 
                 // 4. Submit Reveal Transaction
                 let acc_info2 = client

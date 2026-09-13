@@ -47,7 +47,9 @@ impl ValidatorSet {
     /// Deterministic weighted round-robin proposer selection based on height & round.
     pub fn get_proposer(&self, height: u64, round: u32) -> AccountId {
         if self.validators.is_empty() {
-            return AccountId::new("0x0000000000000000000000000000000000000000");
+            return AccountId::new(
+                "0x0000000000000000000000000000000000000000000000000000000000000000",
+            );
         }
         let index = ((height + round as u64) as usize) % self.validators.len();
         self.validators[index].address.clone()

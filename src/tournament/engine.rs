@@ -229,28 +229,26 @@ impl TournamentEngine {
 
         match task_merge_strat {
             crate::blockchain::types::MergeStrategy::SingleWinner => {
-                let winner_miner = &consensus.winner;
-                let winning_reveal = round_ctx
-                    .reveals
-                    .get(winner_miner)
-                    .ok_or_else(|| anyhow::anyhow!("Winner reveal not found"))?;
-
-                // Retrieve winning .safetensors from IPFS
-                let winning_bytes = self
-                    .ipfs
-                    .get(&winning_reveal.adapter_cid)
-                    .ok_or_else(|| anyhow::anyhow!("Winning safetensors not found in IPFS"))?;
-                let actual_hash: [u8; 32] = sha2::Sha256::digest(&winning_bytes).into();
-                anyhow::ensure!(
-                    actual_hash == winning_reveal.adapter_hash,
-                    "Winning adapter content does not match its committed hash"
-                );
-                let winning_pkg = deserialize_safetensors(&winning_bytes)?;
-
-                // Load winning adapter into base model and execute permanent ReLoRA weight merge:
-                // W_{N+1} = W_N + \Delta W_{N+1}
-                self.base_model.load_adapters(&winning_pkg)?;
-                self.base_model.merge_and_evolve(&mut rng);
+                let mut merged = false;
+                for candidate in &consensus.consensus_ranking {
+                    if let Some(reveal) = round_ctx.reveals.get(candidate) {
+                        if let Some(bytes) = self.ipfs.get(&reveal.adapter_cid) {
+                            let actual_hash: [u8; 32] = sha2::Sha256::digest(&bytes).into();
+                            if actual_hash == reveal.adapter_hash {
+                                if let Ok(pkg) = deserialize_safetensors(&bytes) {
+                                    if self.base_model.load_adapters(&pkg).is_ok() {
+                                        self.base_model.merge_and_evolve(&mut rng);
+                                        merged = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if !merged {
+                    self.base_model.merge_and_evolve(&mut rng);
+                }
             }
             crate::blockchain::types::MergeStrategy::EnsembleWeighted { top_k } => {
                 let k = top_k.min(consensus.consensus_ranking.len()).max(1);

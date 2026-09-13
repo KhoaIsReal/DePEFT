@@ -40,10 +40,22 @@ impl Matrix {
     }
 
     pub fn xavier_uniform(rows: usize, cols: usize, rng: &mut impl Rng) -> Self {
-        let limit = (6.0 / (rows + cols) as f32).sqrt();
+        if rows * cols == 0 {
+            return Self {
+                rows,
+                cols,
+                data: Vec::new(),
+            };
+        }
+        let denom = (rows + cols).max(1) as f32;
+        let limit = (6.0 / denom).sqrt();
         let mut data = Vec::with_capacity(rows * cols);
-        for _ in 0..(rows * cols) {
-            data.push(rng.gen_range(-limit..limit));
+        if limit <= 0.0 || !limit.is_finite() {
+            data.resize(rows * cols, 0.0);
+        } else {
+            for _ in 0..(rows * cols) {
+                data.push(rng.gen_range(-limit..limit));
+            }
         }
         Self { rows, cols, data }
     }
